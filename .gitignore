@@ -1,4 +1,5 @@
-.claude/audit-log.jsonl
+.claude/
+AGENT.md
 .gradle/
 build/
 bin/
