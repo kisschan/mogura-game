@@ -1,0 +1,6 @@
+.claude/audit-log.jsonl
+.gradle/
+build/
+bin/
+*.iml
+.idea/
