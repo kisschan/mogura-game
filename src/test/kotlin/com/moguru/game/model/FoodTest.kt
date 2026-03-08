@@ -1,7 +1,8 @@
 package com.moguru.game.model
 
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.Assertions.*
 
 class FoodTest {
 
@@ -41,7 +42,7 @@ class FoodTest {
     }
 
     @Test
-    fun `カブトムシの幼虫は逃走しない（確定捕獲）`() {
+    fun `カブトムシの幼虫は逃走しない`() {
         val card = FoodCard.createDummyCards(FoodType.BEETLE_LARVA).first()
         assertTrue(card.escapeMap.isEmpty())
     }
@@ -71,7 +72,7 @@ class FoodTest {
     }
 
     @Test
-    fun `2〜3人プレイ時はカエルなしの12枚`() {
+    fun `2人プレイ時はカエルなしの12枚`() {
         val cards = FoodCard.createDeck(includeFrog = false)
         assertEquals(12, cards.size)
         assertTrue(cards.none { it.type == FoodType.FROG })
