@@ -1,22 +1,28 @@
 package com.moguru.game.engine
 
-import com.moguru.game.model.*
+import com.moguru.game.model.Board
+import com.moguru.game.model.CellType
+import com.moguru.game.model.EscapeDirection
+import com.moguru.game.model.FoodCard
+import com.moguru.game.model.HoleTile
+import com.moguru.game.model.Player
+import com.moguru.game.model.Position
 import com.moguru.game.util.DiceRoller
 import com.moguru.game.util.Shuffler
 
 /**
- * ターンのフェーズ
+ * ターンのフェーズ。
  */
 enum class TurnPhase {
-    DIG,      // ① 掘る
-    MOVE,     // ② いどう
-    CAPTURE,  // ③ 捕獲（任意）
-    DECIDE,   // ④ タベる or レンコウ（捕獲成功時のみ）
-    END,      // ターン終了（体力減少処理）
+    DIG,      // 1. 掘る
+    MOVE,     // 2. 移動
+    CAPTURE,  // 3. 捕獲
+    DECIDE,   // 4. タベる or レンコウ
+    END,      // 5. ターン終了
 }
 
 /**
- * ゲーム全体の状態
+ * ゲーム全体の状態。
  */
 enum class GameState {
     SETUP,
@@ -25,7 +31,7 @@ enum class GameState {
 }
 
 /**
- * 捕獲結果
+ * 捕獲結果。
  */
 sealed class CaptureResult {
     data object Success : CaptureResult()
@@ -33,12 +39,12 @@ sealed class CaptureResult {
 }
 
 /**
- * プレイヤー設定（セットアップ時に使用）
+ * プレイヤー設定。セットアップ時に使用する。
  */
 data class PlayerConfig(val name: String, val nestPosition: Position)
 
 /**
- * ターン進行管理・ゲーム状態を管理するエンジン。
+ * ターン進行とゲーム状態を管理するエンジン。
  */
 class GameEngine(
     val playerCount: Int,
@@ -61,94 +67,79 @@ class GameEngine(
 
     val players = mutableListOf<Player>()
 
-    /** 盤面上のエサ配置: 位置 → エサカード */
     private val _foodPositions = mutableMapOf<Position, FoodCard>()
     val foodPositions: Map<Position, FoodCard> get() = _foodPositions.toMap()
 
-    /** エサストック（まだ盤面に出ていないエサ） */
     private val foodStock = mutableListOf<FoodCard>()
-
-    /** エサ捨て山 */
     private val foodDiscard = mutableListOf<FoodCard>()
 
-    /** 勝利に必要な得点 */
-    private val winScore: Int get() = if (playerCount >= 4) 5 else 4
+    private val winScore: Int
+        get() = if (playerCount >= 4) 5 else 4
 
-    /** 直前の捕獲が成功したか（DECIDEフェーズ判定用） */
     private var lastCaptureSuccess = false
 
-    /**
-     * ゲームのセットアップを行う。
-     */
+    /** ゲームを初期化する。 */
     fun setupGame(configs: List<PlayerConfig>) {
         require(configs.size == playerCount) { "プレイヤー数が一致しません" }
 
-        // プレイヤー作成
+        players.clear()
+        boardState.clear()
+        _foodPositions.clear()
+        foodStock.clear()
+        foodDiscard.clear()
+        tilePlacementEngine.drawPile.clear()
+        tilePlacementEngine.discardPile.clear()
+        currentPlayerIndex = 0
+        lastCaptureSuccess = false
+
         configs.forEachIndexed { index, config ->
             players.add(Player(id = index, name = config.name, nestPosition = config.nestPosition))
         }
 
-        // 穴タイル26枚を生成
         val allTiles = shuffler.shuffle(HoleTile.createFullSet())
-
-        // 巣と地上を除いた16マスに裏向きで配置
         val undergroundAndHotZone = mutableListOf<Position>()
+
         for (row in 0 until Board.ROWS) {
             for (col in 0 until Board.COLS) {
-                val pos = Position(col, row)
-                val cell = board.getCell(pos) ?: continue
+                val position = Position(col, row)
+                val cell = board.getCell(position) ?: continue
                 if (cell.type == CellType.UNDERGROUND || cell.type == CellType.HOT_ZONE) {
-                    undergroundAndHotZone.add(pos)
+                    undergroundAndHotZone.add(position)
                 }
             }
         }
 
-        // 16マスにタイル配置
-        undergroundAndHotZone.forEachIndexed { index, pos ->
-            boardState.placeTile(pos, allTiles[index])
+        undergroundAndHotZone.forEachIndexed { index, position ->
+            boardState.placeTile(position, allTiles[index])
         }
-
-        // 残り10枚を山札に
         tilePlacementEngine.drawPile = allTiles.drop(16).toMutableList()
 
-        // エサデッキ生成
         val includeFrog = playerCount >= 4
         val foodDeck = shuffler.shuffle(FoodCard.createDeck(includeFrog))
-
-        // ホットゾーン4マスにエサ配置
-        Board.HOT_ZONE_POSITIONS.forEachIndexed { index, pos ->
-            _foodPositions[pos] = foodDeck[index]
+        Board.HOT_ZONE_POSITIONS.forEachIndexed { index, position ->
+            _foodPositions[position] = foodDeck[index]
         }
-
-        // 残りをストックに
         foodStock.addAll(foodDeck.drop(4))
 
         gameState = GameState.PLAYING
         currentPhase = TurnPhase.DIG
     }
 
-    /**
-     * フェーズを次に進める。
-     */
+    /** フェーズを次へ進める。 */
     fun advancePhase() {
         currentPhase = when (currentPhase) {
             TurnPhase.DIG -> TurnPhase.MOVE
             TurnPhase.MOVE -> TurnPhase.CAPTURE
-            TurnPhase.CAPTURE -> {
-                if (lastCaptureSuccess) TurnPhase.DECIDE else TurnPhase.END
-            }
+            TurnPhase.CAPTURE -> if (lastCaptureSuccess) TurnPhase.DECIDE else TurnPhase.END
             TurnPhase.DECIDE -> TurnPhase.END
             TurnPhase.END -> {
-                // 次のプレイヤーに移行
                 advanceToNextPlayer()
                 TurnPhase.DIG
             }
         }
     }
 
-    /**
-     * ターン終了処理: 体力減少。
-     */
+    /** ターン終了処理。体力を減らす。 */
     fun endTurn() {
         val player = players[currentPlayerIndex]
         val cell = board.getCell(player.position)
@@ -157,12 +148,8 @@ class GameEngine(
         lastCaptureSuccess = false
     }
 
-    /**
-     * 捕獲を試みる（位置情報なし版）。逃走先の盤面検証を行わない。
-     * 位置が不要な場面や後方互換用。
-     */
+    /** エサ1枚に対する捕獲判定。 */
     fun attemptCapture(food: FoodCard): CaptureResult {
-        // カブトムシの幼虫は確定捕獲
         if (food.escapeMap.isEmpty()) {
             lastCaptureSuccess = true
             return CaptureResult.Success
@@ -170,7 +157,6 @@ class GameEngine(
 
         val roll = diceRoller.roll()
         val escapeDirection = food.escapeMap[roll]
-
         return if (escapeDirection != null) {
             lastCaptureSuccess = false
             CaptureResult.Escaped(escapeDirection, roll)
@@ -181,8 +167,9 @@ class GameEngine(
     }
 
     /**
-     * 盤面上の指定位置にいるエサに対して捕獲を試みる。
-     * 逃走先が盤外または無効マスの場合は逃走不可＝捕獲成功とする。
+     * 盤面上のエサに対する捕獲判定。
+     *
+     * 逃走先が盤外・無効マス・別エサで埋まっている場合は捕獲成功とする。
      */
     fun attemptCaptureAt(foodPosition: Position): CaptureResult {
         val food = _foodPositions[foodPosition] ?: error("指定位置にエサがありません: $foodPosition")
@@ -194,39 +181,30 @@ class GameEngine(
 
         val roll = diceRoller.roll()
         val escapeDirection = food.escapeMap[roll]
-
         if (escapeDirection == null) {
             lastCaptureSuccess = true
             return CaptureResult.Success
         }
 
-        // 逃走先の座標を計算
         val escapeTo = escapeDirection.applyTo(foodPosition)
         val escapeCell = board.getCell(escapeTo)
-
-        // 盤外、無効マス、または逃走先に別のエサがある場合は逃走不可→捕獲成功
         if (escapeCell == null || escapeCell.type == CellType.INVALID || escapeTo in _foodPositions) {
             lastCaptureSuccess = true
             return CaptureResult.Success
         }
 
-        // 逃走成功: エサを移動先に配置
         _foodPositions.remove(foodPosition)
         _foodPositions[escapeTo] = food.copy(isFaceDown = false)
         lastCaptureSuccess = false
         return CaptureResult.Escaped(escapeDirection, roll)
     }
 
-    /**
-     * 勝利条件を確認。勝者がいればそのプレイヤーを返す。
-     */
+    /** 勝利条件を満たすプレイヤーがいれば返す。 */
     fun checkWinCondition(): Player? {
         return players.firstOrNull { !it.isEliminated && it.score >= winScore }
     }
 
-    /**
-     * ゲーム終了判定。全員脱落ならFINISHED。
-     */
+    /** ゲーム終了状態を更新して返す。 */
     fun checkGameOver(): GameState {
         if (players.isNotEmpty() && (checkWinCondition() != null || players.all { it.isEliminated })) {
             gameState = GameState.FINISHED
@@ -234,26 +212,21 @@ class GameEngine(
         return gameState
     }
 
-    /**
-     * 指定位置のエサを除去する。
-     */
-    fun removeFoodAt(pos: Position): FoodCard? {
-        return _foodPositions.remove(pos)
-    }
+    /** 指定位置のエサを取り除く。 */
+    fun removeFoodAt(position: Position): FoodCard? = _foodPositions.remove(position)
 
-    /**
-     * ホットゾーンに裏向きエサが1枚もないか判定。
-     */
+    /** ホットゾーンに裏向きエサが残っていないか判定する。 */
     fun shouldReplenishFood(): Boolean {
-        return Board.HOT_ZONE_POSITIONS.none { pos ->
-            val food = _foodPositions[pos]
+        return Board.HOT_ZONE_POSITIONS.none { position ->
+            val food = _foodPositions[position]
             food != null && food.isFaceDown
         }
     }
 
     /**
-     * エサを補充する。ホットゾーン全4マスにストックから配置。
-     * ストック切れ時は捨て山をシャッフル。
+     * エサを補充する。
+     *
+     * 表向きエサは捨て札へ送り、空いたホットゾーンを裏向きエサで埋める。
      */
     fun replenishFood() {
         if (foodStock.isEmpty() && foodDiscard.isEmpty()) return
@@ -263,25 +236,25 @@ class GameEngine(
             foodDiscard.clear()
         }
 
-        Board.HOT_ZONE_POSITIONS.forEach { pos ->
-            // 表向きエサが残っている場合は捨て札に移してから補充
-            val existing = _foodPositions[pos]
+        Board.HOT_ZONE_POSITIONS.forEach { position ->
+            val existing = _foodPositions[position]
             if (existing != null && !existing.isFaceDown) {
-                _foodPositions.remove(pos)
+                _foodPositions.remove(position)
                 foodDiscard.add(existing)
             }
-            if (pos !in _foodPositions && foodStock.isNotEmpty()) {
-                _foodPositions[pos] = foodStock.removeFirst()
+
+            if (position !in _foodPositions && foodStock.isNotEmpty()) {
+                _foodPositions[position] = foodStock.removeFirst()
             }
         }
     }
 
     /**
      * 強奪を試みる。
-     * // TODO: 【要確認】13-3 強奪はターンのどのフェーズで行うか（仮: 捕獲フェーズ）
+     *
+     * TODO: 【要確認】3-3 強奪を行うフェーズは仮実装。
      */
     fun attemptRobbery(thief: Player, victim: Player): FoodCard? {
-        // 条件: thiefが相手の巣にいる & victimが巣にいない & victimの巣にエサがある
         if (thief.position != victim.nestPosition) return null
         if (victim.position == victim.nestPosition) return null
         if (victim.storedFoods.isEmpty()) return null
@@ -294,8 +267,9 @@ class GameEngine(
     }
 
     /**
-     * 巣が防衛されているか（オーナーが巣にいるか）。
-     * // TODO: 【要確認】13-4 止まれないだけ（通過は可能）で仮実装
+     * 巣が防衛されているか判定する。
+     *
+     * TODO: 【要確認】3-4 巣防衛の詳細は仮実装。
      */
     fun isNestDefended(nestPosition: Position): Boolean {
         return players.any { it.nestPosition == nestPosition && it.position == nestPosition }
@@ -303,7 +277,8 @@ class GameEngine(
 
     /**
      * 巣に戻った際に侵入者を追い出す。
-     * // TODO: 【要確認】13-5 追い出し先は追い出す側が選ぶ（仮実装）
+     *
+     * TODO: 【要確認】3-5 追い出し先の選択権は仮実装。
      */
     fun evictFromNest(owner: Player): Boolean {
         owner.moveTo(owner.nestPosition)
@@ -311,7 +286,6 @@ class GameEngine(
         if (intruders.isEmpty()) return false
 
         intruders.forEach { intruder ->
-            // 隣接マスの最初の有効マスに追い出す
             val evictTo = board.getValidNeighbors(owner.nestPosition).firstOrNull()
             if (evictTo != null) {
                 intruder.moveTo(evictTo)
@@ -320,15 +294,15 @@ class GameEngine(
         return true
     }
 
-    /**
-     * エサを盤面上に配置する（逃走時など）。
-     */
-    fun placeFoodAt(pos: Position, food: FoodCard) {
-        _foodPositions[pos] = food
+    /** 指定位置へエサを配置する。 */
+    fun placeFoodAt(position: Position, food: FoodCard) {
+        _foodPositions[position] = food
     }
 
-    /** 次のプレイヤーに移行（脱落プレイヤーをスキップ） */
+    /** 次のプレイヤーへ移る。脱落プレイヤーは飛ばす。 */
     private fun advanceToNextPlayer() {
+        if (players.isEmpty()) return
+
         do {
             currentPlayerIndex = (currentPlayerIndex + 1) % players.size
         } while (players[currentPlayerIndex].isEliminated && !players.all { it.isEliminated })

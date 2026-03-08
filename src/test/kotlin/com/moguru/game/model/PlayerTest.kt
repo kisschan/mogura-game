@@ -1,7 +1,10 @@
 package com.moguru.game.model
 
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.Assertions.*
 
 class PlayerTest {
 
@@ -43,7 +46,7 @@ class PlayerTest {
     @Test
     fun `体力回復は上限13を超えない`() {
         val player = Player(id = 0, name = "モグオ", nestPosition = Position(0, 1))
-        player.reduceHealth(isOnSurface = false) // 12
+        player.reduceHealth(isOnSurface = false)
         player.heal(5)
         assertEquals(13, player.health)
     }
@@ -51,7 +54,7 @@ class PlayerTest {
     @Test
     fun `体力回復量が正しい`() {
         val player = Player(id = 0, name = "モグオ", nestPosition = Position(0, 1))
-        repeat(5) { player.reduceHealth(isOnSurface = false) } // 8
+        repeat(5) { player.reduceHealth(isOnSurface = false) }
         player.heal(3)
         assertEquals(11, player.health)
     }
@@ -66,7 +69,7 @@ class PlayerTest {
     }
 
     @Test
-    fun `連行中は別のエサを持てない`() {
+    fun `連行中はエサを持っている状態になる`() {
         val player = Player(id = 0, name = "モグオ", nestPosition = Position(0, 1))
         player.carryFood(FoodCard(FoodType.EARTHWORM, emptyMap()))
         assertTrue(player.isCarrying)
@@ -75,7 +78,7 @@ class PlayerTest {
     @Test
     fun `巣にエサを持ち帰ると得点加算`() {
         val player = Player(id = 0, name = "モグオ", nestPosition = Position(0, 1))
-        val food = FoodCard(FoodType.MOLE_CRICKET, emptyMap()) // 2点
+        val food = FoodCard(FoodType.MOLE_CRICKET, emptyMap())
         player.carryFood(food)
         player.storeFood()
         assertEquals(2, player.score)
@@ -87,12 +90,14 @@ class PlayerTest {
         val player = Player(id = 0, name = "モグオ", nestPosition = Position(0, 1))
         val food1 = FoodCard(FoodType.BEETLE_LARVA, emptyMap())
         val food2 = FoodCard(FoodType.EARTHWORM, emptyMap())
+
         player.carryFood(food1)
         player.storeFood()
         player.carryFood(food2)
         player.storeFood()
+
         assertEquals(2, player.storedFoods.size)
-        assertEquals(3, player.score) // 1 + 2
+        assertEquals(3, player.score)
     }
 
     @Test

@@ -1,7 +1,8 @@
 package com.moguru.game.model
 
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.Assertions.*
 
 class BoardTest {
 
@@ -21,13 +22,12 @@ class BoardTest {
     }
 
     @Test
-    fun `巣は4箇所`() {
+    fun `巣は4か所`() {
         val nests = board.cells.values.filter { it.type == CellType.NEST }
         assertEquals(4, nests.size)
-        val nestPositions = nests.map { it.position }.toSet()
         assertEquals(
             setOf(Position(0, 1), Position(5, 1), Position(0, 4), Position(5, 4)),
-            nestPositions
+            nests.map { it.position }.toSet(),
         )
     }
 
@@ -35,21 +35,19 @@ class BoardTest {
     fun `ホットゾーンは中央4マス`() {
         val hotZones = board.cells.values.filter { it.type == CellType.HOT_ZONE }
         assertEquals(4, hotZones.size)
-        val hotPositions = hotZones.map { it.position }.toSet()
         assertEquals(
             setOf(Position(2, 2), Position(3, 2), Position(2, 3), Position(3, 3)),
-            hotPositions
+            hotZones.map { it.position }.toSet(),
         )
     }
 
     @Test
-    fun `無効マスは4箇所`() {
+    fun `無効マスは4か所`() {
         val invalidCells = board.cells.values.filter { it.type == CellType.INVALID }
         assertEquals(4, invalidCells.size)
-        val invalidPositions = invalidCells.map { it.position }.toSet()
         assertEquals(
             setOf(Position(0, 2), Position(5, 2), Position(0, 3), Position(5, 3)),
-            invalidPositions
+            invalidCells.map { it.position }.toSet(),
         )
     }
 
@@ -61,21 +59,18 @@ class BoardTest {
 
     @Test
     fun `隣接マス取得は無効マスを除外する`() {
-        // (1,1) の隣接は (0,1)巣, (2,1)地下, (1,0)地上, (1,2)地下 の4マス
         val neighbors = board.getValidNeighbors(Position(1, 1))
         assertEquals(4, neighbors.size)
     }
 
     @Test
     fun `盤面端のマスは隣接が少ない`() {
-        // (0,0) の隣接は (1,0)地上, (0,1)巣 の2マス
         val neighbors = board.getValidNeighbors(Position(0, 0))
         assertEquals(2, neighbors.size)
     }
 
     @Test
     fun `無効マスに隣接するマスは無効マスを含まない`() {
-        // (1,2) の隣接は (0,2)INVALID除外, (2,2), (1,1), (1,3) → 3マス
         val neighbors = board.getValidNeighbors(Position(1, 2))
         assertEquals(3, neighbors.size)
         assertTrue(neighbors.none { board.getCell(it)?.type == CellType.INVALID })

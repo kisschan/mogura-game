@@ -1,43 +1,39 @@
 package com.moguru.game.engine
 
-import com.moguru.game.model.*
+import com.moguru.game.model.Board
+import com.moguru.game.model.CellType
+import com.moguru.game.model.Direction
+import com.moguru.game.model.HoleTile
+import com.moguru.game.model.Position
 
 /**
  * 盤面上のタイル配置状態を管理する。
  */
 class BoardState(val board: Board) {
-
-    /** 各マスに配置された穴タイル（null = 未配置） */
     private val tiles = mutableMapOf<Position, HoleTile>()
 
-    /** 指定位置のタイルを取得 */
-    fun getTile(pos: Position): HoleTile? = tiles[pos]
+    fun getTile(position: Position): HoleTile? = tiles[position]
 
-    /** タイルを配置する */
-    fun placeTile(pos: Position, tile: HoleTile) {
-        tiles[pos] = tile
+    fun placeTile(position: Position, tile: HoleTile) {
+        tiles[position] = tile
     }
 
-    /** 指定位置にタイルがあるか */
-    fun hasTile(pos: Position): Boolean = pos in tiles
+    fun hasTile(position: Position): Boolean = position in tiles
 
-    /** 指定位置のタイルが裏向きか */
-    fun isFaceDown(pos: Position): Boolean = tiles[pos]?.isFaceDown ?: false
+    fun isFaceDown(position: Position): Boolean = tiles[position]?.isFaceDown ?: false
+
+    fun clear() {
+        tiles.clear()
+    }
 }
 
 /**
- * 移動経路探索エンジン。
- * BFSで到達可能なマス一覧を返す。
+ * 移動経路探索エンジン。BFSで到達可能マスを返す。
  */
 class MovementEngine(private val board: Board) {
 
     /**
-     * 指定位置から到達可能なマスの一覧を返す（BFS）。
-     *
-     * @param start 開始位置
-     * @param boardState 盤面のタイル配置状態
-     * @param occupiedPositions 他プレイヤーがいるマス（通過可能・停止不可）
-     * @return 停止可能なマスの集合（開始位置は含まない）
+     * 開始位置から到達可能な停止マス一覧を返す。
      */
     fun findReachablePositions(
         start: Position,
@@ -58,7 +54,6 @@ class MovementEngine(private val board: Board) {
                 visited.add(neighbor)
                 queue.add(neighbor)
 
-                // 他プレイヤーがいるマスは通過のみ（停止不可）
                 if (neighbor !in occupiedPositions) {
                     reachable.add(neighbor)
                 }
@@ -70,10 +65,6 @@ class MovementEngine(private val board: Board) {
 
     /**
      * 隣接する2マス間が接続されているか判定する。
-     *
-     * 条件:
-     * - 巣マスは全方向に道があるものとして扱う（仮実装）
-     * - 通常マス: 現マスのタイルの該当辺に道があり、かつ隣マスのタイルの対向辺に道がある
      */
     private fun isConnected(from: Position, to: Position, boardState: BoardState): Boolean {
         val directionFromTo = getDirection(from, to) ?: return false
@@ -82,20 +73,18 @@ class MovementEngine(private val board: Board) {
         val fromCell = board.getCell(from) ?: return false
         val toCell = board.getCell(to) ?: return false
 
-        // from側の辺チェック
         val fromHasPath = when (fromCell.type) {
-            // TODO: 【要確認】13-4 巣マスは全方向接続として仮実装
+            // TODO: 【要確認】3-4 巣マスは全方向接続として仮実装。
             CellType.NEST -> true
-            else -> boardState.getTile(from)?.let {
-                !it.isFaceDown && it.hasOpenSide(directionFromTo)
+            else -> boardState.getTile(from)?.let { tile ->
+                !tile.isFaceDown && tile.hasOpenSide(directionFromTo)
             } ?: false
         }
 
-        // to側の辺チェック
         val toHasPath = when (toCell.type) {
             CellType.NEST -> true
-            else -> boardState.getTile(to)?.let {
-                !it.isFaceDown && it.hasOpenSide(directionToFrom)
+            else -> boardState.getTile(to)?.let { tile ->
+                !tile.isFaceDown && tile.hasOpenSide(directionToFrom)
             } ?: false
         }
 
@@ -103,7 +92,7 @@ class MovementEngine(private val board: Board) {
     }
 
     /**
-     * from→toの方向を返す。隣接していなければnull。
+     * `from` から `to` への方向を返す。隣接していなければ `null`。
      */
     private fun getDirection(from: Position, to: Position): Direction? {
         val dc = to.col - from.col

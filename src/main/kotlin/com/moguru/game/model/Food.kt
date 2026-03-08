@@ -1,10 +1,7 @@
 package com.moguru.game.model
 
 /**
- * エサの逃走方向（8方向）
- */
-/**
- * エサの逃走方向（8方向）。各方向に対応する座標オフセットを持つ。
+ * エサの逃走方向。各方向に対応する座標オフセットを持つ。
  */
 enum class EscapeDirection(val dc: Int, val dr: Int) {
     TOP(0, -1),
@@ -17,12 +14,12 @@ enum class EscapeDirection(val dc: Int, val dr: Int) {
     TOP_LEFT(-1, -1),
     ;
 
-    /** 指定位置からこの方向に1マス移動した座標を返す */
-    fun applyTo(pos: Position): Position = Position(pos.col + dc, pos.row + dr)
+    /** 指定位置からこの方向へ1マス移動した座標を返す。 */
+    fun applyTo(position: Position): Position = Position(position.col + dc, position.row + dr)
 }
 
 /**
- * エサの種類
+ * エサの種類。
  */
 enum class FoodType(
     val points: Int,
@@ -38,10 +35,7 @@ enum class FoodType(
 }
 
 /**
- * エサカード。逃走判定用のescapeMapを持つ。
- *
- * escapeMap: ダイス目 → 逃走方向。この目が出たら逃走。
- * 空マップ = 確定捕獲（カブトムシの幼虫）。
+ * エサカード。`escapeMap` はダイス目と逃走方向の対応表。
  */
 data class FoodCard(
     val type: FoodType,
@@ -51,7 +45,8 @@ data class FoodCard(
     companion object {
         /**
          * 指定タイプのダミーカードを生成する。
-         * // TODO: 【未確定】12-1 各カードの逃走ダイス目・矢印方向は設計者確認待ち。ダミーデータで仮実装。
+         *
+         * TODO: 【未確定】2-1 エサカードの逃走ダイス目と矢印方向は仮データ。
          */
         fun createDummyCards(type: FoodType): List<FoodCard> {
             val escapeMap = when (type) {
@@ -79,15 +74,18 @@ data class FoodCard(
                     5 to EscapeDirection.LEFT,
                 )
             }
+
             return List(type.cardCount) { FoodCard(type, escapeMap) }
         }
 
-        /**
-         * プレイ人数に応じたエサデッキを生成する。
-         */
+        /** プレイ人数に応じたエサデッキを生成する。 */
         fun createDeck(includeFrog: Boolean): List<FoodCard> {
-            val types = if (includeFrog) FoodType.entries else FoodType.entries.filter { it != FoodType.FROG }
-            return types.flatMap { createDummyCards(it) }
+            val types = if (includeFrog) {
+                FoodType.entries
+            } else {
+                FoodType.entries.filter { it != FoodType.FROG }
+            }
+            return types.flatMap(::createDummyCards)
         }
     }
 }
