@@ -1,7 +1,9 @@
 package com.moguru.game.model
 
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.Assertions.*
 
 class HoleTileTest {
 
@@ -68,23 +70,23 @@ class HoleTileTest {
     fun `T字タイルを90度回転すると上と右と下`() {
         val tile = HoleTile(TileShape.T_SHAPE)
         val rotated = tile.rotate(Rotation.DEG_90)
-        assertEquals(setOf(Direction.RIGHT, Direction.BOTTOM, Direction.TOP), rotated.openSides)
+        assertEquals(setOf(Direction.TOP, Direction.RIGHT, Direction.BOTTOM), rotated.openSides)
     }
 
     @Test
-    fun `十字タイルはどう回転しても全方向`() {
+    fun `十字タイルはどの回転でも全方向`() {
         val tile = HoleTile(TileShape.CROSS)
         Rotation.entries.forEach { rotation ->
             val rotated = tile.rotate(rotation)
             assertEquals(
                 setOf(Direction.TOP, Direction.BOTTOM, Direction.LEFT, Direction.RIGHT),
-                rotated.openSides
+                rotated.openSides,
             )
         }
     }
 
     @Test
-    fun `穴タイル全26枚の内訳`() {
+    fun `穴タイル全26枚を生成できる`() {
         val allTiles = HoleTile.createFullSet()
         assertEquals(26, allTiles.size)
         assertEquals(10, allTiles.count { it.shape == TileShape.STRAIGHT })
@@ -94,7 +96,7 @@ class HoleTileTest {
     }
 
     @Test
-    fun `対向方向の取得`() {
+    fun `対向方向を取得できる`() {
         assertEquals(Direction.BOTTOM, Direction.TOP.opposite())
         assertEquals(Direction.TOP, Direction.BOTTOM.opposite())
         assertEquals(Direction.RIGHT, Direction.LEFT.opposite())
@@ -102,8 +104,8 @@ class HoleTileTest {
     }
 
     @Test
-    fun `タイルの指定辺に道があるか判定`() {
-        val tile = HoleTile(TileShape.L_SHAPE) // 上-右
+    fun `タイルの指定辺に道があるか判定できる`() {
+        val tile = HoleTile(TileShape.L_SHAPE)
         assertTrue(tile.hasOpenSide(Direction.TOP))
         assertTrue(tile.hasOpenSide(Direction.RIGHT))
         assertFalse(tile.hasOpenSide(Direction.BOTTOM))
@@ -117,7 +119,7 @@ class HoleTileTest {
     }
 
     @Test
-    fun `タイルを表にできる`() {
+    fun `タイルを表向きにできる`() {
         val tile = HoleTile(TileShape.STRAIGHT)
         val flipped = tile.flip()
         assertFalse(flipped.isFaceDown)

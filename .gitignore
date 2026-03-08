@@ -1,6 +1,9 @@
 .claude/
+.codex/
 .gradle/
 build/
 bin/
 *.iml
 .idea/
+mogura_asset_manifest.json
+mogura_*.jpg
