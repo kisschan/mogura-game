@@ -148,6 +148,13 @@ class MoguraGameFrame(
             rotationGroup.add(button)
             rotationPanel.add(button)
         }
+        rotationButtons.forEach { (rotation, button) ->
+            button.addActionListener {
+                if (controller.pendingDigPlacement != null) {
+                    runAction { controller.setPendingDigRotation(rotation) }
+                }
+            }
+        }
 
         val actionPanel = JPanel()
         actionPanel.layout = GridLayout(0, 2, 6, 6)
@@ -267,11 +274,14 @@ class MoguraGameFrame(
         val player = controller.currentPlayer
         val isPlaying = current?.gameState == GameState.PLAYING
         val hasPendingDecision = current?.currentPhase == TurnPhase.DECIDE && controller.pendingFoodDecision != null
+        val hasPendingDig = current?.currentPhase == TurnPhase.DIG && controller.pendingDigPlacement != null
 
         currentPlayerLabel.text = "プレイヤー: ${player?.name ?: "-"}"
         phaseLabel.text = "フェーズ: ${current?.currentPhase?.displayName() ?: "-"}"
         statusLabel.text = controller.pendingFoodDecision?.let { food ->
             "${food.type.displayName()} をタベるかレンコウしてください。"
+        } ?: controller.pendingDigPlacement?.let {
+            "タイルを見て回転を選び、同じマスをもう一度クリックしてください。"
         } ?: phaseHelp(current?.currentPhase)
 
         captureButton.isEnabled = isPlaying && controller.canCapture()
@@ -280,7 +290,7 @@ class MoguraGameFrame(
         skipButton.isEnabled = isPlaying && current?.currentPhase != TurnPhase.DIG && !hasPendingDecision
         skipButton.text = if (current?.currentPhase == TurnPhase.END) "ターン終了" else "スキップ"
         endTurnButton.isEnabled = isPlaying && current?.currentPhase != TurnPhase.DIG && !hasPendingDecision
-        rotationButtons.values.forEach { it.isEnabled = current?.currentPhase == TurnPhase.DIG }
+        rotationButtons.values.forEach { it.isEnabled = hasPendingDig }
 
         playersArea.text = current?.players?.joinToString("\n") { summaryFor(it) }.orEmpty()
         logArea.text = controller.logs.joinToString("\n")
@@ -379,7 +389,8 @@ class BoardPanel(
     private fun highlights(): Set<Position> {
         val current = controller.engine ?: return emptySet()
         return when (current.currentPhase) {
-            TurnPhase.DIG -> controller.digTargets().toSet()
+            TurnPhase.DIG -> controller.pendingDigPlacement?.let { setOf(it.position) }
+                ?: controller.digTargets().toSet()
             TurnPhase.MOVE -> controller.moveTargets()
             TurnPhase.CAPTURE -> if (controller.canCapture()) {
                 setOfNotNull(controller.currentPlayer?.position)

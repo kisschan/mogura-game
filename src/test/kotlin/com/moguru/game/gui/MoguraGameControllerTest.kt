@@ -2,9 +2,11 @@ package com.moguru.game.gui
 
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Board
+import com.moguru.game.model.Direction
 import com.moguru.game.model.FoodCard
 import com.moguru.game.model.FoodType
 import com.moguru.game.model.Position
+import com.moguru.game.model.Rotation
 import com.moguru.game.util.FixedDiceRoller
 import com.moguru.game.util.FixedShuffler
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -129,6 +131,61 @@ class MoguraGameControllerTest {
         assertFalse(result.success)
         assertEquals(TurnPhase.DIG, engine.currentPhase)
         assertEquals(0, engine.currentPlayerIndex)
+    }
+
+    @Test
+    fun `dig first reveals tile without advancing so player can rotate after seeing it`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val target = Position(1, 1)
+
+        val result = controller.revealDigTile(target)
+
+        assertTrue(result.success)
+        assertEquals(TurnPhase.DIG, engine.currentPhase)
+        assertEquals(target, controller.pendingDigPlacement?.position)
+        assertFalse(engine.boardState.getTile(target)!!.isFaceDown)
+        assertTrue(Direction.TOP in engine.boardState.getTile(target)!!.openSides)
+        assertTrue(Direction.BOTTOM in engine.boardState.getTile(target)!!.openSides)
+    }
+
+    @Test
+    fun `revealed dig tile can be rotated before confirming placement`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val target = Position(1, 1)
+        controller.revealDigTile(target)
+
+        val rotateResult = controller.setPendingDigRotation(Rotation.DEG_90)
+        val confirmResult = controller.confirmPendingDig()
+
+        assertTrue(rotateResult.success)
+        assertTrue(confirmResult.success)
+        assertEquals(TurnPhase.MOVE, engine.currentPhase)
+        assertNull(controller.pendingDigPlacement)
+        val tile = engine.boardState.getTile(target)!!
+        assertFalse(tile.isFaceDown)
+        assertTrue(Direction.LEFT in tile.openSides)
+        assertTrue(Direction.RIGHT in tile.openSides)
+    }
+
+    @Test
+    fun `dig click confirms only the already revealed tile`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val target = Position(1, 1)
+
+        val reveal = controller.digAt(target, Rotation.DEG_0)
+        val wrongTarget = controller.digAt(Position(2, 1), Rotation.DEG_90)
+        val confirm = controller.digAt(target, Rotation.DEG_90)
+
+        assertTrue(reveal.success)
+        assertFalse(wrongTarget.success)
+        assertTrue(confirm.success)
+        assertEquals(TurnPhase.MOVE, engine.currentPhase)
     }
 
     @Test

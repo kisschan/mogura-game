@@ -7,6 +7,7 @@ import com.moguru.game.engine.PlayerConfig
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Board
 import com.moguru.game.model.FoodCard
+import com.moguru.game.model.HoleTile
 import com.moguru.game.model.Player
 import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
@@ -19,6 +20,12 @@ import com.moguru.game.util.Shuffler
 data class GameActionResult(
     val success: Boolean,
     val message: String,
+)
+
+data class PendingDigPlacement(
+    val position: Position,
+    val revealedTile: HoleTile,
+    val drawnTile: HoleTile?,
 )
 
 class MoguraGameController(
@@ -35,6 +42,12 @@ class MoguraGameController(
         private set
 
     var pendingFoodDecision: FoodCard? = null
+        private set
+
+    var pendingDigPlacement: PendingDigPlacement? = null
+        private set
+
+    var pendingDigRotation: Rotation? = null
         private set
 
     private val messages = ArrayDeque<String>()
@@ -61,6 +74,8 @@ class MoguraGameController(
         lastCaptureResult = null
         lastDiceRoll = null
         pendingFoodDecision = null
+        pendingDigPlacement = null
+        pendingDigRotation = null
         messages.clear()
         addLog("${playerCount}人プレイで開始しました。")
         addLog("${currentPlayer?.name} の番です。隣の裏向きタイルを掘ってください。")
@@ -103,30 +118,63 @@ class MoguraGameController(
     }
 
     fun digAt(position: Position, rotation: Rotation): GameActionResult {
+        val pending = pendingDigPlacement
+        if (pending != null) {
+            if (pending.position != position) {
+                return GameActionResult(false, "めくったタイルと同じマスをクリックして配置を確定してください。")
+            }
+            setPendingDigRotation(rotation)
+            return confirmPendingDig()
+        }
+        return revealDigTile(position)
+    }
+
+    fun revealDigTile(position: Position): GameActionResult {
         val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
         if (current.currentPhase != TurnPhase.DIG) {
             return GameActionResult(false, "掘れるのは「掘る」フェーズだけです。")
+        }
+        if (pendingDigPlacement != null) {
+            return GameActionResult(false, "先にめくったタイルの配置を確定してください。")
         }
         if (position !in digTargets()) {
             return GameActionResult(false, "現在のプレイヤーに隣接する裏向きタイルを選んでください。")
         }
 
-        val replacement = current.tilePlacementEngine.drawFromPile()
-        val existing = current.boardState.getTile(position)
-        val tile = replacement ?: existing
+        val drawn = current.tilePlacementEngine.drawFromPile()
+        val revealed = current.boardState.getTile(position)
             ?: return GameActionResult(false, "その場所に置けるタイルがありません。")
 
-        if (replacement != null && existing != null) {
-            current.tilePlacementEngine.discard(existing)
-        }
+        pendingDigPlacement = PendingDigPlacement(position, revealed, drawn)
+        setPendingDigRotation(Rotation.DEG_0)
+        addLog("${currentPlayer?.name} が ${position.label()} の ${revealed.shape.displayName()} をめくりました。回転を選んで同じマスをクリックしてください。")
+        return GameActionResult(true, "タイルをめくりました。")
+    }
 
-        current.tilePlacementEngine.placeTile(
-            position = position,
-            tile = tile,
-            rotation = rotation,
-            boardState = current.boardState,
-        )
-        addLog("${currentPlayer?.name} が ${position.label()} に ${tile.shape.displayName()} を置きました（${rotation.label()}）。")
+    fun setPendingDigRotation(rotation: Rotation): GameActionResult {
+        val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
+        val pending = pendingDigPlacement
+            ?: return GameActionResult(false, "回転するタイルがありません。")
+
+        val previewTile = pending.revealedTile.rotate(rotation).flip()
+        current.boardState.placeTile(pending.position, previewTile)
+        pendingDigRotation = rotation
+        return GameActionResult(true, "タイルの向きを ${rotation.label()} にしました。")
+    }
+
+    fun confirmPendingDig(): GameActionResult {
+        val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
+        val pending = pendingDigPlacement
+            ?: return GameActionResult(false, "配置するタイルがありません。")
+
+        val rotation = pendingDigRotation ?: Rotation.DEG_0
+        setPendingDigRotation(rotation)
+
+        // TODO: 【要確認】13-2 山札から引いたタイルとの選択は未実装。現状はめくったタイルを使う。
+        pending.drawnTile?.let(current.tilePlacementEngine::discard)
+        pendingDigPlacement = null
+        pendingDigRotation = null
+        addLog("${currentPlayer?.name} が ${pending.position.label()} に ${pending.revealedTile.shape.displayName()} を置きました（${rotation.label()}）。")
         current.advancePhase()
         return GameActionResult(true, "タイルを置きました。")
     }
