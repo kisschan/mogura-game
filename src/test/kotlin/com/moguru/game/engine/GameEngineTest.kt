@@ -9,6 +9,7 @@ import com.moguru.game.model.Position
 import com.moguru.game.util.FixedDiceRoller
 import com.moguru.game.util.FixedShuffler
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -246,7 +247,8 @@ class GameEngineTest {
 
         val stolen = engine.attemptRobbery(thief, victim)
         assertNotNull(stolen)
-        assertTrue(thief.isCarrying)
+        assertFalse(thief.isCarrying)
+        assertTrue(victim.storedFoods.isEmpty())
     }
 
     @Test

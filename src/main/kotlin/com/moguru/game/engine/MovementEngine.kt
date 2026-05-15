@@ -73,6 +73,13 @@ class MovementEngine(private val board: Board) {
         val fromCell = board.getCell(from) ?: return false
         val toCell = board.getCell(to) ?: return false
 
+        if (
+            (fromCell.type == CellType.NEST && toCell.type == CellType.GROUND) ||
+            (fromCell.type == CellType.GROUND && toCell.type == CellType.NEST)
+        ) {
+            return false
+        }
+
         val fromHasPath = when (fromCell.type) {
             // TODO: 【要確認】3-4 巣マスは全方向接続として仮実装。
             CellType.NEST -> true

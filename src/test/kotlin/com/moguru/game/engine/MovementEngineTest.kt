@@ -89,6 +89,27 @@ class MovementEngineTest {
     }
 
     @Test
+    fun `巣から地上へは直接移動できない`() {
+        val state = BoardState(board)
+        placeTile(state, Position(0, 0), TileShape.STRAIGHT)
+
+        val reachable = engine.findReachablePositions(Position(0, 1), state, emptySet())
+
+        assertFalse(Position(0, 0) in reachable)
+    }
+
+    @Test
+    fun `地下と地上は道が繋がっていれば移動できる`() {
+        val state = BoardState(board)
+        placeTile(state, Position(1, 1), TileShape.STRAIGHT)
+        placeTile(state, Position(1, 0), TileShape.STRAIGHT)
+
+        val reachable = engine.findReachablePositions(Position(1, 1), state, emptySet())
+
+        assertTrue(Position(1, 0) in reachable)
+    }
+
+    @Test
     fun `道が長く繋がっていれば何マスでも移動可能`() {
         val state = BoardState(board)
         for (col in 1..4) {
