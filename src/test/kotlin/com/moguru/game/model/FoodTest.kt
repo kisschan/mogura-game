@@ -48,27 +48,64 @@ class FoodTest {
     }
 
     @Test
-    fun `ミミズは6面中2面で逃走`() {
+    fun `ミミズは画像通り1で上2で下へ逃走`() {
         val card = FoodCard.createDummyCards(FoodType.EARTHWORM).first()
-        assertEquals(2, card.escapeMap.size)
+        assertEquals(
+            mapOf(
+                1 to EscapeDirection.TOP,
+                2 to EscapeDirection.BOTTOM,
+            ),
+            card.escapeMap,
+        )
     }
 
     @Test
-    fun `ケラは6面中3面で逃走`() {
+    fun `ケラは画像で読める3で右上4で右下へ逃走として仮実装`() {
         val card = FoodCard.createDummyCards(FoodType.MOLE_CRICKET).first()
-        assertEquals(3, card.escapeMap.size)
+        assertEquals(
+            mapOf(
+                3 to EscapeDirection.TOP_RIGHT,
+                4 to EscapeDirection.BOTTOM_RIGHT,
+            ),
+            card.escapeMap,
+        )
     }
 
     @Test
-    fun `ムカデは6面中4面で逃走`() {
+    fun `ムカデは画像通り1右上2右下3左下4左上へ逃走`() {
         val card = FoodCard.createDummyCards(FoodType.CENTIPEDE).first()
-        assertEquals(4, card.escapeMap.size)
+        assertEquals(
+            mapOf(
+                1 to EscapeDirection.TOP_RIGHT,
+                2 to EscapeDirection.BOTTOM_RIGHT,
+                3 to EscapeDirection.BOTTOM_LEFT,
+                4 to EscapeDirection.TOP_LEFT,
+            ),
+            card.escapeMap,
+        )
     }
 
     @Test
-    fun `カエルは6面中5面で逃走`() {
+    fun `カエルは画像通り1と2左3上4と5右へ逃走`() {
         val card = FoodCard.createDummyCards(FoodType.FROG).first()
-        assertEquals(5, card.escapeMap.size)
+        assertEquals(
+            mapOf(
+                1 to EscapeDirection.LEFT,
+                2 to EscapeDirection.LEFT,
+                3 to EscapeDirection.TOP,
+                4 to EscapeDirection.RIGHT,
+                5 to EscapeDirection.RIGHT,
+            ),
+            card.escapeMap,
+        )
+    }
+
+    @Test
+    fun `逃走数メタデータは逃走マップ数と一致する`() {
+        FoodType.entries.forEach { type ->
+            val card = FoodCard.createDummyCards(type).first()
+            assertEquals(type.escapeCount, card.escapeMap.size, "$type の逃走数が一致しない")
+        }
     }
 
     @Test

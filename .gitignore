@@ -7,3 +7,11 @@ bin/
 .idea/
 mogura_asset_manifest.json
 mogura_*.jpg
+
+# Local source/reference assets not required at runtime.
+assets/source/
+
+# Local TLS truststore/certificates for this machine.
+gradle/certs/
+*.p12
+*.pfx
