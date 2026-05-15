@@ -29,7 +29,8 @@ enum class FoodType(
 ) {
     BEETLE_LARVA(points = 1, recovery = 1, escapeCount = 0, cardCount = 4),
     EARTHWORM(points = 2, recovery = 2, escapeCount = 2, cardCount = 3),
-    MOLE_CRICKET(points = 2, recovery = 3, escapeCount = 3, cardCount = 3),
+    // TODO: 【要確認】12-1 要件では3面逃走だが、現画像では3/4の2面のみ読めるため画像優先で仮実装。
+    MOLE_CRICKET(points = 2, recovery = 3, escapeCount = 2, cardCount = 3),
     CENTIPEDE(points = 3, recovery = 4, escapeCount = 4, cardCount = 2),
     FROG(points = 4, recovery = 5, escapeCount = 5, cardCount = 1),
 }
@@ -46,32 +47,32 @@ data class FoodCard(
         /**
          * 指定タイプのダミーカードを生成する。
          *
-         * TODO: 【未確定】2-1 エサカードの逃走ダイス目と矢印方向は仮データ。
+         * 逃走ダイス目と方向は `assets/images/foods` のカード画像から読める情報を使う。
          */
         fun createDummyCards(type: FoodType): List<FoodCard> {
             val escapeMap = when (type) {
                 FoodType.BEETLE_LARVA -> emptyMap()
                 FoodType.EARTHWORM -> mapOf(
                     1 to EscapeDirection.TOP,
-                    2 to EscapeDirection.RIGHT,
+                    2 to EscapeDirection.BOTTOM,
                 )
+                // TODO: 【要確認】12-1 要件では3面逃走だが、画像上は3/4の2面のみ確認できる。
                 FoodType.MOLE_CRICKET -> mapOf(
-                    1 to EscapeDirection.TOP,
-                    2 to EscapeDirection.RIGHT,
-                    3 to EscapeDirection.BOTTOM,
+                    3 to EscapeDirection.TOP_RIGHT,
+                    4 to EscapeDirection.BOTTOM_RIGHT,
                 )
                 FoodType.CENTIPEDE -> mapOf(
-                    1 to EscapeDirection.TOP,
-                    2 to EscapeDirection.RIGHT,
-                    3 to EscapeDirection.BOTTOM,
-                    4 to EscapeDirection.LEFT,
+                    1 to EscapeDirection.TOP_RIGHT,
+                    2 to EscapeDirection.BOTTOM_RIGHT,
+                    3 to EscapeDirection.BOTTOM_LEFT,
+                    4 to EscapeDirection.TOP_LEFT,
                 )
                 FoodType.FROG -> mapOf(
-                    1 to EscapeDirection.TOP,
-                    2 to EscapeDirection.TOP_RIGHT,
-                    3 to EscapeDirection.RIGHT,
-                    4 to EscapeDirection.BOTTOM,
-                    5 to EscapeDirection.LEFT,
+                    1 to EscapeDirection.LEFT,
+                    2 to EscapeDirection.LEFT,
+                    3 to EscapeDirection.TOP,
+                    4 to EscapeDirection.RIGHT,
+                    5 to EscapeDirection.RIGHT,
                 )
             }
 
