@@ -232,7 +232,7 @@ class GameEngine(
         if (foodStock.isEmpty() && foodDiscard.isEmpty()) return
 
         if (foodStock.isEmpty()) {
-            foodStock.addAll(shuffler.shuffle(foodDiscard))
+            foodStock.addAll(shuffler.shuffle(foodDiscard.map { it.copy(isFaceDown = true) }))
             foodDiscard.clear()
         }
 
@@ -240,13 +240,23 @@ class GameEngine(
             val existing = _foodPositions[position]
             if (existing != null && !existing.isFaceDown) {
                 _foodPositions.remove(position)
-                foodDiscard.add(existing)
+                foodDiscard.add(existing.copy(isFaceDown = true))
             }
 
             if (position !in _foodPositions && foodStock.isNotEmpty()) {
                 _foodPositions[position] = foodStock.removeFirst()
             }
         }
+    }
+
+    /** 要確認フェーズの効果で、捕獲後選択へ直接入る。 */
+    fun enterDecisionPhase() {
+        currentPhase = TurnPhase.DECIDE
+    }
+
+    /** 食べたエサを捨て札へ送る。 */
+    fun discardFood(food: FoodCard) {
+        foodDiscard.add(food.copy(isFaceDown = true))
     }
 
     /**
@@ -260,10 +270,9 @@ class GameEngine(
         if (victim.storedFoods.isEmpty()) return null
         if (thief.isCarrying) return null
 
-        val stolenFood = victim.storedFoods.last()
-        victim.removeStoredFood(stolenFood)
-        thief.carryFood(stolenFood)
-        return stolenFood
+        return victim.storedFoods.last()
+            .also { stolenFood -> victim.removeStoredFood(stolenFood) }
+            .copy(isFaceDown = false)
     }
 
     /**
