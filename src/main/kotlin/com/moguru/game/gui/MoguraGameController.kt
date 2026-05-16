@@ -92,6 +92,13 @@ class MoguraGameController(
             .map { it.first }
     }
 
+    fun canAdvanceFromDigWithoutTargets(): Boolean {
+        val current = engine ?: return false
+        return current.currentPhase == TurnPhase.DIG &&
+            pendingDigPlacement == null &&
+            digTargets().isEmpty()
+    }
+
     fun moveTargets(): Set<Position> {
         val current = engine ?: return emptySet()
         val player = currentPlayer ?: return emptySet()
@@ -279,6 +286,11 @@ class MoguraGameController(
             return GameActionResult(false, "ゲームはすでに終了しています。")
         }
         if (current.currentPhase == TurnPhase.DIG) {
+            if (canAdvanceFromDigWithoutTargets()) {
+                current.advancePhase()
+                addLog("掘れる裏向きタイルがないため、移動へ進みました。")
+                return GameActionResult(true, "移動へ進みました。")
+            }
             return GameActionResult(false, "掘るフェーズはスキップできません。")
         }
         if (current.currentPhase == TurnPhase.DECIDE && pendingFoodDecision != null) {
