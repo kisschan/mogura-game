@@ -116,8 +116,43 @@ class MoguraGameControllerTest {
 
         val result = controller.skipPhase()
 
+        assertFalse(controller.canAdvanceFromDigWithoutTargets())
         assertFalse(result.success)
         assertEquals(TurnPhase.DIG, engine.currentPhase)
+    }
+
+    @Test
+    fun `dig phase advances to move when no face down adjacent tile exists`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        controller.digTargets().forEach { position ->
+            val tile = engine.boardState.getTile(position)!!
+            engine.boardState.placeTile(position, tile.flip())
+        }
+
+        val result = controller.skipPhase()
+
+        assertTrue(controller.digTargets().isEmpty())
+        assertTrue(result.success)
+        assertEquals(TurnPhase.MOVE, engine.currentPhase)
+    }
+
+    @Test
+    fun `pending revealed dig tile still cannot be skipped`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val target = controller.digTargets().first()
+
+        val revealResult = controller.revealDigTile(target)
+        val skipResult = controller.skipPhase()
+
+        assertTrue(revealResult.success)
+        assertFalse(controller.canAdvanceFromDigWithoutTargets())
+        assertFalse(skipResult.success)
+        assertEquals(TurnPhase.DIG, engine.currentPhase)
+        assertEquals(target, controller.pendingDigPlacement?.position)
     }
 
     @Test

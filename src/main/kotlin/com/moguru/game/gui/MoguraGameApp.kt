@@ -275,6 +275,7 @@ class MoguraGameFrame(
         val isPlaying = current?.gameState == GameState.PLAYING
         val hasPendingDecision = current?.currentPhase == TurnPhase.DECIDE && controller.pendingFoodDecision != null
         val hasPendingDig = current?.currentPhase == TurnPhase.DIG && controller.pendingDigPlacement != null
+        val canAdvanceFromDig = controller.canAdvanceFromDigWithoutTargets()
 
         currentPlayerLabel.text = "プレイヤー: ${player?.name ?: "-"}"
         phaseLabel.text = "フェーズ: ${current?.currentPhase?.displayName() ?: "-"}"
@@ -282,13 +283,22 @@ class MoguraGameFrame(
             "${food.type.displayName()} をタベるかレンコウしてください。"
         } ?: controller.pendingDigPlacement?.let {
             "タイルを見て回転を選び、同じマスをもう一度クリックしてください。"
-        } ?: phaseHelp(current?.currentPhase)
+        } ?: if (canAdvanceFromDig) {
+            "掘れる裏向きタイルがありません。移動へ進んでください。"
+        } else {
+            phaseHelp(current?.currentPhase)
+        }
 
         captureButton.isEnabled = isPlaying && controller.canCapture()
         eatButton.isEnabled = isPlaying && hasPendingDecision
         carryButton.isEnabled = isPlaying && hasPendingDecision
-        skipButton.isEnabled = isPlaying && current?.currentPhase != TurnPhase.DIG && !hasPendingDecision
-        skipButton.text = if (current?.currentPhase == TurnPhase.END) "ターン終了" else "スキップ"
+        skipButton.isEnabled = isPlaying && !hasPendingDecision &&
+            (current?.currentPhase != TurnPhase.DIG || canAdvanceFromDig)
+        skipButton.text = when {
+            current?.currentPhase == TurnPhase.END -> "ターン終了"
+            canAdvanceFromDig -> "移動へ進む"
+            else -> "スキップ"
+        }
         endTurnButton.isEnabled = isPlaying && current?.currentPhase != TurnPhase.DIG && !hasPendingDecision
         rotationButtons.values.forEach { it.isEnabled = hasPendingDig }
 
@@ -383,6 +393,7 @@ class BoardPanel(
             }
         }
 
+        drawDigDirectionArrows(g, highlights)
         drawPlayers(g)
     }
 
@@ -486,6 +497,74 @@ class BoardPanel(
         g.color = color
         g.stroke = BasicStroke(4f)
         g.drawRect(rect.x + 4, rect.y + 4, rect.width - 8, rect.height - 8)
+    }
+
+    private fun drawDigDirectionArrows(g: Graphics2D, highlights: Set<Position>) {
+        val current = controller.engine ?: return
+        if (current.currentPhase != TurnPhase.DIG || controller.pendingDigPlacement != null) return
+        val player = controller.currentPlayer ?: return
+        if (highlights.isEmpty()) return
+
+        val fromRect = cellRect(player.position) ?: return
+        highlights.forEach { target ->
+            val toRect = cellRect(target) ?: return@forEach
+            drawArrow(g, fromRect, toRect)
+        }
+    }
+
+    private fun drawArrow(g: Graphics2D, fromRect: Rectangle, toRect: Rectangle) {
+        val startX = fromRect.centerX.toInt()
+        val startY = fromRect.centerY.toInt()
+        val endX = toRect.centerX.toInt()
+        val endY = toRect.centerY.toInt()
+        val dx = endX - startX
+        val dy = endY - startY
+        val length = kotlin.math.hypot(dx.toDouble(), dy.toDouble())
+        if (length == 0.0) return
+
+        val unitX = dx / length
+        val unitY = dy / length
+        val inset = min(fromRect.width, fromRect.height) * 0.28
+        val arrowStartX = (startX + unitX * inset).roundToInt()
+        val arrowStartY = (startY + unitY * inset).roundToInt()
+        val arrowEndX = (endX - unitX * inset).roundToInt()
+        val arrowEndY = (endY - unitY * inset).roundToInt()
+
+        drawArrowLine(g, arrowStartX, arrowStartY, arrowEndX, arrowEndY, Color(0x3A2A12), 9f, 24.0)
+        drawArrowLine(g, arrowStartX, arrowStartY, arrowEndX, arrowEndY, Color(0xFFD54F), 5f, 18.0)
+    }
+
+    private fun drawArrowLine(
+        g: Graphics2D,
+        startX: Int,
+        startY: Int,
+        endX: Int,
+        endY: Int,
+        color: Color,
+        strokeWidth: Float,
+        headLength: Double,
+    ) {
+        val oldStroke = g.stroke
+        g.color = color
+        g.stroke = BasicStroke(strokeWidth, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
+        g.drawLine(startX, startY, endX, endY)
+
+        val angle = kotlin.math.atan2((endY - startY).toDouble(), (endX - startX).toDouble())
+        val baseX = endX - headLength * kotlin.math.cos(angle)
+        val baseY = endY - headLength * kotlin.math.sin(angle)
+        val headWidth = headLength * 0.7
+        val leftX = (baseX + headWidth * kotlin.math.cos(angle + Math.PI / 2.0)).roundToInt()
+        val leftY = (baseY + headWidth * kotlin.math.sin(angle + Math.PI / 2.0)).roundToInt()
+        val rightX = (baseX + headWidth * kotlin.math.cos(angle - Math.PI / 2.0)).roundToInt()
+        val rightY = (baseY + headWidth * kotlin.math.sin(angle - Math.PI / 2.0)).roundToInt()
+        g.fillPolygon(
+            java.awt.Polygon(
+                intArrayOf(endX, leftX, rightX),
+                intArrayOf(endY, leftY, rightY),
+                3,
+            ),
+        )
+        g.stroke = oldStroke
     }
 
     private fun imagePoint(point: Point): Point? {
