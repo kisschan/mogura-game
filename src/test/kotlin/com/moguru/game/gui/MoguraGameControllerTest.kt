@@ -7,6 +7,7 @@ import com.moguru.game.model.FoodCard
 import com.moguru.game.model.FoodType
 import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
+import com.moguru.game.model.TileShape
 import com.moguru.game.util.FixedDiceRoller
 import com.moguru.game.util.FixedShuffler
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -204,6 +205,52 @@ class MoguraGameControllerTest {
         assertFalse(tile.isFaceDown)
         assertTrue(Direction.LEFT in tile.openSides)
         assertTrue(Direction.RIGHT in tile.openSides)
+    }
+
+    @Test
+    fun `dig defaults to revealed tile and discards drawn tile`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val target = Position(1, 1)
+
+        val revealResult = controller.revealDigTile(target)
+        assertEquals(DigTileChoice.REVEALED, controller.pendingDigTileChoice)
+        val confirmResult = controller.confirmPendingDig()
+
+        assertTrue(revealResult.success)
+        assertTrue(confirmResult.success)
+        assertEquals(TileShape.STRAIGHT, engine.boardState.getTile(target)!!.shape)
+        assertEquals(listOf(TileShape.L_SHAPE), engine.tilePlacementEngine.discardPile.map { it.shape })
+    }
+
+    @Test
+    fun `drawn tile can be selected before confirming dig placement`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val target = Position(1, 1)
+
+        val revealResult = controller.revealDigTile(target)
+        assertEquals(TileShape.L_SHAPE, controller.pendingDigPlacement?.drawnTile?.shape)
+        val selectResult = controller.selectPendingDigTile(DigTileChoice.DRAWN)
+        assertEquals(DigTileChoice.DRAWN, controller.pendingDigTileChoice)
+        assertEquals(TileShape.L_SHAPE, engine.boardState.getTile(target)!!.shape)
+        val rotateResult = controller.setPendingDigRotation(Rotation.DEG_90)
+        val confirmResult = controller.confirmPendingDig()
+
+        assertTrue(revealResult.success)
+        assertTrue(selectResult.success)
+        assertTrue(rotateResult.success)
+        assertTrue(confirmResult.success)
+        assertEquals(TurnPhase.MOVE, engine.currentPhase)
+        assertNull(controller.pendingDigPlacement)
+        val placedTile = engine.boardState.getTile(target)!!
+        assertEquals(TileShape.L_SHAPE, placedTile.shape)
+        assertFalse(placedTile.isFaceDown)
+        assertTrue(Direction.RIGHT in placedTile.openSides)
+        assertTrue(Direction.BOTTOM in placedTile.openSides)
+        assertEquals(listOf(TileShape.STRAIGHT), engine.tilePlacementEngine.discardPile.map { it.shape })
     }
 
     @Test

@@ -71,6 +71,9 @@ class MoguraGameFrame(
     private val skipButton = JButton("スキップ")
     private val endTurnButton = JButton("ターン終了")
     private val newGameButton = JButton("新しいゲーム")
+    private val digTileChoiceButtons = DigTileChoice.entries.associateWith { choice ->
+        JToggleButton(choice.label())
+    }
     private val rotationButtons = Rotation.entries.associateWith { rotation ->
         JToggleButton(rotation.label())
     }
@@ -137,6 +140,25 @@ class MoguraGameFrame(
         diceLabel.background = Color.WHITE
         diceLabel.isOpaque = true
 
+        val digTileChoicePanel = JPanel()
+        digTileChoicePanel.layout = GridLayout(0, 1, 4, 4)
+        digTileChoicePanel.background = Color(0xF4F0E8)
+        digTileChoicePanel.alignmentX = Component.LEFT_ALIGNMENT
+
+        val digTileChoiceGroup = ButtonGroup()
+        digTileChoiceButtons.values.forEach { button ->
+            button.font = button.font.deriveFont(12f)
+            digTileChoiceGroup.add(button)
+            digTileChoicePanel.add(button)
+        }
+        digTileChoiceButtons.forEach { (choice, button) ->
+            button.addActionListener {
+                if (controller.pendingDigPlacement != null) {
+                    runAction { controller.selectPendingDigTile(choice) }
+                }
+            }
+        }
+
         val rotationPanel = JPanel()
         rotationPanel.layout = BoxLayout(rotationPanel, BoxLayout.X_AXIS)
         rotationPanel.background = Color(0xF4F0E8)
@@ -181,6 +203,9 @@ class MoguraGameFrame(
         side.add(phaseLabel)
         side.add(Box.createVerticalStrut(4))
         side.add(statusLabel)
+        side.add(Box.createVerticalStrut(12))
+        side.add(sectionLabel("配置するタイル"))
+        side.add(digTileChoicePanel)
         side.add(Box.createVerticalStrut(12))
         side.add(sectionLabel("掘るタイルの回転"))
         side.add(rotationPanel)
@@ -281,8 +306,10 @@ class MoguraGameFrame(
         phaseLabel.text = "フェーズ: ${current?.currentPhase?.displayName() ?: "-"}"
         statusLabel.text = controller.pendingFoodDecision?.let { food ->
             "${food.type.displayName()} をタベるかレンコウしてください。"
-        } ?: controller.pendingDigPlacement?.let {
-            "タイルを見て回転を選び、同じマスをもう一度クリックしてください。"
+        } ?: controller.pendingDigPlacement?.let { pending ->
+            val selected = controller.pendingDigTileChoice?.label() ?: DigTileChoice.REVEALED.label()
+            val drawn = pending.drawnTile?.shape?.displayName() ?: "なし"
+            "${selected}を選択中。山札: ${drawn}。回転を選び、同じマスをもう一度クリックしてください。"
         } ?: if (canAdvanceFromDig) {
             "掘れる裏向きタイルがありません。移動へ進んでください。"
         } else {
@@ -300,6 +327,11 @@ class MoguraGameFrame(
             else -> "スキップ"
         }
         endTurnButton.isEnabled = isPlaying && current?.currentPhase != TurnPhase.DIG && !hasPendingDecision
+        digTileChoiceButtons.forEach { (choice, button) ->
+            button.text = digTileChoiceText(choice, controller.pendingDigPlacement)
+            button.isEnabled = hasPendingDig && (choice != DigTileChoice.DRAWN || controller.pendingDigPlacement?.drawnTile != null)
+            button.isSelected = controller.pendingDigTileChoice == choice
+        }
         rotationButtons.values.forEach { it.isEnabled = hasPendingDig }
 
         playersArea.text = current?.players?.joinToString("\n") { summaryFor(it) }.orEmpty()
@@ -328,6 +360,14 @@ class MoguraGameFrame(
         val eliminated = if (player.isEliminated) " 脱落" else ""
         return "${player.name.padEnd(5)} 体力:${player.health.toString().padStart(2)} " +
             "点:${player.score.toString().padStart(2)} 所持:$carry$eliminated"
+    }
+
+    private fun digTileChoiceText(choice: DigTileChoice, pending: PendingDigPlacement?): String {
+        val shape = when (choice) {
+            DigTileChoice.REVEALED -> pending?.revealedTile?.shape?.displayName()
+            DigTileChoice.DRAWN -> pending?.drawnTile?.shape?.displayName()
+        }
+        return "${choice.label()}: ${shape ?: "-"}"
     }
 }
 

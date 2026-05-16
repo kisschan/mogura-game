@@ -22,6 +22,11 @@ data class GameActionResult(
     val message: String,
 )
 
+enum class DigTileChoice {
+    REVEALED,
+    DRAWN,
+}
+
 data class PendingDigPlacement(
     val position: Position,
     val revealedTile: HoleTile,
@@ -50,6 +55,9 @@ class MoguraGameController(
     var pendingDigRotation: Rotation? = null
         private set
 
+    var pendingDigTileChoice: DigTileChoice? = null
+        private set
+
     private val messages = ArrayDeque<String>()
     val logs: List<String> get() = messages.toList()
 
@@ -76,6 +84,7 @@ class MoguraGameController(
         pendingFoodDecision = null
         pendingDigPlacement = null
         pendingDigRotation = null
+        pendingDigTileChoice = null
         messages.clear()
         addLog("${playerCount}人プレイで開始しました。")
         addLog("${currentPlayer?.name} の番です。隣の裏向きタイルを掘ってください。")
@@ -153,17 +162,34 @@ class MoguraGameController(
             ?: return GameActionResult(false, "その場所に置けるタイルがありません。")
 
         pendingDigPlacement = PendingDigPlacement(position, revealed, drawn)
+        pendingDigTileChoice = DigTileChoice.REVEALED
         setPendingDigRotation(Rotation.DEG_0)
-        addLog("${currentPlayer?.name} が ${position.label()} の ${revealed.shape.displayName()} をめくりました。回転を選んで同じマスをクリックしてください。")
+        val drawnLabel = drawn?.shape?.displayName() ?: "なし"
+        addLog("${currentPlayer?.name} が ${position.label()} の ${revealed.shape.displayName()} をめくりました。山札: $drawnLabel。配置するタイルと回転を選んでください。")
         return GameActionResult(true, "タイルをめくりました。")
+    }
+
+    fun selectPendingDigTile(choice: DigTileChoice): GameActionResult {
+        val pending = pendingDigPlacement
+            ?: return GameActionResult(false, "選択するタイルがありません。")
+        if (choice == DigTileChoice.DRAWN && pending.drawnTile == null) {
+            return GameActionResult(false, "山札に選択できるタイルがありません。")
+        }
+
+        pendingDigTileChoice = choice
+        val rotationResult = setPendingDigRotation(pendingDigRotation ?: Rotation.DEG_0)
+        if (!rotationResult.success) return rotationResult
+        return GameActionResult(true, "${choice.label()}を選びました。")
     }
 
     fun setPendingDigRotation(rotation: Rotation): GameActionResult {
         val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
         val pending = pendingDigPlacement
             ?: return GameActionResult(false, "回転するタイルがありません。")
+        val selectedTile = selectedPendingDigTile(pending)
+            ?: return GameActionResult(false, "配置するタイルを選んでください。")
 
-        val previewTile = pending.revealedTile.rotate(rotation).flip()
+        val previewTile = selectedTile.rotate(rotation).flip()
         current.boardState.placeTile(pending.position, previewTile)
         pendingDigRotation = rotation
         return GameActionResult(true, "タイルの向きを ${rotation.label()} にしました。")
@@ -175,13 +201,19 @@ class MoguraGameController(
             ?: return GameActionResult(false, "配置するタイルがありません。")
 
         val rotation = pendingDigRotation ?: Rotation.DEG_0
-        setPendingDigRotation(rotation)
+        val choice = pendingDigTileChoice ?: DigTileChoice.REVEALED
+        val rotationResult = setPendingDigRotation(rotation)
+        if (!rotationResult.success) return rotationResult
 
-        // TODO: 【要確認】13-2 山札から引いたタイルとの選択は未実装。現状はめくったタイルを使う。
-        pending.drawnTile?.let(current.tilePlacementEngine::discard)
+        when (choice) {
+            DigTileChoice.REVEALED -> pending.drawnTile?.let(current.tilePlacementEngine::discard)
+            DigTileChoice.DRAWN -> current.tilePlacementEngine.discard(pending.revealedTile)
+        }
         pendingDigPlacement = null
         pendingDigRotation = null
-        addLog("${currentPlayer?.name} が ${pending.position.label()} に ${pending.revealedTile.shape.displayName()} を置きました（${rotation.label()}）。")
+        pendingDigTileChoice = null
+        val placedTile = current.boardState.getTile(pending.position)
+        addLog("${currentPlayer?.name} が ${pending.position.label()} に ${choice.label()}の ${placedTile?.shape?.displayName() ?: "タイル"} を置きました（${rotation.label()}）。")
         current.advancePhase()
         return GameActionResult(true, "タイルを置きました。")
     }
@@ -406,6 +438,12 @@ class MoguraGameController(
         }
     }
 
+    private fun selectedPendingDigTile(pending: PendingDigPlacement): HoleTile? =
+        when (pendingDigTileChoice ?: DigTileChoice.REVEALED) {
+            DigTileChoice.REVEALED -> pending.revealedTile
+            DigTileChoice.DRAWN -> pending.drawnTile
+        }
+
     companion object {
         private const val MAX_LOG_LINES = 80
 
@@ -428,6 +466,11 @@ fun Rotation.label(): String = when (this) {
     Rotation.DEG_90 -> "90度"
     Rotation.DEG_180 -> "180度"
     Rotation.DEG_270 -> "270度"
+}
+
+fun DigTileChoice.label(): String = when (this) {
+    DigTileChoice.REVEALED -> "めくったタイル"
+    DigTileChoice.DRAWN -> "山札タイル"
 }
 
 fun FoodCard.shortLabel(): String = type.displayName()
