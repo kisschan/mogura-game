@@ -45,6 +45,7 @@ import javax.swing.SwingConstants
 import javax.swing.SwingUtilities
 import javax.swing.Timer
 import kotlin.math.floor
+import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -59,11 +60,9 @@ class MoguraGameFrame(
 ) : JFrame("モグラゲーム") {
     private val assets = GuiAssets()
     private val boardPanel = BoardPanel(controller, assets, ::handleBoardClick)
-    private val currentPlayerLabel = JLabel()
-    private val phaseLabel = JLabel()
+    private val currentPlayerPanel = CurrentPlayerPanel(assets)
     private val statusLabel = JLabel()
     private val diceLabel = JLabel("ダイス", SwingConstants.CENTER)
-    private val playersArea = JTextArea()
     private val logArea = JTextArea()
     private val captureButton = JButton("捕獲")
     private val eatButton = JButton("タベる")
@@ -119,14 +118,7 @@ class MoguraGameFrame(
         header.font = header.font.deriveFont(Font.BOLD, 24f)
         header.alignmentX = Component.LEFT_ALIGNMENT
 
-        currentPlayerLabel.font = currentPlayerLabel.font.deriveFont(Font.BOLD, 18f)
-        phaseLabel.font = phaseLabel.font.deriveFont(Font.BOLD, 16f)
         statusLabel.font = statusLabel.font.deriveFont(13f)
-
-        playersArea.isEditable = false
-        playersArea.font = Font(Font.MONOSPACED, Font.PLAIN, 13)
-        playersArea.rows = 8
-        playersArea.lineWrap = false
 
         logArea.isEditable = false
         logArea.font = Font(Font.MONOSPACED, Font.PLAIN, 12)
@@ -189,8 +181,7 @@ class MoguraGameFrame(
         actionPanel.add(endTurnButton)
 
         newGameButton.alignmentX = Component.LEFT_ALIGNMENT
-        currentPlayerLabel.alignmentX = Component.LEFT_ALIGNMENT
-        phaseLabel.alignmentX = Component.LEFT_ALIGNMENT
+        currentPlayerPanel.alignmentX = Component.LEFT_ALIGNMENT
         statusLabel.alignmentX = Component.LEFT_ALIGNMENT
         diceLabel.alignmentX = Component.LEFT_ALIGNMENT
 
@@ -198,10 +189,8 @@ class MoguraGameFrame(
         side.add(Box.createVerticalStrut(10))
         side.add(newGameButton)
         side.add(Box.createVerticalStrut(16))
-        side.add(currentPlayerLabel)
-        side.add(Box.createVerticalStrut(4))
-        side.add(phaseLabel)
-        side.add(Box.createVerticalStrut(4))
+        side.add(currentPlayerPanel)
+        side.add(Box.createVerticalStrut(8))
         side.add(statusLabel)
         side.add(Box.createVerticalStrut(12))
         side.add(sectionLabel("配置するタイル"))
@@ -216,11 +205,8 @@ class MoguraGameFrame(
         side.add(sectionLabel("直近のダイス"))
         side.add(diceLabel)
         side.add(Box.createVerticalStrut(12))
-        side.add(sectionLabel("プレイヤー"))
-        side.add(wrapScroll(playersArea, 150))
-        side.add(Box.createVerticalStrut(12))
         side.add(sectionLabel("ログ"))
-        side.add(wrapScroll(logArea, 230))
+        side.add(wrapScroll(logArea, 320))
 
         return side
     }
@@ -232,8 +218,8 @@ class MoguraGameFrame(
         return label
     }
 
-    private fun wrapScroll(area: JTextArea, height: Int): JScrollPane {
-        val scroll = JScrollPane(area)
+    private fun wrapScroll(component: Component, height: Int): JScrollPane {
+        val scroll = JScrollPane(component)
         scroll.alignmentX = Component.LEFT_ALIGNMENT
         scroll.preferredSize = Dimension(320, height)
         scroll.maximumSize = Dimension(Short.MAX_VALUE.toInt(), height)
@@ -302,8 +288,7 @@ class MoguraGameFrame(
         val hasPendingDig = current?.currentPhase == TurnPhase.DIG && controller.pendingDigPlacement != null
         val canAdvanceFromDig = controller.canAdvanceFromDigWithoutTargets()
 
-        currentPlayerLabel.text = "プレイヤー: ${player?.name ?: "-"}"
-        phaseLabel.text = "フェーズ: ${current?.currentPhase?.displayName() ?: "-"}"
+        currentPlayerPanel.render(currentPlayerDisplay(player, current?.currentPhase))
         statusLabel.text = controller.pendingFoodDecision?.let { food ->
             "${food.type.displayName()} をタベるかレンコウしてください。"
         } ?: controller.pendingDigPlacement?.let { pending ->
@@ -332,9 +317,8 @@ class MoguraGameFrame(
             button.isEnabled = hasPendingDig && (choice != DigTileChoice.DRAWN || controller.pendingDigPlacement?.drawnTile != null)
             button.isSelected = controller.pendingDigTileChoice == choice
         }
-        rotationButtons.values.forEach { it.isEnabled = hasPendingDig }
+        syncRotationButtons(hasPendingDig)
 
-        playersArea.text = current?.players?.joinToString("\n") { summaryFor(it) }.orEmpty()
         logArea.text = controller.logs.joinToString("\n")
         logArea.caretPosition = logArea.document.length
 
@@ -346,6 +330,14 @@ class MoguraGameFrame(
         boardPanel.repaint()
     }
 
+    private fun syncRotationButtons(hasPendingDig: Boolean) {
+        val selectedRotation = rotationSelectionForPendingDig(hasPendingDig, controller.pendingDigRotation)
+        rotationButtons.forEach { (rotation, button) ->
+            button.isEnabled = hasPendingDig
+            button.isSelected = rotation == selectedRotation
+        }
+    }
+
     private fun phaseHelp(phase: TurnPhase?): String = when (phase) {
         TurnPhase.DIG -> "ハイライトされた裏向きタイルをクリックしてください。"
         TurnPhase.MOVE -> "ハイライトされた移動可能マスをクリックしてください。"
@@ -353,13 +345,6 @@ class MoguraGameFrame(
         TurnPhase.DECIDE -> "タベるかレンコウを選んでください。"
         TurnPhase.END -> "ターンを終了してください。"
         null -> "新しいゲームを開始してください。"
-    }
-
-    private fun summaryFor(player: Player): String {
-        val carry = player.carriedFood?.shortLabel() ?: "-"
-        val eliminated = if (player.isEliminated) " 脱落" else ""
-        return "${player.name.padEnd(5)} 体力:${player.health.toString().padStart(2)} " +
-            "点:${player.score.toString().padStart(2)} 所持:$carry$eliminated"
     }
 
     private fun digTileChoiceText(choice: DigTileChoice, pending: PendingDigPlacement?): String {
@@ -371,11 +356,124 @@ class MoguraGameFrame(
     }
 }
 
+private class CurrentPlayerPanel(
+    private val assets: GuiAssets,
+) : JPanel(BorderLayout(10, 0)) {
+    private val portrait = CurrentPlayerPortrait()
+    private val titleLabel = JLabel("-")
+    private val phaseLabel = JLabel("フェーズ: -")
+    private val statsLabel = JLabel("体力: -  点: -")
+    private val carriedFoodLabel = JLabel("所持: -")
+
+    init {
+        preferredSize = Dimension(320, CURRENT_PLAYER_PANEL_HEIGHT)
+        maximumSize = Dimension(Short.MAX_VALUE.toInt(), CURRENT_PLAYER_PANEL_HEIGHT)
+        background = Color(0xFFF7D6)
+        border = BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(Color(0xF2C94C), 2),
+            BorderFactory.createEmptyBorder(8, 8, 8, 8),
+        )
+        isOpaque = true
+
+        titleLabel.font = titleLabel.font.deriveFont(Font.BOLD, 18f)
+        phaseLabel.font = phaseLabel.font.deriveFont(Font.BOLD, 14f)
+        statsLabel.font = statsLabel.font.deriveFont(13f)
+        carriedFoodLabel.font = carriedFoodLabel.font.deriveFont(13f)
+
+        val textPanel = JPanel()
+        textPanel.layout = BoxLayout(textPanel, BoxLayout.Y_AXIS)
+        textPanel.background = background
+        textPanel.add(titleLabel)
+        textPanel.add(Box.createVerticalStrut(4))
+        textPanel.add(phaseLabel)
+        textPanel.add(Box.createVerticalStrut(2))
+        textPanel.add(statsLabel)
+        textPanel.add(Box.createVerticalStrut(2))
+        textPanel.add(carriedFoodLabel)
+
+        add(portrait, BorderLayout.WEST)
+        add(textPanel, BorderLayout.CENTER)
+    }
+
+    fun render(display: CurrentPlayerDisplay) {
+        titleLabel.text = display.titleText
+        phaseLabel.text = display.phaseText
+        statsLabel.text = "${display.healthText}  ${display.scoreText}"
+        carriedFoodLabel.text = display.carriedFoodText
+        portrait.render(
+            image = display.playerId?.let(assets::playerImage),
+            fallbackText = display.titleText.take(1).takeUnless { it == "-" } ?: "-",
+            hasPlayer = display.playerId != null,
+        )
+    }
+}
+
+private class CurrentPlayerPortrait : JPanel() {
+    private var image: BufferedImage? = null
+    private var fallbackText: String = "-"
+    private var hasPlayer: Boolean = false
+
+    init {
+        val size = CURRENT_PLAYER_PORTRAIT_PANEL_SIZE
+        preferredSize = Dimension(size, size)
+        minimumSize = Dimension(size, size)
+        maximumSize = Dimension(size, size)
+        isOpaque = false
+    }
+
+    fun render(image: BufferedImage?, fallbackText: String, hasPlayer: Boolean) {
+        this.image = image
+        this.fallbackText = fallbackText
+        this.hasPlayer = hasPlayer
+        repaint()
+    }
+
+    override fun paintComponent(graphics: Graphics) {
+        super.paintComponent(graphics)
+        val g = graphics as Graphics2D
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+
+        val size = currentPlayerPortraitDrawSize(min(width, height))
+        val rect = Rectangle((width - size) / 2, (height - size) / 2, size, size)
+        val playerImage = image
+        if (playerImage != null) {
+            val source = visibleImageBounds(playerImage)
+            g.drawImage(
+                playerImage,
+                rect.x,
+                rect.y,
+                rect.x + rect.width,
+                rect.y + rect.height,
+                source.x,
+                source.y,
+                source.x + source.width,
+                source.y + source.height,
+                null,
+            )
+        } else {
+            g.color = Color(0xF1E1B8)
+            g.fillOval(rect.x, rect.y, rect.width, rect.height)
+            g.color = Color(0x4D3926)
+            g.font = g.font.deriveFont(Font.BOLD, 22f)
+            val textWidth = g.fontMetrics.stringWidth(fallbackText)
+            val textY = rect.y + (rect.height - g.fontMetrics.height) / 2 + g.fontMetrics.ascent
+            g.drawString(fallbackText, rect.x + (rect.width - textWidth) / 2, textY)
+        }
+
+        g.color = if (hasPlayer) Color(0xFFE66D) else Color(0x9A8C7A)
+        g.stroke = BasicStroke(if (hasPlayer) 4f else 2f)
+        g.drawOval(rect.x, rect.y, rect.width, rect.height)
+    }
+}
+
 class BoardPanel(
     private val controller: MoguraGameController,
     private val assets: GuiAssets,
     private val onCellClicked: (Position) -> Unit,
 ) : JPanel() {
+    private var hoveredFoodPosition: Position? = null
+
     init {
         preferredSize = Dimension(720, 900)
         minimumSize = Dimension(560, 700)
@@ -386,6 +484,16 @@ class BoardPanel(
                 imagePoint(event.point)?.let { point ->
                     positionAt(point)?.let(onCellClicked)
                 }
+            }
+        })
+        addMouseMotionListener(object : MouseAdapter() {
+            override fun mouseMoved(event: MouseEvent) {
+                updateHoveredFoodPosition(event.point)
+            }
+        })
+        addMouseListener(object : MouseAdapter() {
+            override fun mouseExited(event: MouseEvent) {
+                updateHoveredFoodPosition(null)
             }
         })
     }
@@ -405,6 +513,7 @@ class BoardPanel(
         }
 
         val current = controller.engine ?: return
+        drawBoardHungerMeters(g, current.players, controller.currentPlayer)
         val highlights = highlights()
 
         for (row in 0 until Board.ROWS) {
@@ -424,7 +533,13 @@ class BoardPanel(
                     } else {
                         assets.foodImage(food.type)
                     }
-                    drawSmallImage(g, image, cellRect, Anchor.BOTTOM_RIGHT)
+                    drawSmallImage(
+                        g = g,
+                        image = image,
+                        rect = cellRect,
+                        anchor = Anchor.BOTTOM_RIGHT,
+                        scale = foodCardScaleForPhase(current.currentPhase),
+                    )
                 }
 
                 if (position in highlights) {
@@ -435,6 +550,57 @@ class BoardPanel(
 
         drawDigDirectionArrows(g, highlights)
         drawPlayers(g)
+        drawHoveredFoodPreview(g)
+    }
+
+    private fun drawBoardHungerMeters(g: Graphics2D, players: List<Player>, currentPlayer: Player?) {
+        if (players.isEmpty()) return
+        val meterRect = boardHungerMeterRect(imageRect())
+        val meterImage = assets.hungerMeterImage()
+        if (meterImage != null) {
+            g.drawImage(meterImage, meterRect.x, meterRect.y, meterRect.width, meterRect.height, null)
+        } else {
+            drawPlaceholder(g, meterRect, "腹減り", Color(0xF3D48C))
+        }
+
+        val orderedPlayers = if (currentPlayer != null && currentPlayer in players) {
+            players.filter { it != currentPlayer } + currentPlayer
+        } else {
+            players
+        }
+        val markerSize = (meterRect.height * HUNGER_MARKER_SCALE).roundToInt()
+        val centers = hungerMeterMarkerCenters(
+            healths = orderedPlayers.map { it.health },
+            maxHealth = Player.MAX_HEALTH,
+            rect = meterRect,
+            markerSize = markerSize,
+        )
+
+        orderedPlayers.zip(centers).forEach { (player, center) ->
+            drawHungerMarker(g, player, center, markerSize, player == currentPlayer)
+        }
+    }
+
+    private fun drawHungerMarker(
+        g: Graphics2D,
+        player: Player,
+        center: Point,
+        markerSize: Int,
+        isCurrent: Boolean,
+    ) {
+        val markerRect = Rectangle(center.x - markerSize / 2, center.y - markerSize / 2, markerSize, markerSize)
+        val oldStroke = g.stroke
+        val playerImage = assets.playerImage(player.id)
+        if (playerImage != null) {
+            g.drawImage(playerImage, markerRect.x, markerRect.y, markerRect.width, markerRect.height, null)
+        } else {
+            drawPlaceholder(g, markerRect, player.name.take(1), playerColor(player.id))
+        }
+
+        g.color = if (isCurrent) Color(0xFFE66D) else playerColor(player.id)
+        g.stroke = BasicStroke(if (isCurrent) 4f else 2.5f)
+        g.drawOval(markerRect.x, markerRect.y, markerRect.width, markerRect.height)
+        g.stroke = oldStroke
     }
 
     private fun highlights(): Set<Position> {
@@ -486,9 +652,12 @@ class BoardPanel(
             .forEach { (position, players) ->
                 val rect = cellRect(position) ?: return@forEach
                 players.forEachIndexed { index, player ->
-                    val size = (min(rect.width, rect.height) * 0.42).roundToInt()
-                    val x = rect.x + 8 + index * (size / 3)
-                    val y = rect.y + 8 + index * (size / 3)
+                    val size = (min(rect.width, rect.height) * PLAYER_TOKEN_SCALE).roundToInt()
+                    val offset = index * max(1, size / 10)
+                    val x = (rect.x + PLAYER_TOKEN_PADDING + offset)
+                        .coerceAtMost(rect.x + rect.width - size - PLAYER_TOKEN_PADDING)
+                    val y = (rect.y + PLAYER_TOKEN_PADDING + offset)
+                        .coerceAtMost(rect.y + rect.height - size - PLAYER_TOKEN_PADDING)
                     val tokenRect = Rectangle(x, y, size, size)
                     val image = assets.playerImage(player.id)
                     if (image != null) {
@@ -506,20 +675,41 @@ class BoardPanel(
             }
     }
 
-    private fun drawSmallImage(g: Graphics2D, image: BufferedImage?, rect: Rectangle, anchor: Anchor) {
-        val size = (min(rect.width, rect.height) * 0.44).roundToInt()
-        val padding = 8
-        val x = when (anchor) {
-            Anchor.BOTTOM_RIGHT -> rect.x + rect.width - size - padding
+    private fun drawSmallImage(
+        g: Graphics2D,
+        image: BufferedImage?,
+        rect: Rectangle,
+        anchor: Anchor,
+        scale: Double,
+    ) {
+        val smallRect = when (anchor) {
+            Anchor.BOTTOM_RIGHT -> foodCardRect(rect, scale)
         }
-        val y = when (anchor) {
-            Anchor.BOTTOM_RIGHT -> rect.y + rect.height - size - padding
-        }
-        val smallRect = Rectangle(x, y, size, size)
         if (image != null) {
             g.drawImage(image, smallRect.x, smallRect.y, smallRect.width, smallRect.height, null)
         } else {
             drawPlaceholder(g, smallRect, "エサ", Color(0x8FBC8F))
+        }
+    }
+
+    private fun drawHoveredFoodPreview(g: Graphics2D) {
+        val current = controller.engine ?: return
+        val position = hoveredFoodPosition ?: return
+        val food = current.foodPositions[position] ?: return
+        val cellRect = cellRect(position) ?: return
+        val image = if (food.isFaceDown) {
+            assets.load("assets/images/foods/food_card_back.png")
+        } else {
+            assets.foodImage(food.type)
+        }
+        val previewRect = foodPreviewRect(cellRect, imageRect())
+        g.color = Color(0x2F251B)
+        g.stroke = BasicStroke(3f)
+        g.drawRoundRect(previewRect.x - 3, previewRect.y - 3, previewRect.width + 6, previewRect.height + 6, 8, 8)
+        if (image != null) {
+            g.drawImage(image, previewRect.x, previewRect.y, previewRect.width, previewRect.height, null)
+        } else {
+            drawPlaceholder(g, previewRect, "エサ", Color(0x8FBC8F))
         }
     }
 
@@ -615,6 +805,23 @@ class BoardPanel(
         return Point(sourceX, sourceY)
     }
 
+    private fun updateHoveredFoodPosition(point: Point?) {
+        val current = controller.engine
+        val next = if (current == null || point == null) {
+            null
+        } else {
+            current.foodPositions.keys.firstOrNull { position ->
+                val cellRect = cellRect(position) ?: return@firstOrNull false
+                val cardRect = foodCardRect(cellRect, foodCardScaleForPhase(current.currentPhase))
+                cardRect.contains(point)
+            }
+        }
+        if (hoveredFoodPosition != next) {
+            hoveredFoodPosition = next
+            repaint()
+        }
+    }
+
     private fun positionAt(point: Point): Position? {
         if (point.x < GRID_LEFT || point.x > GRID_RIGHT || point.y < GRID_TOP || point.y > GRID_BOTTOM) {
             return null
@@ -655,6 +862,9 @@ class BoardPanel(
         private const val GRID_BOTTOM = 1364.0
         private const val CELL_WIDTH = (GRID_RIGHT - GRID_LEFT) / Board.COLS
         private const val CELL_HEIGHT = (GRID_BOTTOM - GRID_TOP) / Board.ROWS
+        private const val PLAYER_TOKEN_SCALE = 0.75
+        private const val PLAYER_TOKEN_PADDING = 3
+        private const val HUNGER_MARKER_SCALE = 0.42
     }
 }
 
@@ -699,6 +909,11 @@ class GuiAssets {
             else -> "assets/images/players/player_moguka_yellow.png"
         },
     )
+
+    fun hungerMeterImage(): BufferedImage? =
+        cache.getOrPut("transparent:assets/images/ui/hunger_meter_reference.jpg") {
+            load("assets/images/ui/hunger_meter_reference.jpg")?.let(::makeWhiteTransparent)
+        }
 }
 
 private enum class Anchor {
@@ -722,6 +937,28 @@ private fun drawRotatedImage(
     g.rotate(Math.toRadians(rotation.steps * 90.0), centerX, centerY)
     g.drawImage(image, rect.x, rect.y, rect.width, rect.height, null)
     g.transform = oldTransform
+}
+
+fun makeWhiteTransparent(source: BufferedImage): BufferedImage {
+    val result = BufferedImage(source.width, source.height, BufferedImage.TYPE_INT_ARGB)
+    for (y in 0 until source.height) {
+        for (x in 0 until source.width) {
+            val rgb = source.getRGB(x, y)
+            val red = rgb shr 16 and 0xFF
+            val green = rgb shr 8 and 0xFF
+            val blue = rgb and 0xFF
+            val minChannel = min(red, min(green, blue))
+            val maxChannel = max(red, max(green, blue))
+            val alpha = when {
+                minChannel >= 248 && maxChannel - minChannel <= 10 -> 0
+                minChannel >= 232 && maxChannel - minChannel <= 22 ->
+                    (((248 - minChannel) / 16.0) * 255).roundToInt().coerceIn(0, 255)
+                else -> 255
+            }
+            result.setRGB(x, y, (alpha shl 24) or (rgb and 0x00FFFFFF))
+        }
+    }
+    return result
 }
 
 private fun drawPlaceholder(g: Graphics2D, rect: Rectangle, text: String, color: Color) {

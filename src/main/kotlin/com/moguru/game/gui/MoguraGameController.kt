@@ -6,6 +6,8 @@ import com.moguru.game.engine.GameState
 import com.moguru.game.engine.PlayerConfig
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Board
+import com.moguru.game.model.CellType
+import com.moguru.game.model.Direction
 import com.moguru.game.model.FoodCard
 import com.moguru.game.model.HoleTile
 import com.moguru.game.model.Player
@@ -96,8 +98,14 @@ class MoguraGameController(
         val player = currentPlayer ?: return emptyList()
         if (current.currentPhase != TurnPhase.DIG) return emptyList()
 
+        val allowedDirections = digDirectionsFromCurrentPosition(current, player.position)
+        if (allowedDirections.isEmpty()) return emptyList()
+
         return current.tilePlacementEngine
             .getAdjacentFaceDownTiles(player.position, current.boardState, current.board)
+            .filter { (position, _) ->
+                directionBetween(player.position, position) in allowedDirections
+            }
             .map { it.first }
     }
 
@@ -253,7 +261,10 @@ class MoguraGameController(
 
         val result = current.attemptCaptureAt(position)
         lastCaptureResult = result
-        lastDiceRoll = (result as? CaptureResult.Escaped)?.diceRoll
+        lastDiceRoll = when (result) {
+            is CaptureResult.Success -> result.diceRoll
+            is CaptureResult.Escaped -> result.diceRoll
+        }
 
         when (result) {
             is CaptureResult.Success -> {
@@ -438,6 +449,16 @@ class MoguraGameController(
         }
     }
 
+    private fun digDirectionsFromCurrentPosition(current: GameEngine, position: Position): Set<Direction> {
+        val cell = current.board.getCell(position) ?: return emptySet()
+        if (cell.type == CellType.NEST) {
+            return Direction.entries.toSet()
+        }
+
+        val tile = current.boardState.getTile(position) ?: return emptySet()
+        return if (tile.isFaceDown) emptySet() else tile.openSides
+    }
+
     private fun selectedPendingDigTile(pending: PendingDigPlacement): HoleTile? =
         when (pendingDigTileChoice ?: DigTileChoice.REVEALED) {
             DigTileChoice.REVEALED -> pending.revealedTile
@@ -460,6 +481,18 @@ class MoguraGameController(
 }
 
 fun Position.label(): String = "(${col + 1},${row + 1})"
+
+fun directionBetween(from: Position, to: Position): Direction? {
+    val dc = to.col - from.col
+    val dr = to.row - from.row
+    return when {
+        dc == 0 && dr == -1 -> Direction.TOP
+        dc == 1 && dr == 0 -> Direction.RIGHT
+        dc == 0 && dr == 1 -> Direction.BOTTOM
+        dc == -1 && dr == 0 -> Direction.LEFT
+        else -> null
+    }
+}
 
 fun Rotation.label(): String = when (this) {
     Rotation.DEG_0 -> "0度"
