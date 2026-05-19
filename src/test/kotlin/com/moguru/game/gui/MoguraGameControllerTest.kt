@@ -5,6 +5,7 @@ import com.moguru.game.model.Board
 import com.moguru.game.model.Direction
 import com.moguru.game.model.FoodCard
 import com.moguru.game.model.FoodType
+import com.moguru.game.model.HoleTile
 import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
 import com.moguru.game.model.TileShape
@@ -48,6 +49,24 @@ class MoguraGameControllerTest {
         assertFalse(player.isCarrying)
         assertEquals(FoodType.BEETLE_LARVA, controller.pendingFoodDecision?.type)
         assertEquals(TurnPhase.DECIDE, engine.currentPhase)
+    }
+
+    @Test
+    fun `capture success with dice roll keeps last dice roll visible`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val food = FoodCard.createDummyCards(FoodType.EARTHWORM).first()
+        engine.placeFoodAt(player.position, food)
+        engine.advancePhase()
+        engine.advancePhase()
+
+        val result = controller.captureCurrentPosition()
+
+        assertTrue(result.success)
+        assertEquals(TurnPhase.DECIDE, engine.currentPhase)
+        assertEquals(6, controller.lastDiceRoll)
     }
 
     @Test
@@ -157,6 +176,60 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `dig targets only include face down tiles along current tile open sides`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val currentPosition = Position(3, 1)
+        val left = Position(2, 1)
+        val right = Position(4, 1)
+        val down = Position(3, 2)
+        player.moveTo(currentPosition)
+        engine.boardState.placeTile(
+            currentPosition,
+            HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+        )
+        listOf(left, right, down).forEach { position ->
+            engine.boardState.placeTile(position, HoleTile(TileShape.CROSS))
+        }
+
+        val targets = controller.digTargets().toSet()
+
+        assertEquals(setOf(left, right), targets)
+    }
+
+    @Test
+    fun `vertical straight tile can dig only top and bottom face down tiles`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val currentPosition = Position(3, 2)
+        val top = Position(3, 1)
+        val bottom = Position(3, 3)
+        val left = Position(2, 2)
+        val right = Position(4, 2)
+        player.moveTo(currentPosition)
+        engine.boardState.placeTile(currentPosition, HoleTile(TileShape.STRAIGHT).flip())
+        listOf(top, bottom, left, right).forEach { position ->
+            engine.boardState.placeTile(position, HoleTile(TileShape.CROSS))
+        }
+
+        val targets = controller.digTargets().toSet()
+
+        assertEquals(setOf(top, bottom), targets)
+    }
+
+    @Test
+    fun `nest can dig adjacent face down tiles without a current hole tile`() {
+        val controller = testController()
+        controller.startNewGame(2)
+
+        assertEquals(setOf(Position(1, 1)), controller.digTargets().toSet())
+    }
+
+    @Test
     fun `turn cannot end before mandatory dig`() {
         val controller = testController()
         controller.startNewGame(2)
@@ -248,8 +321,8 @@ class MoguraGameControllerTest {
         val placedTile = engine.boardState.getTile(target)!!
         assertEquals(TileShape.L_SHAPE, placedTile.shape)
         assertFalse(placedTile.isFaceDown)
-        assertTrue(Direction.RIGHT in placedTile.openSides)
-        assertTrue(Direction.BOTTOM in placedTile.openSides)
+        assertTrue(Direction.LEFT in placedTile.openSides)
+        assertTrue(Direction.TOP in placedTile.openSides)
         assertEquals(listOf(TileShape.STRAIGHT), engine.tilePlacementEngine.discardPile.map { it.shape })
     }
 
@@ -268,6 +341,56 @@ class MoguraGameControllerTest {
         assertFalse(wrongTarget.success)
         assertTrue(confirm.success)
         assertEquals(TurnPhase.MOVE, engine.currentPhase)
+    }
+
+    @Test
+    fun `current player on T tile can move to connected straight tile on the left`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val tPosition = Position(4, 1)
+        val straightPosition = Position(3, 1)
+        player.moveTo(tPosition)
+        engine.boardState.placeTile(tPosition, HoleTile(TileShape.T_SHAPE).flip())
+        engine.boardState.placeTile(straightPosition, HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip())
+        engine.advancePhase()
+
+        assertTrue(straightPosition in controller.moveTargets())
+    }
+
+    @Test
+    fun `current player in right nest can move to 90 degree straight tile on the left`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val straightPosition = Position(4, 1)
+        player.moveTo(Position(5, 1))
+        engine.boardState.placeTile(straightPosition, HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip())
+        engine.advancePhase()
+
+        assertTrue(straightPosition in controller.moveTargets())
+    }
+
+    @Test
+    fun `digging 90 degree straight tile next to right nest makes it reachable in move phase`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val straightPosition = Position(4, 1)
+        player.moveTo(Position(5, 1))
+
+        val revealResult = controller.revealDigTile(straightPosition)
+        val rotateResult = controller.setPendingDigRotation(Rotation.DEG_90)
+        val confirmResult = controller.confirmPendingDig()
+
+        assertTrue(revealResult.success)
+        assertTrue(rotateResult.success)
+        assertTrue(confirmResult.success)
+        assertEquals(TurnPhase.MOVE, engine.currentPhase)
+        assertTrue(straightPosition in controller.moveTargets())
     }
 
     @Test
