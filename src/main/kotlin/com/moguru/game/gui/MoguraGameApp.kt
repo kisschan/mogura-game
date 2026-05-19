@@ -573,7 +573,6 @@ class BoardPanel(
             healths = orderedPlayers.map { it.health },
             maxHealth = Player.MAX_HEALTH,
             rect = meterRect,
-            markerSize = markerSize,
         )
 
         orderedPlayers.zip(centers).forEach { (player, center) ->
@@ -862,7 +861,7 @@ class BoardPanel(
         private const val GRID_BOTTOM = 1364.0
         private const val CELL_WIDTH = (GRID_RIGHT - GRID_LEFT) / Board.COLS
         private const val CELL_HEIGHT = (GRID_BOTTOM - GRID_TOP) / Board.ROWS
-        private const val PLAYER_TOKEN_SCALE = 0.75
+        private const val PLAYER_TOKEN_SCALE = 0.95
         private const val PLAYER_TOKEN_PADDING = 3
         private const val HUNGER_MARKER_SCALE = 0.42
     }
