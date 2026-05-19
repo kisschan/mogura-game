@@ -42,7 +42,7 @@ enum class Rotation(val steps: Int) {
  */
 enum class TileShape(val defaultOpenSides: Set<Direction>, val count: Int) {
     STRAIGHT(setOf(Direction.TOP, Direction.BOTTOM), 10),
-    L_SHAPE(setOf(Direction.TOP, Direction.RIGHT), 10),
+    L_SHAPE(setOf(Direction.LEFT, Direction.BOTTOM), 10),
     T_SHAPE(setOf(Direction.TOP, Direction.LEFT, Direction.RIGHT), 4),
     CROSS(setOf(Direction.TOP, Direction.BOTTOM, Direction.LEFT, Direction.RIGHT), 2),
 }

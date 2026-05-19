@@ -34,7 +34,7 @@ enum class GameState {
  * 捕獲結果。
  */
 sealed class CaptureResult {
-    data object Success : CaptureResult()
+    data class Success(val diceRoll: Int? = null) : CaptureResult()
     data class Escaped(val direction: EscapeDirection, val diceRoll: Int) : CaptureResult()
 }
 
@@ -152,7 +152,7 @@ class GameEngine(
     fun attemptCapture(food: FoodCard): CaptureResult {
         if (food.escapeMap.isEmpty()) {
             lastCaptureSuccess = true
-            return CaptureResult.Success
+            return CaptureResult.Success()
         }
 
         val roll = diceRoller.roll()
@@ -162,7 +162,7 @@ class GameEngine(
             CaptureResult.Escaped(escapeDirection, roll)
         } else {
             lastCaptureSuccess = true
-            CaptureResult.Success
+            CaptureResult.Success(roll)
         }
     }
 
@@ -176,21 +176,21 @@ class GameEngine(
 
         if (food.escapeMap.isEmpty()) {
             lastCaptureSuccess = true
-            return CaptureResult.Success
+            return CaptureResult.Success()
         }
 
         val roll = diceRoller.roll()
         val escapeDirection = food.escapeMap[roll]
         if (escapeDirection == null) {
             lastCaptureSuccess = true
-            return CaptureResult.Success
+            return CaptureResult.Success(roll)
         }
 
         val escapeTo = escapeDirection.applyTo(foodPosition)
         val escapeCell = board.getCell(escapeTo)
         if (escapeCell == null || escapeCell.type == CellType.INVALID || escapeTo in _foodPositions) {
             lastCaptureSuccess = true
-            return CaptureResult.Success
+            return CaptureResult.Success(roll)
         }
 
         _foodPositions.remove(foodPosition)
