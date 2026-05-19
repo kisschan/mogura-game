@@ -52,19 +52,17 @@ class HungerMeterTest {
     }
 
     @Test
-    fun `same health markers are offset from each other`() {
+    fun `same health markers share the same center`() {
         val centers = hungerMeterMarkerCenters(
             healths = listOf(13, 13, 13, 13),
             maxHealth = 13,
             rect = meterRect,
-            markerSize = 80,
         )
 
-        assertEquals(4, centers.distinct().size)
-        assertTrue(centers.all { center ->
-            center.x in meterRect.x..(meterRect.x + meterRect.width) &&
-                center.y in meterRect.y..(meterRect.y + meterRect.height)
-        })
+        assertEquals(
+            listOf(Point(130, 120), Point(130, 120), Point(130, 120), Point(130, 120)),
+            centers,
+        )
     }
 
     @Test

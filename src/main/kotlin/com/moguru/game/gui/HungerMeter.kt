@@ -30,15 +30,8 @@ fun hungerMeterMarkerCenters(
     healths: List<Int>,
     maxHealth: Int,
     rect: Rectangle,
-    markerSize: Int,
 ): List<Point> {
-    val seen = mutableMapOf<Point, Int>()
-    return healths.map { health ->
-        val base = hungerMeterMarkerCenter(health, maxHealth, rect)
-        val overlapIndex = seen.getOrDefault(base, 0)
-        seen[base] = overlapIndex + 1
-        offsetMarkerCenter(base, overlapIndex, markerSize, rect)
-    }
+    return healths.map { health -> hungerMeterMarkerCenter(health, maxHealth, rect) }
 }
 
 fun boardHungerMeterRect(boardRect: Rectangle): Rectangle {
@@ -49,23 +42,6 @@ fun boardHungerMeterRect(boardRect: Rectangle): Rectangle {
     return Rectangle(x, y, width, height)
 }
 
-private fun offsetMarkerCenter(base: Point, overlapIndex: Int, markerSize: Int, rect: Rectangle): Point {
-    if (overlapIndex == 0) return base
-
-    val step = (markerSize * HUNGER_MARKER_OVERLAP_STEP_RATIO).roundToInt().coerceAtLeast(4)
-    val horizontalSign = if (base.x > rect.centerX) -1 else 1
-    val verticalSign = if (base.y > rect.centerY) -1 else 1
-    val offsetX = when (overlapIndex) {
-        1, 3 -> horizontalSign * step
-        else -> 0
-    }
-    val offsetY = when (overlapIndex) {
-        2, 3 -> verticalSign * step
-        else -> 0
-    }
-    return Point(base.x + offsetX, base.y + offsetY)
-}
-
 private const val HUNGER_METER_LEFT_RATIO = 0.13
 private const val HUNGER_METER_RIGHT_RATIO = 0.87
 private const val HUNGER_METER_TOP_RATIO = 0.24
@@ -73,4 +49,3 @@ private const val HUNGER_METER_BOTTOM_RATIO = 0.76
 private const val HUNGER_METER_ASPECT = 1536.0 / 762.0
 private const val HUNGER_BOARD_WIDTH_RATIO = 0.72
 private const val HUNGER_BOARD_TOP_RATIO = 0.018
-private const val HUNGER_MARKER_OVERLAP_STEP_RATIO = 0.24
