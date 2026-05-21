@@ -66,6 +66,19 @@ class HungerMeterTest {
     }
 
     @Test
+    fun `same health marker draw rects stay visible`() {
+        val centers = hungerMeterMarkerCenters(
+            healths = listOf(13, 13, 13, 13),
+            maxHealth = 13,
+            rect = meterRect,
+        )
+
+        val markerRects = hungerMeterMarkerRects(centers, markerSize = 80)
+
+        assertEquals(4, markerRects.distinct().size)
+    }
+
+    @Test
     fun `white pixels in meter image become transparent`() {
         val image = BufferedImage(2, 1, BufferedImage.TYPE_INT_RGB)
         image.setRGB(0, 0, Color.WHITE.rgb)
