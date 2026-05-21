@@ -34,28 +34,35 @@ fun hungerMeterMarkerCenters(
     return healths.map { health -> hungerMeterMarkerCenter(health, maxHealth, rect) }
 }
 
-fun hungerMeterMarkerRects(centers: List<Point>, markerSize: Int): List<Rectangle> {
+fun hungerMeterMarkerRects(centers: List<Point>, markerSize: Int, bounds: Rectangle): List<Rectangle> {
     val seen = mutableMapOf<Point, Int>()
     return centers.map { center ->
         val overlapIndex = seen.getOrDefault(center, 0)
         seen[center] = overlapIndex + 1
-        markerRect(offsetMarkerCenter(center, overlapIndex, markerSize), markerSize)
+        markerRect(offsetMarkerCenter(center, overlapIndex, markerSize, bounds), markerSize, bounds)
     }
 }
 
-private fun markerRect(center: Point, markerSize: Int): Rectangle =
-    Rectangle(center.x - markerSize / 2, center.y - markerSize / 2, markerSize, markerSize)
+private fun markerRect(center: Point, markerSize: Int, bounds: Rectangle): Rectangle =
+    Rectangle(
+        (center.x - markerSize / 2).coerceIn(bounds.x, bounds.x + bounds.width - markerSize),
+        (center.y - markerSize / 2).coerceIn(bounds.y, bounds.y + bounds.height - markerSize),
+        markerSize,
+        markerSize,
+    )
 
-private fun offsetMarkerCenter(base: Point, overlapIndex: Int, markerSize: Int): Point {
+private fun offsetMarkerCenter(base: Point, overlapIndex: Int, markerSize: Int, bounds: Rectangle): Point {
     if (overlapIndex == 0) return base
 
     val step = (markerSize * HUNGER_MARKER_OVERLAP_STEP_RATIO).roundToInt().coerceAtLeast(4)
+    val horizontalSign = if (base.x > bounds.centerX) -1 else 1
+    val verticalSign = if (base.y > bounds.centerY) -1 else 1
     val offsetX = when (overlapIndex) {
-        1, 3 -> step
+        1, 3 -> horizontalSign * step
         else -> 0
     }
     val offsetY = when (overlapIndex) {
-        2, 3 -> step
+        2, 3 -> verticalSign * step
         else -> 0
     }
     return Point(base.x + offsetX, base.y + offsetY)

@@ -73,9 +73,26 @@ class HungerMeterTest {
             rect = meterRect,
         )
 
-        val markerRects = hungerMeterMarkerRects(centers, markerSize = 80)
+        val markerRects = hungerMeterMarkerRects(centers, markerSize = 80, bounds = meterRect)
 
         assertEquals(4, markerRects.distinct().size)
+    }
+
+    @Test
+    fun `same health marker draw rects stay inside meter bounds`() {
+        val markerSize = 210
+        val centers = hungerMeterMarkerCenters(
+            healths = listOf(6, 6, 6, 6, 0, 0, 0, 0),
+            maxHealth = 13,
+            rect = meterRect,
+        )
+
+        val markerRects = hungerMeterMarkerRects(centers, markerSize, bounds = meterRect)
+
+        assertTrue(
+            markerRects.all(meterRect::contains),
+            "marker rects should stay inside $meterRect but were $markerRects",
+        )
     }
 
     @Test
