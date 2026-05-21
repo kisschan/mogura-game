@@ -575,7 +575,7 @@ class BoardPanel(
             rect = meterRect,
         )
 
-        val markerRects = hungerMeterMarkerRects(centers, markerSize)
+        val markerRects = hungerMeterMarkerRects(centers, markerSize, meterRect)
 
         orderedPlayers.zip(markerRects).forEach { (player, markerRect) ->
             drawHungerMarker(g, player, markerRect, player == currentPlayer)
