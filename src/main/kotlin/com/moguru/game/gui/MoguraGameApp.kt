@@ -575,19 +575,19 @@ class BoardPanel(
             rect = meterRect,
         )
 
-        orderedPlayers.zip(centers).forEach { (player, center) ->
-            drawHungerMarker(g, player, center, markerSize, player == currentPlayer)
+        val markerRects = hungerMeterMarkerRects(centers, markerSize)
+
+        orderedPlayers.zip(markerRects).forEach { (player, markerRect) ->
+            drawHungerMarker(g, player, markerRect, player == currentPlayer)
         }
     }
 
     private fun drawHungerMarker(
         g: Graphics2D,
         player: Player,
-        center: Point,
-        markerSize: Int,
+        markerRect: Rectangle,
         isCurrent: Boolean,
     ) {
-        val markerRect = Rectangle(center.x - markerSize / 2, center.y - markerSize / 2, markerSize, markerSize)
         val oldStroke = g.stroke
         val playerImage = assets.playerImage(player.id)
         if (playerImage != null) {
