@@ -18,6 +18,16 @@ class PlayerTokenLayoutTest {
     }
 
     @Test
+    fun `stacked player tokens stay within the source cell`() {
+        val tokenRects = playerTokenRects(sourceBoardCell, 4)
+
+        assertTrue(
+            tokenRects.all(sourceBoardCell::contains),
+            "stacked token rects should stay inside $sourceBoardCell but were $tokenRects",
+        )
+    }
+
+    @Test
     fun `stacked player token centers are separated enough to identify each player`() {
         val centers = playerTokenRects(sourceBoardCell, 4).map { rect ->
             Point(rect.centerX.toInt(), rect.centerY.toInt())

@@ -865,12 +865,17 @@ fun playerTokenRects(cellRect: Rectangle, playerCount: Int): List<Rectangle> {
     }
 
     val base = min(cellRect.width, cellRect.height)
-    val size = (base * PLAYER_TOKEN_SCALE).roundToInt()
     val centerX = cellRect.centerX
     val centerY = cellRect.centerY
     val stackOffset = (base * PLAYER_TOKEN_STACK_OFFSET_RATIO).roundToInt()
         .coerceAtLeast(PLAYER_TOKEN_MIN_STACK_OFFSET)
-    return playerTokenOffsets(playerCount, stackOffset).map { offset ->
+    val offsets = playerTokenOffsets(playerCount, stackOffset)
+    val maxOffsetX = offsets.maxOfOrNull { kotlin.math.abs(it.x) } ?: 0
+    val maxOffsetY = offsets.maxOfOrNull { kotlin.math.abs(it.y) } ?: 0
+    val size = (base * PLAYER_TOKEN_SCALE).roundToInt()
+        .coerceAtMost(cellRect.width - maxOffsetX * 2)
+        .coerceAtMost(cellRect.height - maxOffsetY * 2)
+    return offsets.map { offset ->
         Rectangle(
             (centerX - size / 2.0 + offset.x).roundToInt(),
             (centerY - size / 2.0 + offset.y).roundToInt(),
