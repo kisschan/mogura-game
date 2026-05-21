@@ -573,22 +573,21 @@ class BoardPanel(
             healths = orderedPlayers.map { it.health },
             maxHealth = Player.MAX_HEALTH,
             rect = meterRect,
-            markerSize = markerSize,
         )
 
-        orderedPlayers.zip(centers).forEach { (player, center) ->
-            drawHungerMarker(g, player, center, markerSize, player == currentPlayer)
+        val markerRects = hungerMeterMarkerRects(centers, markerSize, meterRect)
+
+        orderedPlayers.zip(markerRects).forEach { (player, markerRect) ->
+            drawHungerMarker(g, player, markerRect, player == currentPlayer)
         }
     }
 
     private fun drawHungerMarker(
         g: Graphics2D,
         player: Player,
-        center: Point,
-        markerSize: Int,
+        markerRect: Rectangle,
         isCurrent: Boolean,
     ) {
-        val markerRect = Rectangle(center.x - markerSize / 2, center.y - markerSize / 2, markerSize, markerSize)
         val oldStroke = g.stroke
         val playerImage = assets.playerImage(player.id)
         if (playerImage != null) {
@@ -651,14 +650,7 @@ class BoardPanel(
             .groupBy { it.position }
             .forEach { (position, players) ->
                 val rect = cellRect(position) ?: return@forEach
-                players.forEachIndexed { index, player ->
-                    val size = (min(rect.width, rect.height) * PLAYER_TOKEN_SCALE).roundToInt()
-                    val offset = index * max(1, size / 10)
-                    val x = (rect.x + PLAYER_TOKEN_PADDING + offset)
-                        .coerceAtMost(rect.x + rect.width - size - PLAYER_TOKEN_PADDING)
-                    val y = (rect.y + PLAYER_TOKEN_PADDING + offset)
-                        .coerceAtMost(rect.y + rect.height - size - PLAYER_TOKEN_PADDING)
-                    val tokenRect = Rectangle(x, y, size, size)
+                players.zip(playerTokenRects(rect, players.size)).forEach { (player, tokenRect) ->
                     val image = assets.playerImage(player.id)
                     if (image != null) {
                         g.drawImage(image, tokenRect.x, tokenRect.y, tokenRect.width, tokenRect.height, null)
@@ -862,11 +854,50 @@ class BoardPanel(
         private const val GRID_BOTTOM = 1364.0
         private const val CELL_WIDTH = (GRID_RIGHT - GRID_LEFT) / Board.COLS
         private const val CELL_HEIGHT = (GRID_BOTTOM - GRID_TOP) / Board.ROWS
-        private const val PLAYER_TOKEN_SCALE = 0.75
-        private const val PLAYER_TOKEN_PADDING = 3
         private const val HUNGER_MARKER_SCALE = 0.42
     }
 }
+
+fun playerTokenRects(cellRect: Rectangle, playerCount: Int): List<Rectangle> {
+    require(playerCount >= 0) { "playerCount must not be negative" }
+    require(playerCount <= PLAYER_TOKEN_MAX_STACKED) {
+        "playerCount must not exceed $PLAYER_TOKEN_MAX_STACKED"
+    }
+
+    val base = min(cellRect.width, cellRect.height)
+    val centerX = cellRect.centerX
+    val centerY = cellRect.centerY
+    val stackOffset = (base * PLAYER_TOKEN_STACK_OFFSET_RATIO).roundToInt()
+        .coerceAtLeast(PLAYER_TOKEN_MIN_STACK_OFFSET)
+    val offsets = playerTokenOffsets(playerCount, stackOffset)
+    val maxOffsetX = offsets.maxOfOrNull { kotlin.math.abs(it.x) } ?: 0
+    val maxOffsetY = offsets.maxOfOrNull { kotlin.math.abs(it.y) } ?: 0
+    val size = (base * PLAYER_TOKEN_SCALE).roundToInt()
+        .coerceAtMost(cellRect.width - maxOffsetX * 2)
+        .coerceAtMost(cellRect.height - maxOffsetY * 2)
+    return offsets.map { offset ->
+        Rectangle(
+            (centerX - size / 2.0 + offset.x).roundToInt(),
+            (centerY - size / 2.0 + offset.y).roundToInt(),
+            size,
+            size,
+        )
+    }
+}
+
+private fun playerTokenOffsets(playerCount: Int, stackOffset: Int): List<Point> =
+    when (playerCount) {
+        0 -> emptyList()
+        1 -> listOf(Point(0, 0))
+        2 -> listOf(Point(-stackOffset, -stackOffset), Point(stackOffset, stackOffset))
+        3 -> listOf(Point(-stackOffset, -stackOffset), Point(stackOffset, -stackOffset), Point(0, stackOffset))
+        else -> listOf(
+            Point(-stackOffset, -stackOffset),
+            Point(stackOffset, -stackOffset),
+            Point(-stackOffset, stackOffset),
+            Point(stackOffset, stackOffset),
+        ).take(playerCount)
+    }
 
 class GuiAssets {
     private val cache = mutableMapOf<String, BufferedImage?>()
@@ -915,6 +946,11 @@ class GuiAssets {
             load("assets/images/ui/hunger_meter_reference.jpg")?.let(::makeWhiteTransparent)
         }
 }
+
+private const val PLAYER_TOKEN_SCALE = 0.95
+private const val PLAYER_TOKEN_STACK_OFFSET_RATIO = 0.10
+private const val PLAYER_TOKEN_MIN_STACK_OFFSET = 8
+private const val PLAYER_TOKEN_MAX_STACKED = 4
 
 private enum class Anchor {
     BOTTOM_RIGHT,

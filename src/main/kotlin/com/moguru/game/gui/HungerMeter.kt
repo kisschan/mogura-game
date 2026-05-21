@@ -30,31 +30,33 @@ fun hungerMeterMarkerCenters(
     healths: List<Int>,
     maxHealth: Int,
     rect: Rectangle,
-    markerSize: Int,
 ): List<Point> {
+    return healths.map { health -> hungerMeterMarkerCenter(health, maxHealth, rect) }
+}
+
+fun hungerMeterMarkerRects(centers: List<Point>, markerSize: Int, bounds: Rectangle): List<Rectangle> {
     val seen = mutableMapOf<Point, Int>()
-    return healths.map { health ->
-        val base = hungerMeterMarkerCenter(health, maxHealth, rect)
-        val overlapIndex = seen.getOrDefault(base, 0)
-        seen[base] = overlapIndex + 1
-        offsetMarkerCenter(base, overlapIndex, markerSize, rect)
+    return centers.map { center ->
+        val overlapIndex = seen.getOrDefault(center, 0)
+        seen[center] = overlapIndex + 1
+        markerRect(offsetMarkerCenter(center, overlapIndex, markerSize, bounds), markerSize, bounds)
     }
 }
 
-fun boardHungerMeterRect(boardRect: Rectangle): Rectangle {
-    val width = (boardRect.width * HUNGER_BOARD_WIDTH_RATIO).roundToInt()
-    val height = (width / HUNGER_METER_ASPECT).roundToInt()
-    val x = boardRect.x + (boardRect.width - width) / 2
-    val y = boardRect.y + (boardRect.height * HUNGER_BOARD_TOP_RATIO).roundToInt()
-    return Rectangle(x, y, width, height)
-}
+private fun markerRect(center: Point, markerSize: Int, bounds: Rectangle): Rectangle =
+    Rectangle(
+        (center.x - markerSize / 2).coerceIn(bounds.x, bounds.x + bounds.width - markerSize),
+        (center.y - markerSize / 2).coerceIn(bounds.y, bounds.y + bounds.height - markerSize),
+        markerSize,
+        markerSize,
+    )
 
-private fun offsetMarkerCenter(base: Point, overlapIndex: Int, markerSize: Int, rect: Rectangle): Point {
+private fun offsetMarkerCenter(base: Point, overlapIndex: Int, markerSize: Int, bounds: Rectangle): Point {
     if (overlapIndex == 0) return base
 
     val step = (markerSize * HUNGER_MARKER_OVERLAP_STEP_RATIO).roundToInt().coerceAtLeast(4)
-    val horizontalSign = if (base.x > rect.centerX) -1 else 1
-    val verticalSign = if (base.y > rect.centerY) -1 else 1
+    val horizontalSign = if (base.x > bounds.centerX) -1 else 1
+    val verticalSign = if (base.y > bounds.centerY) -1 else 1
     val offsetX = when (overlapIndex) {
         1, 3 -> horizontalSign * step
         else -> 0
@@ -64,6 +66,14 @@ private fun offsetMarkerCenter(base: Point, overlapIndex: Int, markerSize: Int, 
         else -> 0
     }
     return Point(base.x + offsetX, base.y + offsetY)
+}
+
+fun boardHungerMeterRect(boardRect: Rectangle): Rectangle {
+    val width = (boardRect.width * HUNGER_BOARD_WIDTH_RATIO).roundToInt()
+    val height = (width / HUNGER_METER_ASPECT).roundToInt()
+    val x = boardRect.x + (boardRect.width - width) / 2
+    val y = boardRect.y + (boardRect.height * HUNGER_BOARD_TOP_RATIO).roundToInt()
+    return Rectangle(x, y, width, height)
 }
 
 private const val HUNGER_METER_LEFT_RATIO = 0.13
