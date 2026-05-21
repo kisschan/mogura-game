@@ -52,19 +52,47 @@ class HungerMeterTest {
     }
 
     @Test
-    fun `same health markers are offset from each other`() {
+    fun `same health markers share the same center`() {
         val centers = hungerMeterMarkerCenters(
             healths = listOf(13, 13, 13, 13),
             maxHealth = 13,
             rect = meterRect,
-            markerSize = 80,
         )
 
-        assertEquals(4, centers.distinct().size)
-        assertTrue(centers.all { center ->
-            center.x in meterRect.x..(meterRect.x + meterRect.width) &&
-                center.y in meterRect.y..(meterRect.y + meterRect.height)
-        })
+        assertEquals(
+            listOf(Point(130, 120), Point(130, 120), Point(130, 120), Point(130, 120)),
+            centers,
+        )
+    }
+
+    @Test
+    fun `same health marker draw rects stay visible`() {
+        val centers = hungerMeterMarkerCenters(
+            healths = listOf(13, 13, 13, 13),
+            maxHealth = 13,
+            rect = meterRect,
+        )
+
+        val markerRects = hungerMeterMarkerRects(centers, markerSize = 80, bounds = meterRect)
+
+        assertEquals(4, markerRects.distinct().size)
+    }
+
+    @Test
+    fun `same health marker draw rects stay inside meter bounds`() {
+        val markerSize = 210
+        val centers = hungerMeterMarkerCenters(
+            healths = listOf(6, 6, 6, 6, 0, 0, 0, 0),
+            maxHealth = 13,
+            rect = meterRect,
+        )
+
+        val markerRects = hungerMeterMarkerRects(centers, markerSize, bounds = meterRect)
+
+        assertTrue(
+            markerRects.all(meterRect::contains),
+            "marker rects should stay inside $meterRect but were $markerRects",
+        )
     }
 
     @Test
