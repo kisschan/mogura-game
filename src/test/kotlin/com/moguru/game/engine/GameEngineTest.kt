@@ -71,6 +71,14 @@ class GameEngineTest {
     }
 
     @Test
+    fun `セットアップでエサ山と捨て札の公開枚数を取得できる`() {
+        setupDefaultGame()
+
+        assertEquals(8, engine.foodStockCount)
+        assertEquals(0, engine.foodDiscardCount)
+    }
+
+    @Test
     fun `セットアップでホットゾーン4マスにエサが配置される`() {
         setupDefaultGame()
         Board.HOT_ZONE_POSITIONS.forEach { position ->
@@ -166,6 +174,18 @@ class GameEngineTest {
     }
 
     @Test
+    fun `最後の生存プレイヤーが勝利する`() {
+        setupDefaultGame()
+        val eliminated = engine.players[0]
+        val survivor = engine.players[1]
+
+        repeat(13) { eliminated.reduceHealth(isOnSurface = false) }
+
+        assertEquals(survivor, engine.checkWinCondition())
+        assertEquals(GameState.FINISHED, engine.checkGameOver())
+    }
+
+    @Test
     fun `2人プレイで4点先取で勝利`() {
         setupDefaultGame()
         val player = engine.players[0]
@@ -231,6 +251,16 @@ class GameEngineTest {
         Board.HOT_ZONE_POSITIONS.forEach { position ->
             assertTrue(position in engine.foodPositions, "補充後のホットゾーン $position にエサがない")
         }
+    }
+
+    @Test
+    fun `食べたエサはエサ捨て札の公開枚数に反映される`() {
+        setupDefaultGame()
+        val food = FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = false)
+
+        engine.discardFood(food)
+
+        assertEquals(1, engine.foodDiscardCount)
     }
 
     @Test

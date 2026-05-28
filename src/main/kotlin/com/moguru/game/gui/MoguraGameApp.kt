@@ -1,6 +1,5 @@
 package com.moguru.game.gui
 
-import com.moguru.game.engine.GameState
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Board
 import com.moguru.game.model.CellType
@@ -15,6 +14,7 @@ import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
 import java.awt.Dimension
+import java.awt.FlowLayout
 import java.awt.Font
 import java.awt.Graphics
 import java.awt.Graphics2D
@@ -26,6 +26,8 @@ import java.awt.RenderingHints
 import java.awt.Toolkit
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.awt.event.WindowAdapter
+import java.awt.event.WindowEvent
 import java.awt.image.BufferedImage
 import java.io.File
 import javax.imageio.ImageIO
@@ -33,6 +35,7 @@ import javax.swing.BorderFactory
 import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.ButtonGroup
+import javax.swing.ImageIcon
 import javax.swing.JButton
 import javax.swing.JFrame
 import javax.swing.JLabel
@@ -57,13 +60,17 @@ fun main() {
 
 class MoguraGameFrame(
     private val controller: MoguraGameController,
+    private val backgroundMusic: BackgroundMusicPlayer = defaultBackgroundMusicPlayer(BACKGROUND_MUSIC_PATH),
 ) : JFrame("モグラゲーム") {
     private val assets = GuiAssets()
     private val boardPanel = BoardPanel(controller, assets, ::handleBoardClick)
     private val currentPlayerPanel = CurrentPlayerPanel(assets)
+    private val deckSummaryPanel = DeckSummaryPanel(controller, assets)
     private val statusLabel = JLabel()
     private val diceLabel = JLabel("ダイス", SwingConstants.CENTER)
     private val logArea = JTextArea()
+    private val digGuideButton = JButton("掘る")
+    private val moveGuideButton = JButton("移動")
     private val captureButton = JButton("捕獲")
     private val eatButton = JButton("タベる")
     private val carryButton = JButton("レンコウ")
@@ -79,17 +86,38 @@ class MoguraGameFrame(
 
     init {
         defaultCloseOperation = EXIT_ON_CLOSE
-        minimumSize = Dimension(1120, 820)
+        addWindowListener(
+            object : WindowAdapter() {
+                private var initialPromptShown = false
+
+                override fun windowOpened(event: WindowEvent) {
+                    if (!initialPromptShown) {
+                        initialPromptShown = true
+                        promptNewGame()
+                    }
+                }
+
+                override fun windowClosing(event: WindowEvent) {
+                    backgroundMusic.close()
+                }
+            },
+        )
+        minimumSize = Dimension(1000, 740)
         iconImage = assets.load("assets/images/ui/app_icon.png")
 
-        contentPane.layout = BorderLayout(12, 12)
-        (contentPane as JPanel).border = BorderFactory.createEmptyBorder(12, 12, 12, 12)
-        contentPane.background = Color(0xF4F0E8)
+        val root = contentPane as JPanel
+        root.layout = BorderLayout(10, 8)
+        root.preferredSize = Dimension(1220, 960)
+        root.border = BorderFactory.createEmptyBorder(8, 10, 8, 10)
+        root.background = Color(0xFFF7E4)
 
-        contentPane.add(boardPanel, BorderLayout.CENTER)
-        contentPane.add(createSidePanel(), BorderLayout.EAST)
+        root.add(createTopPanel(), BorderLayout.NORTH)
+        root.add(createPlayAreaPanel(), BorderLayout.CENTER)
+        root.add(createLogPanel(), BorderLayout.SOUTH)
 
         newGameButton.addActionListener { promptNewGame() }
+        digGuideButton.addActionListener { showStatus(phaseHelp(controller.engine?.currentPhase)) }
+        moveGuideButton.addActionListener { showStatus(phaseHelp(controller.engine?.currentPhase)) }
         captureButton.addActionListener { runAction { controller.captureCurrentPosition() } }
         eatButton.addActionListener { runAction { controller.eatPendingFood() } }
         carryButton.addActionListener { runAction { controller.carryPendingFood() } }
@@ -105,45 +133,123 @@ class MoguraGameFrame(
             refresh()
         }.start()
 
-        promptNewGame()
+    }
+
+    private fun createTopPanel(): JPanel {
+        val top = JPanel(BorderLayout(10, 0))
+        top.preferredSize = Dimension(0, 52)
+        top.background = Color(0xFFF7E4)
+
+        val title = JLabel("モグラゲーム")
+        title.font = title.font.deriveFont(Font.BOLD, 30f)
+        title.foreground = Color(0x2E2115)
+
+        newGameButton.preferredSize = Dimension(180, 44)
+        newGameButton.font = newGameButton.font.deriveFont(Font.BOLD, 18f)
+        newGameButton.background = Color(0xFFFDF6)
+        newGameButton.border = BorderFactory.createLineBorder(Color(0x9A7A52), 2)
+
+        top.add(title, BorderLayout.WEST)
+        top.add(newGameButton, BorderLayout.EAST)
+
+        return top
+    }
+
+    private fun createPlayAreaPanel(): JPanel {
+        val panel = JPanel(BorderLayout(10, 0))
+        panel.background = Color(0xFFF7E4)
+        panel.add(boardPanel, BorderLayout.CENTER)
+        panel.add(createSideScrollPane(), BorderLayout.EAST)
+        return panel
+    }
+
+    private fun createSideScrollPane(): JScrollPane {
+        val scroll = JScrollPane(createSidePanel())
+        scroll.preferredSize = Dimension(370, 0)
+        scroll.minimumSize = Dimension(330, 0)
+        scroll.border = null
+        scroll.horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+        scroll.verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+        scroll.viewport.background = Color(0xFFF7E4)
+        return scroll
     }
 
     private fun createSidePanel(): JPanel {
         val side = JPanel()
         side.layout = BoxLayout(side, BoxLayout.Y_AXIS)
-        side.preferredSize = Dimension(330, 760)
-        side.background = Color(0xF4F0E8)
+        side.background = Color(0xFFF7E4)
 
-        val header = JLabel("モグラゲーム")
-        header.font = header.font.deriveFont(Font.BOLD, 24f)
-        header.alignmentX = Component.LEFT_ALIGNMENT
+        currentPlayerPanel.alignmentX = Component.LEFT_ALIGNMENT
+        side.add(currentPlayerPanel)
+        side.add(Box.createVerticalStrut(6))
 
-        statusLabel.font = statusLabel.font.deriveFont(13f)
+        val statusPanel = createStatusPanel()
+        statusPanel.alignmentX = Component.LEFT_ALIGNMENT
+        side.add(statusPanel)
+        side.add(Box.createVerticalStrut(6))
 
-        logArea.isEditable = false
-        logArea.font = Font(Font.MONOSPACED, Font.PLAIN, 12)
-        logArea.rows = 12
-        logArea.lineWrap = true
-        logArea.wrapStyleWord = true
+        deckSummaryPanel.alignmentX = Component.LEFT_ALIGNMENT
+        side.add(deckSummaryPanel)
+        side.add(Box.createVerticalStrut(6))
 
-        diceLabel.preferredSize = Dimension(96, 96)
-        diceLabel.maximumSize = Dimension(96, 96)
-        diceLabel.border = BorderFactory.createLineBorder(Color(0x9A8C7A))
-        diceLabel.background = Color.WHITE
+        val digPanel = createDigChoicePanel()
+        digPanel.alignmentX = Component.LEFT_ALIGNMENT
+        side.add(digPanel)
+        side.add(Box.createVerticalStrut(6))
+
+        val dicePanel = createDicePanel()
+        dicePanel.alignmentX = Component.LEFT_ALIGNMENT
+        side.add(dicePanel)
+        side.add(Box.createVerticalStrut(6))
+
+        val actionPanel = createActionPanel()
+        actionPanel.alignmentX = Component.LEFT_ALIGNMENT
+        side.add(actionPanel)
+
+        return side
+    }
+
+    private fun createStatusPanel(): JPanel {
+        val statusPanel = JPanel(BorderLayout(4, 4))
+        statusPanel.preferredSize = Dimension(0, 62)
+        statusPanel.maximumSize = Dimension(Short.MAX_VALUE.toInt(), 62)
+        statusPanel.background = Color(0xFFF8E8)
+        statusPanel.border = panelBorder()
+        statusPanel.add(sectionLabel("操作ヒント"), BorderLayout.NORTH)
+        statusLabel.font = statusLabel.font.deriveFont(Font.BOLD, 12f)
+        statusLabel.verticalAlignment = SwingConstants.TOP
+        statusPanel.add(statusLabel, BorderLayout.CENTER)
+        return statusPanel
+    }
+
+    private fun createDicePanel(): JPanel {
+        val panel = JPanel(BorderLayout(4, 4))
+        panel.preferredSize = Dimension(0, 74)
+        panel.maximumSize = Dimension(Short.MAX_VALUE.toInt(), 74)
+        panel.background = Color(0xFFF8E8)
+        panel.border = panelBorder()
+        panel.add(sectionLabel("直近のダイス"), BorderLayout.WEST)
+        diceLabel.font = diceLabel.font.deriveFont(Font.BOLD, 14f)
+        diceLabel.background = Color(0xFFF8E8)
         diceLabel.isOpaque = true
+        panel.add(diceLabel, BorderLayout.CENTER)
+        return panel
+    }
 
-        val digTileChoicePanel = JPanel()
-        digTileChoicePanel.layout = GridLayout(0, 1, 4, 4)
-        digTileChoicePanel.background = Color(0xF4F0E8)
-        digTileChoicePanel.alignmentX = Component.LEFT_ALIGNMENT
+    private fun createDigChoicePanel(): JPanel {
+        val panel = JPanel(BorderLayout(4, 4))
+        panel.preferredSize = Dimension(0, 132)
+        panel.maximumSize = Dimension(Short.MAX_VALUE.toInt(), 132)
+        panel.background = Color(0xFFF8E8)
+        panel.border = panelBorder()
 
+        val choices = JPanel(GridLayout(1, 2, 8, 0))
+        choices.background = Color(0xFFF8E8)
         val digTileChoiceGroup = ButtonGroup()
-        digTileChoiceButtons.values.forEach { button ->
-            button.font = button.font.deriveFont(12f)
-            digTileChoiceGroup.add(button)
-            digTileChoicePanel.add(button)
-        }
         digTileChoiceButtons.forEach { (choice, button) ->
+            styleChoiceButton(button)
+            digTileChoiceGroup.add(button)
+            choices.add(button)
             button.addActionListener {
                 if (controller.pendingDigPlacement != null) {
                     runAction { controller.selectPendingDigTile(choice) }
@@ -151,18 +257,14 @@ class MoguraGameFrame(
             }
         }
 
-        val rotationPanel = JPanel()
-        rotationPanel.layout = BoxLayout(rotationPanel, BoxLayout.X_AXIS)
-        rotationPanel.background = Color(0xF4F0E8)
-        rotationPanel.alignmentX = Component.LEFT_ALIGNMENT
-
+        val rotationPanel = JPanel(FlowLayout(FlowLayout.CENTER, 4, 0))
+        rotationPanel.background = Color(0xFFF8E8)
         val rotationGroup = ButtonGroup()
-        rotationButtons.values.forEach { button ->
-            button.font = button.font.deriveFont(11f)
+        rotationButtons.forEach { (rotation, button) ->
+            button.font = button.font.deriveFont(Font.BOLD, 11f)
+            button.margin = java.awt.Insets(2, 5, 2, 5)
             rotationGroup.add(button)
             rotationPanel.add(button)
-        }
-        rotationButtons.forEach { (rotation, button) ->
             button.addActionListener {
                 if (controller.pendingDigPlacement != null) {
                     runAction { controller.setPendingDigRotation(rotation) }
@@ -170,45 +272,51 @@ class MoguraGameFrame(
             }
         }
 
-        val actionPanel = JPanel()
-        actionPanel.layout = GridLayout(0, 2, 6, 6)
-        actionPanel.background = Color(0xF4F0E8)
-        actionPanel.alignmentX = Component.LEFT_ALIGNMENT
+        panel.add(choices, BorderLayout.CENTER)
+        panel.add(rotationPanel, BorderLayout.SOUTH)
+        return panel
+    }
+
+    private fun createActionPanel(): JPanel {
+        val actionPanel = JPanel(GridLayout(3, 3, 6, 6))
+        actionPanel.preferredSize = Dimension(0, 146)
+        actionPanel.maximumSize = Dimension(Short.MAX_VALUE.toInt(), 146)
+        actionPanel.background = Color(0xFFF7E4)
+
+        styleActionButton(digGuideButton, "ハイライトされた裏向きタイルをクリック")
+        styleActionButton(moveGuideButton, "ハイライトされた移動先マスをクリック")
+        styleActionButton(captureButton, "現在地のエサを捕獲")
+        styleActionButton(eatButton, "保留中のエサを食べる")
+        styleActionButton(carryButton, "保留中のエサを持つ")
+        styleActionButton(skipButton, "可能なフェーズをスキップ")
+        styleActionButton(endTurnButton, "現在のターンを終了")
+
+        actionPanel.add(digGuideButton)
+        actionPanel.add(moveGuideButton)
         actionPanel.add(captureButton)
         actionPanel.add(eatButton)
         actionPanel.add(carryButton)
         actionPanel.add(skipButton)
         actionPanel.add(endTurnButton)
+        return actionPanel
+    }
 
-        newGameButton.alignmentX = Component.LEFT_ALIGNMENT
-        currentPlayerPanel.alignmentX = Component.LEFT_ALIGNMENT
-        statusLabel.alignmentX = Component.LEFT_ALIGNMENT
-        diceLabel.alignmentX = Component.LEFT_ALIGNMENT
+    private fun createLogPanel(): JPanel {
+        val panel = JPanel(BorderLayout(8, 0))
+        panel.preferredSize = Dimension(0, 126)
+        panel.maximumSize = Dimension(Short.MAX_VALUE.toInt(), 126)
+        panel.background = Color(0xFFF8E8)
+        panel.border = panelBorder()
 
-        side.add(header)
-        side.add(Box.createVerticalStrut(10))
-        side.add(newGameButton)
-        side.add(Box.createVerticalStrut(16))
-        side.add(currentPlayerPanel)
-        side.add(Box.createVerticalStrut(8))
-        side.add(statusLabel)
-        side.add(Box.createVerticalStrut(12))
-        side.add(sectionLabel("配置するタイル"))
-        side.add(digTileChoicePanel)
-        side.add(Box.createVerticalStrut(12))
-        side.add(sectionLabel("掘るタイルの回転"))
-        side.add(rotationPanel)
-        side.add(Box.createVerticalStrut(12))
-        side.add(sectionLabel("操作"))
-        side.add(actionPanel)
-        side.add(Box.createVerticalStrut(12))
-        side.add(sectionLabel("直近のダイス"))
-        side.add(diceLabel)
-        side.add(Box.createVerticalStrut(12))
-        side.add(sectionLabel("ログ"))
-        side.add(wrapScroll(logArea, 320))
+        logArea.isEditable = false
+        logArea.font = Font(Font.MONOSPACED, Font.PLAIN, 12)
+        logArea.rows = 5
+        logArea.lineWrap = true
+        logArea.wrapStyleWord = true
 
-        return side
+        panel.add(sectionLabel("ログ"), BorderLayout.WEST)
+        panel.add(wrapScroll(logArea, 116), BorderLayout.CENTER)
+        return panel
     }
 
     private fun sectionLabel(text: String): JLabel {
@@ -226,6 +334,45 @@ class MoguraGameFrame(
         return scroll
     }
 
+    private fun panelBorder() =
+        BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(Color(0xD0AD78), 2),
+            BorderFactory.createEmptyBorder(6, 8, 6, 8),
+        )
+
+    private fun styleChoiceButton(button: JToggleButton) {
+        button.font = button.font.deriveFont(Font.BOLD, 13f)
+        button.verticalTextPosition = SwingConstants.BOTTOM
+        button.horizontalTextPosition = SwingConstants.CENTER
+        button.background = Color(0xFFFCF2)
+        button.isOpaque = true
+        button.isFocusPainted = false
+    }
+
+    private fun styleActionButton(button: JButton, tooltip: String) {
+        button.icon = null
+        button.toolTipText = tooltip
+        button.font = button.font.deriveFont(Font.BOLD, 15f)
+        button.margin = java.awt.Insets(2, 2, 2, 2)
+        button.background = Color(0xFFF1D4)
+        button.border = BorderFactory.createLineBorder(Color(0xA88455), 2)
+        button.isOpaque = true
+        button.isFocusPainted = false
+    }
+
+    private fun updateActionButtonStyle(button: JButton, active: Boolean, accent: Color = Color(0x35BC67)) {
+        button.background = if (active) accent else Color(0xFFF1D4)
+        button.foreground = if (active) Color(0x102F1B) else Color(0x2E2115)
+        button.border = BorderFactory.createLineBorder(
+            if (active) accent.darker() else Color(0xA88455),
+            if (active) 3 else 2,
+        )
+    }
+
+    private fun tileIcon(shape: TileShape?, size: Int): ImageIcon? =
+        shape?.let { assets.tileImage(it) }
+            ?.let { ImageIcon(it.getScaledInstance(size, size, Image.SCALE_SMOOTH)) }
+
     private fun promptNewGame() {
         val choices = arrayOf("2", "3", "4")
         val choice = JOptionPane.showInputDialog(
@@ -239,6 +386,7 @@ class MoguraGameFrame(
         ) as? String ?: choices.first()
 
         controller.startNewGame(choice.toInt())
+        backgroundMusic.playLooping()
         refresh()
     }
 
@@ -263,7 +411,7 @@ class MoguraGameFrame(
 
         if (!result.success) {
             Toolkit.getDefaultToolkit().beep()
-            statusLabel.text = result.message
+            showStatus(result.message)
         }
         refresh()
     }
@@ -275,21 +423,19 @@ class MoguraGameFrame(
         val result = action()
         if (!result.success) {
             Toolkit.getDefaultToolkit().beep()
-            statusLabel.text = result.message
+            showStatus(result.message)
         }
         refresh()
     }
 
     private fun refresh() {
         val current = controller.engine
-        val player = controller.currentPlayer
-        val isPlaying = current?.gameState == GameState.PLAYING
-        val hasPendingDecision = current?.currentPhase == TurnPhase.DECIDE && controller.pendingFoodDecision != null
-        val hasPendingDig = current?.currentPhase == TurnPhase.DIG && controller.pendingDigPlacement != null
+        val uiState = controller.playScreenUiState()
+        val actions = uiState.actionAvailability
         val canAdvanceFromDig = controller.canAdvanceFromDigWithoutTargets()
 
-        currentPlayerPanel.render(currentPlayerDisplay(player, current?.currentPhase))
-        statusLabel.text = controller.pendingFoodDecision?.let { food ->
+        currentPlayerPanel.render(uiState.currentPlayer)
+        val statusText = controller.pendingFoodDecision?.let { food ->
             "${food.type.displayName()} をタベるかレンコウしてください。"
         } ?: controller.pendingDigPlacement?.let { pending ->
             val selected = controller.pendingDigTileChoice?.label() ?: DigTileChoice.REVEALED.label()
@@ -300,43 +446,77 @@ class MoguraGameFrame(
         } else {
             phaseHelp(current?.currentPhase)
         }
+        showStatus(statusText)
 
-        captureButton.isEnabled = isPlaying && controller.canCapture()
-        eatButton.isEnabled = isPlaying && hasPendingDecision
-        carryButton.isEnabled = isPlaying && hasPendingDecision
-        skipButton.isEnabled = isPlaying && !hasPendingDecision &&
-            (current?.currentPhase != TurnPhase.DIG || canAdvanceFromDig)
+        captureButton.isEnabled = actions.canCapture
+        eatButton.isEnabled = actions.canEat
+        carryButton.isEnabled = actions.canCarry
+        skipButton.isEnabled = actions.canSkip
         skipButton.text = when {
-            current?.currentPhase == TurnPhase.END -> "ターン終了"
-            canAdvanceFromDig -> "移動へ進む"
+            actions.activePhase == TurnPhase.END -> "ターン終了"
+            actions.activePhase == TurnPhase.DIG && actions.canSkip -> "移動へ進む"
             else -> "スキップ"
         }
-        endTurnButton.isEnabled = isPlaying && current?.currentPhase != TurnPhase.DIG && !hasPendingDecision
-        digTileChoiceButtons.forEach { (choice, button) ->
-            button.text = digTileChoiceText(choice, controller.pendingDigPlacement)
-            button.isEnabled = hasPendingDig && (choice != DigTileChoice.DRAWN || controller.pendingDigPlacement?.drawnTile != null)
-            button.isSelected = controller.pendingDigTileChoice == choice
-        }
-        syncRotationButtons(hasPendingDig)
+        endTurnButton.isEnabled = actions.canEndTurn
+        refreshDigChoiceButtons(uiState.digCandidates)
+        syncRotationButtons(uiState.digCandidates.any { it.enabled }, uiState.selectedRotation)
+        refreshActionButtonStyles(actions)
 
         logArea.text = controller.logs.joinToString("\n")
         logArea.caretPosition = logArea.document.length
 
-        val dice = controller.lastDiceRoll
+        val dice = uiState.lastDiceRoll
         val diceImage = dice?.let { assets.load("assets/images/dice/dice_$it.png") }
-        diceLabel.icon = diceImage?.let { javax.swing.ImageIcon(it.getScaledInstance(80, 80, Image.SCALE_SMOOTH)) }
+        diceLabel.icon = diceImage?.let { ImageIcon(it.getScaledInstance(54, 54, Image.SCALE_SMOOTH)) }
         diceLabel.text = if (diceImage == null) dice?.toString() ?: "ダイス" else ""
 
+        deckSummaryPanel.repaint()
         boardPanel.repaint()
     }
 
-    private fun syncRotationButtons(hasPendingDig: Boolean) {
-        val selectedRotation = rotationSelectionForPendingDig(hasPendingDig, controller.pendingDigRotation)
+    private fun refreshDigChoiceButtons(candidates: List<DigCandidateDisplay>) {
+        val candidatesByChoice = candidates.associateBy { it.choice }
+        digTileChoiceButtons.forEach { (choice, button) ->
+            val candidate = candidatesByChoice[choice]
+            val selected = candidate?.selected == true
+            button.text = "<html><center>${candidate?.label ?: choice.label()}<br>${candidate?.shape?.displayName() ?: "-"}</center></html>"
+            button.icon = tileIcon(candidate?.shape, 36)
+            button.isEnabled = candidate?.enabled == true
+            button.isSelected = selected
+            button.border = BorderFactory.createLineBorder(
+                if (selected) Color(0x158A45) else Color(0xD0AD78),
+                if (selected) 3 else 2,
+            )
+        }
+    }
+
+    private fun refreshActionButtonStyles(actions: ActionAvailability) {
+        val phase = actions.activePhase
+        updateActionButtonStyle(digGuideButton, phase == TurnPhase.DIG)
+        updateActionButtonStyle(moveGuideButton, phase == TurnPhase.MOVE)
+        updateActionButtonStyle(captureButton, phase == TurnPhase.CAPTURE, Color(0xEB5757))
+        updateActionButtonStyle(eatButton, actions.canEat, Color(0x6FCF97))
+        updateActionButtonStyle(carryButton, actions.canCarry, Color(0x56CCF2))
+        updateActionButtonStyle(skipButton, false)
+        updateActionButtonStyle(endTurnButton, phase == TurnPhase.END)
+    }
+
+    private fun syncRotationButtons(hasPendingDig: Boolean, selectedRotation: Rotation) {
         rotationButtons.forEach { (rotation, button) ->
             button.isEnabled = hasPendingDig
             button.isSelected = rotation == selectedRotation
         }
     }
+
+    private fun showStatus(message: String) {
+        statusLabel.text = "<html><body style='width:300px'>${escapeHtml(message)}</body></html>"
+    }
+
+    private fun escapeHtml(text: String): String =
+        text
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
 
     private fun phaseHelp(phase: TurnPhase?): String = when (phase) {
         TurnPhase.DIG -> "ハイライトされた裏向きタイルをクリックしてください。"
@@ -346,13 +526,131 @@ class MoguraGameFrame(
         TurnPhase.END -> "ターンを終了してください。"
         null -> "新しいゲームを開始してください。"
     }
+}
 
-    private fun digTileChoiceText(choice: DigTileChoice, pending: PendingDigPlacement?): String {
-        val shape = when (choice) {
-            DigTileChoice.REVEALED -> pending?.revealedTile?.shape?.displayName()
-            DigTileChoice.DRAWN -> pending?.drawnTile?.shape?.displayName()
+private class DeckSummaryPanel(
+    private val controller: MoguraGameController,
+    private val assets: GuiAssets,
+) : JPanel() {
+    init {
+        preferredSize = Dimension(0, 154)
+        maximumSize = Dimension(Short.MAX_VALUE.toInt(), 154)
+        background = Color(0xFFF8E8)
+        border = BorderFactory.createLineBorder(Color(0x6E4827), 3)
+        isOpaque = true
+    }
+
+    override fun paintComponent(graphics: Graphics) {
+        super.paintComponent(graphics)
+        val g = graphics as Graphics2D
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+
+        val summary = controller.playScreenUiState().deckSummary
+        val gap = 10
+        val groupWidth = width - gap * 2
+        val groupHeight = (height - gap * 3) / 2
+        drawDeckGroup(
+            g = g,
+            rect = Rectangle(gap, gap, groupWidth, groupHeight),
+            deckLabel = "穴タイル山札",
+            discardLabel = "捨て札",
+            backImage = assets.load("assets/images/tiles/tile_back.png"),
+            deckCount = summary.tileDrawCount,
+            discardCount = summary.tileDiscardCount,
+        )
+        drawDeckGroup(
+            g = g,
+            rect = Rectangle(gap, gap * 2 + groupHeight, groupWidth, groupHeight),
+            deckLabel = "エサ山",
+            discardLabel = "捨て札",
+            backImage = assets.load("assets/images/foods/food_card_back.png"),
+            deckCount = summary.foodDrawCount,
+            discardCount = summary.foodDiscardCount,
+        )
+    }
+
+    private fun drawDeckGroup(
+        g: Graphics2D,
+        rect: Rectangle,
+        deckLabel: String,
+        discardLabel: String,
+        backImage: BufferedImage?,
+        deckCount: Int,
+        discardCount: Int,
+    ) {
+        g.color = Color(0xFFF3D6)
+        g.fillRoundRect(rect.x, rect.y, rect.width, rect.height, 10, 10)
+        g.color = Color(0xD0AD78)
+        g.stroke = BasicStroke(2f)
+        g.drawRoundRect(rect.x, rect.y, rect.width, rect.height, 10, 10)
+
+        g.color = Color(0x2E2115)
+        g.font = font.deriveFont(Font.BOLD, 13f)
+        g.drawString(deckLabel, rect.x + 12, rect.y + 18)
+        g.drawString(discardLabel, rect.x + rect.width - 86, rect.y + 18)
+
+        val cardSize = min(38, rect.height - 24)
+        val deckX = rect.x + 14
+        val deckY = rect.y + 22
+        drawStack(g, backImage, deckX, deckY, cardSize, deckCount)
+
+        g.font = font.deriveFont(Font.BOLD, 26f)
+        g.drawString(deckCount.toString(), rect.x + 76, rect.y + 52)
+
+        val discardX = rect.x + rect.width - 82
+        val discardRect = Rectangle(discardX, deckY + 2, cardSize - 6, cardSize - 6)
+        if (discardCount > 0) {
+            drawCard(g, backImage, discardRect)
+        } else {
+            drawEmptyCard(g, discardRect)
         }
-        return "${choice.label()}: ${shape ?: "-"}"
+        g.font = font.deriveFont(Font.BOLD, 14f)
+        val countText = discardCount.toString()
+        val badgeSize = 24
+        val badgeX = rect.x + rect.width - 34
+        val badgeY = rect.y + rect.height - 30
+        g.color = Color(0xFFFDF6)
+        g.fillOval(badgeX, badgeY, badgeSize, badgeSize)
+        g.color = Color(0x6E4827)
+        g.drawOval(badgeX, badgeY, badgeSize, badgeSize)
+        g.color = Color(0x2E2115)
+        g.drawString(
+            countText,
+            badgeX + (badgeSize - g.fontMetrics.stringWidth(countText)) / 2,
+            badgeY + 19,
+        )
+    }
+
+    private fun drawStack(g: Graphics2D, image: BufferedImage?, x: Int, y: Int, size: Int, count: Int) {
+        if (count <= 0) {
+            drawEmptyCard(g, Rectangle(x, y, size, size))
+            return
+        }
+        val visibleCards = min(3, count)
+        repeat(visibleCards) { index ->
+            val offset = (visibleCards - index - 1) * 7
+            drawCard(g, image, Rectangle(x + offset, y + offset / 2, size, size))
+        }
+    }
+
+    private fun drawEmptyCard(g: Graphics2D, rect: Rectangle) {
+        g.color = Color(0xFFF8E8)
+        g.fillRoundRect(rect.x, rect.y, rect.width, rect.height, 6, 6)
+        g.color = Color(0xC7A16D)
+        g.stroke = BasicStroke(2f)
+        g.drawRoundRect(rect.x, rect.y, rect.width, rect.height, 6, 6)
+    }
+
+    private fun drawCard(g: Graphics2D, image: BufferedImage?, rect: Rectangle) {
+        g.color = Color(0xF7E3BD)
+        g.fillRoundRect(rect.x, rect.y, rect.width, rect.height, 6, 6)
+        if (image != null) {
+            g.drawImage(image, rect.x, rect.y, rect.width, rect.height, null)
+        }
+        g.color = Color(0x6F4B25)
+        g.stroke = BasicStroke(2f)
+        g.drawRoundRect(rect.x, rect.y, rect.width, rect.height, 6, 6)
     }
 }
 
@@ -475,8 +773,8 @@ class BoardPanel(
     private var hoveredFoodPosition: Position? = null
 
     init {
-        preferredSize = Dimension(720, 900)
-        minimumSize = Dimension(560, 700)
+        preferredSize = Dimension(860, 820)
+        minimumSize = Dimension(620, 700)
         background = Color(0xD9C7A8)
 
         addMouseListener(object : MouseAdapter() {
@@ -951,6 +1249,7 @@ private const val PLAYER_TOKEN_SCALE = 0.95
 private const val PLAYER_TOKEN_STACK_OFFSET_RATIO = 0.10
 private const val PLAYER_TOKEN_MIN_STACK_OFFSET = 8
 private const val PLAYER_TOKEN_MAX_STACKED = 4
+private const val BACKGROUND_MUSIC_PATH = "assets/audio/burrowed_logic.mp3"
 
 private enum class Anchor {
     BOTTOM_RIGHT,
