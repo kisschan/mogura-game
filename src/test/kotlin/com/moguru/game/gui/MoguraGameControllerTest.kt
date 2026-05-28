@@ -1,5 +1,6 @@
 package com.moguru.game.gui
 
+import com.moguru.game.engine.GameState
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Board
 import com.moguru.game.model.Direction
@@ -29,6 +30,53 @@ class MoguraGameControllerTest {
         assertEquals(3, engine.players.size)
         assertEquals(listOf("モグオ", "モグタ", "モグミ"), engine.players.map { it.name })
         assertEquals(TurnPhase.DIG, engine.currentPhase)
+    }
+
+    @Test
+    fun `public deck summary exposes only pile counts`() {
+        val controller = testController()
+
+        controller.startNewGame(2)
+
+        assertEquals(
+            PublicDeckSummary(
+                tileDrawCount = 10,
+                tileDiscardCount = 0,
+                foodDrawCount = 8,
+                foodDiscardCount = 0,
+            ),
+            controller.publicDeckSummary(),
+        )
+    }
+
+    @Test
+    fun `play screen ui state exposes initial public state`() {
+        val controller = testController()
+
+        controller.startNewGame(2)
+
+        val state = controller.playScreenUiState()
+        assertEquals(0, state.currentPlayer.playerId)
+        assertEquals(
+            PublicDeckSummary(
+                tileDrawCount = 10,
+                tileDiscardCount = 0,
+                foodDrawCount = 8,
+                foodDiscardCount = 0,
+            ),
+            state.deckSummary,
+        )
+        assertEquals(DigTileChoice.entries.toList(), state.digCandidates.map { it.choice })
+        assertEquals(listOf<TileShape?>(null, null), state.digCandidates.map { it.shape })
+        assertTrue(state.digCandidates.none { it.enabled })
+        assertEquals(Rotation.DEG_0, state.selectedRotation)
+        assertNull(state.lastDiceRoll)
+        assertEquals(TurnPhase.DIG, state.actionAvailability.activePhase)
+        assertFalse(state.actionAvailability.canCapture)
+        assertFalse(state.actionAvailability.canEat)
+        assertFalse(state.actionAvailability.canCarry)
+        assertFalse(state.actionAvailability.canSkip)
+        assertFalse(state.actionAvailability.canEndTurn)
     }
 
     @Test
@@ -67,6 +115,43 @@ class MoguraGameControllerTest {
         assertTrue(result.success)
         assertEquals(TurnPhase.DECIDE, engine.currentPhase)
         assertEquals(6, controller.lastDiceRoll)
+    }
+
+    @Test
+    fun `play screen ui state reports action availability for capture decision`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        engine.placeFoodAt(player.position, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
+
+        val initialActions = controller.playScreenUiState().actionAvailability
+        assertEquals(TurnPhase.DIG, initialActions.activePhase)
+        assertFalse(initialActions.canCapture)
+        assertFalse(initialActions.canEat)
+        assertFalse(initialActions.canCarry)
+        assertFalse(initialActions.canSkip)
+        assertFalse(initialActions.canEndTurn)
+
+        engine.advancePhase()
+        engine.advancePhase()
+        val captureActions = controller.playScreenUiState().actionAvailability
+        assertEquals(TurnPhase.CAPTURE, captureActions.activePhase)
+        assertTrue(captureActions.canCapture)
+        assertFalse(captureActions.canEat)
+        assertFalse(captureActions.canCarry)
+        assertTrue(captureActions.canSkip)
+        assertTrue(captureActions.canEndTurn)
+
+        controller.captureCurrentPosition()
+
+        val decideActions = controller.playScreenUiState().actionAvailability
+        assertEquals(TurnPhase.DECIDE, decideActions.activePhase)
+        assertFalse(decideActions.canCapture)
+        assertTrue(decideActions.canEat)
+        assertTrue(decideActions.canCarry)
+        assertFalse(decideActions.canSkip)
+        assertFalse(decideActions.canEndTurn)
     }
 
     @Test
@@ -298,6 +383,43 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `pending dig shows only the two public candidate tiles and pile counts`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val target = Position(1, 1)
+
+        val revealResult = controller.revealDigTile(target)
+        val state = controller.playScreenUiState()
+        val revealed = state.digCandidates.single { it.choice == DigTileChoice.REVEALED }
+        val drawn = state.digCandidates.single { it.choice == DigTileChoice.DRAWN }
+
+        assertTrue(revealResult.success)
+        assertEquals(TileShape.STRAIGHT, controller.pendingDigPlacement?.revealedTile?.shape)
+        assertEquals(TileShape.L_SHAPE, controller.pendingDigPlacement?.drawnTile?.shape)
+        assertEquals(
+            PublicDeckSummary(
+                tileDrawCount = 9,
+                tileDiscardCount = 0,
+                foodDrawCount = 8,
+                foodDiscardCount = 0,
+            ),
+            controller.publicDeckSummary(),
+        )
+        assertEquals(TileShape.STRAIGHT, revealed.shape)
+        assertTrue(revealed.selected)
+        assertTrue(revealed.enabled)
+        assertEquals(TileShape.L_SHAPE, drawn.shape)
+        assertFalse(drawn.selected)
+        assertTrue(drawn.enabled)
+
+        controller.selectPendingDigTile(DigTileChoice.DRAWN)
+
+        val selectedState = controller.playScreenUiState()
+        assertFalse(selectedState.digCandidates.single { it.choice == DigTileChoice.REVEALED }.selected)
+        assertTrue(selectedState.digCandidates.single { it.choice == DigTileChoice.DRAWN }.selected)
+    }
+
+    @Test
     fun `drawn tile can be selected before confirming dig placement`() {
         val controller = testController()
         controller.startNewGame(2)
@@ -472,6 +594,24 @@ class MoguraGameControllerTest {
         assertTrue(result.success)
         assertEquals(1, engine.currentPlayerIndex)
         assertEquals(TurnPhase.DIG, engine.currentPhase)
+    }
+
+    @Test
+    fun `finish turn ends game when current player elimination leaves one survivor`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val eliminated = engine.players[0]
+        val survivor = engine.players[1]
+        repeat(12) { eliminated.reduceHealth(isOnSurface = false) }
+        engine.advancePhase()
+
+        val result = controller.finishTurn()
+
+        assertTrue(result.success)
+        assertTrue(eliminated.isEliminated)
+        assertEquals(survivor, engine.checkWinCondition())
+        assertEquals(GameState.FINISHED, engine.gameState)
     }
 
     private fun testController(): MoguraGameController =

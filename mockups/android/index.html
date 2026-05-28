@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1080, initial-scale=1">
+  <title>Android Goal Mockup - モグラゲーム</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="screen" aria-label="山札とエサ確認UI入りAndroid完成図">
+    <header class="top-bar">
+      <h1>モグラゲーム</h1>
+      <button class="new-game" type="button">新しいゲーム</button>
+    </header>
+
+    <section class="current-status" aria-label="現在のプレイヤー">
+      <img class="status-portrait" src="../../assets/images/players/player_moguo_blue.png" alt="">
+      <div class="status-text">
+        <strong>モグオ の番</strong>
+        <span>フェーズ: 掘る (DIG)</span>
+        <span>体力: 8/13　点: 2　所持: -</span>
+      </div>
+    </section>
+
+    <section class="board-area" aria-label="盤面">
+      <div class="board-shell" data-board>
+        <img class="board-bg" src="../../assets/images/board/board_main.png" alt="">
+        <div class="board-layer"></div>
+      </div>
+    </section>
+
+    <section class="deck-summary" aria-label="公開情報の山札確認">
+      <article class="pile-card">
+        <div class="pile-title">穴タイル山札</div>
+        <div class="pile-body">
+          <div class="stack stack-tiles" aria-label="穴タイル山札の裏面スタック">
+            <img src="../../assets/images/tiles/tile_back.png" alt="">
+            <img src="../../assets/images/tiles/tile_back.png" alt="">
+            <img src="../../assets/images/tiles/tile_back.png" alt="">
+          </div>
+          <div class="pile-count">8</div>
+          <div class="discard">
+            <span>捨て札</span>
+            <img src="../../assets/images/tiles/tile_back.png" alt="">
+            <b>2</b>
+          </div>
+        </div>
+      </article>
+
+      <article class="pile-card">
+        <div class="pile-title">エサ山</div>
+        <div class="pile-body">
+          <div class="stack stack-foods" aria-label="エサ山の裏面スタック">
+            <img src="../../assets/images/foods/food_card_back.png" alt="">
+            <img src="../../assets/images/foods/food_card_back.png" alt="">
+            <img src="../../assets/images/foods/food_card_back.png" alt="">
+          </div>
+          <div class="pile-count">6</div>
+          <div class="discard">
+            <span>捨て札</span>
+            <img src="../../assets/images/foods/food_card_back.png" alt="">
+            <b>1</b>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <section class="play-info" aria-label="掘る候補とダイス">
+      <article class="player-card">
+        <img src="../../assets/images/players/player_moguo_blue.png" alt="">
+        <div>
+          <strong>モグオ</strong>
+          <span>体力 8/13</span>
+          <span>点 2</span>
+        </div>
+      </article>
+
+      <article class="dig-candidates" aria-label="公開された掘る候補">
+        <div class="candidate selected">
+          <span>めくったタイル</span>
+          <img src="../../assets/images/tiles/tile_l_shape.png" alt="">
+        </div>
+        <div class="candidate">
+          <span>山札タイル</span>
+          <img src="../../assets/images/tiles/tile_t_shape.png" alt="">
+        </div>
+      </article>
+
+      <article class="dice-now" aria-label="現在のダイス">
+        <span>ダイス</span>
+        <img src="../../assets/images/dice/dice_1.png" alt="">
+      </article>
+    </section>
+
+    <section class="actions" aria-label="操作">
+      <button class="action action-dig" type="button">
+        <img src="../../assets/images/tiles/tile_back.png" alt="">
+        <span>掘る</span>
+      </button>
+      <button class="action action-move active" type="button">
+        <img src="../../assets/images/players/player_moguo_blue.png" alt="">
+        <span>移動</span>
+      </button>
+      <button class="action action-capture" type="button">
+        <img src="../../assets/images/foods/food_earthworm.png" alt="">
+        <span>捕獲</span>
+      </button>
+      <button class="action action-eat" type="button">
+        <img src="../../assets/images/foods/food_frog.png" alt="">
+        <span>タベる</span>
+      </button>
+      <button class="action action-carry" type="button">
+        <img src="../../assets/images/foods/food_card_back.png" alt="">
+        <span>レンコウ</span>
+      </button>
+      <button class="action action-skip" type="button">
+        <span class="skip-icon">▶▶</span>
+        <span>スキップ</span>
+      </button>
+      <button class="action action-end" type="button">
+        <span class="flag-icon"></span>
+        <span>ターン終了</span>
+      </button>
+    </section>
+
+    <section class="bottom-info" aria-label="ログ">
+      <article class="last-dice">
+        <strong>直近のダイス</strong>
+        <img src="../../assets/images/dice/dice_3.png" alt="">
+      </article>
+      <article class="log-panel">
+        <strong>ログ</strong>
+        <p>モグオ が (2,3) に移動しました。</p>
+        <p>掘れる裏向きタイルがありません。</p>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const BOARD = {
+      sourceWidth: 1086,
+      sourceHeight: 1448,
+      gridLeft: 48,
+      gridTop: 488,
+      gridRight: 1038,
+      gridBottom: 1364,
+    };
+
+    BOARD.cellWidth = (BOARD.gridRight - BOARD.gridLeft) / 6;
+    BOARD.cellHeight = (BOARD.gridBottom - BOARD.gridTop) / 5;
+
+    const asset = (path) => `../../assets/images/${path}`;
+
+    const boardState = {
+      highlights: [
+        { col: 1, row: 1, tone: 'move' },
+        { col: 2, row: 2, tone: 'move' },
+        { col: 3, row: 2, tone: 'move' },
+        { col: 4, row: 2, tone: 'move' },
+        { col: 4, row: 1, tone: 'danger' },
+        { col: 2, row: 3, tone: 'danger' },
+        { col: 3, row: 3, tone: 'danger' },
+      ],
+      tiles: [
+        { col: 1, row: 1, src: 'tiles/tile_l_shape.png' },
+        { col: 2, row: 1, src: 'tiles/tile_back.png' },
+        { col: 3, row: 1, src: 'tiles/tile_back.png' },
+        { col: 4, row: 1, src: 'tiles/tile_back.png' },
+        { col: 1, row: 2, src: 'tiles/tile_back.png' },
+        { col: 2, row: 2, src: 'tiles/tile_straight.png' },
+        { col: 3, row: 2, src: 'tiles/tile_straight.png' },
+        { col: 4, row: 2, src: 'tiles/tile_l_shape.png' },
+        { col: 1, row: 3, src: 'tiles/tile_back.png' },
+        { col: 2, row: 3, src: 'tiles/tile_back.png' },
+        { col: 3, row: 3, src: 'tiles/tile_cross.png' },
+        { col: 4, row: 3, src: 'tiles/tile_back.png' },
+        { col: 1, row: 4, src: 'tiles/tile_back.png' },
+        { col: 2, row: 4, src: 'tiles/tile_back.png' },
+        { col: 3, row: 4, src: 'tiles/tile_back.png' },
+        { col: 4, row: 4, src: 'tiles/tile_back.png' },
+      ],
+      foods: [
+        { col: 4, row: 1, src: 'foods/food_earthworm.png' },
+        { col: 2, row: 3, src: 'foods/food_centipede.png' },
+        { col: 3, row: 3, src: 'foods/food_mole_cricket.png' },
+      ],
+      players: [
+        { col: 1, row: 2, src: 'players/player_moguo_blue.png', current: true },
+        { col: 4, row: 1, src: 'players/player_moguta_orange.png' },
+        { col: 0, row: 4, src: 'players/player_mogumi_pink.png' },
+        { col: 5, row: 4, src: 'players/player_moguka_yellow.png' },
+      ],
+      hungerMarkers: [
+        { health: 8, src: 'players/player_moguo_blue.png', current: true },
+        { health: 7, src: 'players/player_moguta_orange.png' },
+      ],
+    };
+
+    function percentRect(x, y, width, height) {
+      return {
+        left: `${(x / BOARD.sourceWidth) * 100}%`,
+        top: `${(y / BOARD.sourceHeight) * 100}%`,
+        width: `${(width / BOARD.sourceWidth) * 100}%`,
+        height: `${(height / BOARD.sourceHeight) * 100}%`,
+      };
+    }
+
+    function cellRect(item, scale, offsetX = 0, offsetY = 0) {
+      const baseX = BOARD.gridLeft + item.col * BOARD.cellWidth;
+      const baseY = BOARD.gridTop + item.row * BOARD.cellHeight;
+      const x = baseX + BOARD.cellWidth * (1 - scale) / 2 + BOARD.cellWidth * offsetX;
+      const y = baseY + BOARD.cellHeight * (1 - scale) / 2 + BOARD.cellHeight * offsetY;
+      return percentRect(x, y, BOARD.cellWidth * scale, BOARD.cellHeight * scale);
+    }
+
+    function place(layer, item, className, rect, zIndex) {
+      const wrap = document.createElement('div');
+      wrap.className = className;
+      Object.assign(wrap.style, rect);
+      wrap.style.zIndex = zIndex;
+      if (item.tone) wrap.dataset.tone = item.tone;
+      if (item.current) wrap.classList.add('current');
+
+      if (item.src) {
+        const img = document.createElement('img');
+        img.src = asset(item.src);
+        img.alt = '';
+        wrap.appendChild(img);
+      }
+
+      layer.appendChild(wrap);
+      return wrap;
+    }
+
+    function boardHungerMeterRect() {
+      const width = BOARD.sourceWidth * 0.72;
+      const height = width / (1536 / 762);
+      return {
+        x: (BOARD.sourceWidth - width) / 2,
+        y: BOARD.sourceHeight * 0.018,
+        width,
+        height,
+      };
+    }
+
+    function hungerPoint(health, rect) {
+      const maxHealth = 13;
+      const progress = (maxHealth - Math.max(0, Math.min(maxHealth, health))) / maxHealth;
+      const left = rect.x + rect.width * 0.13;
+      const right = rect.x + rect.width * 0.88;
+      const top = rect.y + rect.height * 0.27;
+      const bottom = rect.y + rect.height * 0.78;
+      const topLength = right - left;
+      const sideLength = bottom - top;
+      const distance = progress * (topLength + sideLength + topLength);
+
+      if (distance <= topLength) return { x: left + distance, y: top };
+      if (distance <= topLength + sideLength) return { x: right, y: top + distance - topLength };
+      return { x: right - (distance - topLength - sideLength), y: bottom };
+    }
+
+    function renderHungerMeter(layer) {
+      const rect = boardHungerMeterRect();
+      const meter = place(
+        layer,
+        { src: 'ui/hunger_meter_reference.jpg' },
+        'board-hunger-meter',
+        percentRect(rect.x, rect.y, rect.width, rect.height),
+        50,
+      );
+
+      const markerSize = rect.height * 0.44;
+      boardState.hungerMarkers.forEach((marker, index) => {
+        const point = hungerPoint(marker.health, rect);
+        place(
+          layer,
+          marker,
+          'hunger-marker',
+          percentRect(
+            point.x - markerSize / 2 - index * markerSize * 0.12,
+            point.y - markerSize / 2 + index * markerSize * 0.08,
+            markerSize,
+            markerSize,
+          ),
+          60 + index,
+        );
+      });
+
+      return meter.querySelector('img');
+    }
+
+    async function makeEdgeWhiteTransparent(img) {
+      await img.decode();
+
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0);
+
+      const { width, height } = canvas;
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const data = imageData.data;
+      const visited = new Uint8Array(width * height);
+      const stack = [];
+
+      function indexOf(x, y) {
+        return y * width + x;
+      }
+
+      function isEdgeWhite(pixelIndex) {
+        const base = pixelIndex * 4;
+        const r = data[base];
+        const g = data[base + 1];
+        const b = data[base + 2];
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        return max > 236 && min > 218 && max - min < 34;
+      }
+
+      function pushIfBackground(x, y) {
+        if (x < 0 || y < 0 || x >= width || y >= height) return;
+        const pixelIndex = indexOf(x, y);
+        if (visited[pixelIndex] || !isEdgeWhite(pixelIndex)) return;
+        visited[pixelIndex] = 1;
+        stack.push(pixelIndex);
+      }
+
+      for (let x = 0; x < width; x += 1) {
+        pushIfBackground(x, 0);
+        pushIfBackground(x, height - 1);
+      }
+      for (let y = 0; y < height; y += 1) {
+        pushIfBackground(0, y);
+        pushIfBackground(width - 1, y);
+      }
+
+      while (stack.length) {
+        const pixelIndex = stack.pop();
+        data[pixelIndex * 4 + 3] = 0;
+        const x = pixelIndex % width;
+        const y = Math.floor(pixelIndex / width);
+        pushIfBackground(x + 1, y);
+        pushIfBackground(x - 1, y);
+        pushIfBackground(x, y + 1);
+        pushIfBackground(x, y - 1);
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+      img.src = canvas.toDataURL('image/png');
+      await img.decode();
+    }
+
+    async function renderBoard() {
+      const layer = document.querySelector('.board-layer');
+      const hungerImage = renderHungerMeter(layer);
+      boardState.highlights.forEach((item) => place(layer, item, 'cell-highlight', cellRect(item, 0.98), 20));
+      boardState.tiles.forEach((item) => place(layer, item, 'tile-piece', cellRect(item, 0.84), 10));
+      boardState.foods.forEach((item) => place(layer, item, 'food-piece', cellRect(item, 0.38, 0.20, 0.22), 30));
+      boardState.players.forEach((item) => place(layer, item, 'player-piece', cellRect(item, 0.70), 40));
+
+      try {
+        await makeEdgeWhiteTransparent(hungerImage);
+      } catch (error) {
+        console.warn('Failed to prepare hunger meter transparency', error);
+      } finally {
+        window.__mockupReady = true;
+      }
+    }
+
+    window.__mockupReady = false;
+    renderBoard();
+  </script>
+</body>
+</html>
