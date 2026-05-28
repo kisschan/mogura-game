@@ -24,6 +24,39 @@ data class GameActionResult(
     val message: String,
 )
 
+data class PublicDeckSummary(
+    val tileDrawCount: Int,
+    val tileDiscardCount: Int,
+    val foodDrawCount: Int,
+    val foodDiscardCount: Int,
+)
+
+data class DigCandidateDisplay(
+    val choice: DigTileChoice,
+    val label: String,
+    val shape: TileShape?,
+    val selected: Boolean,
+    val enabled: Boolean,
+)
+
+data class ActionAvailability(
+    val canCapture: Boolean,
+    val canEat: Boolean,
+    val canCarry: Boolean,
+    val canSkip: Boolean,
+    val canEndTurn: Boolean,
+    val activePhase: TurnPhase?,
+)
+
+data class PlayScreenUiState(
+    val currentPlayer: CurrentPlayerDisplay,
+    val deckSummary: PublicDeckSummary,
+    val digCandidates: List<DigCandidateDisplay>,
+    val selectedRotation: Rotation,
+    val lastDiceRoll: Int?,
+    val actionAvailability: ActionAvailability,
+)
+
 enum class DigTileChoice {
     REVEALED,
     DRAWN,
@@ -69,6 +102,42 @@ class MoguraGameController(
             if (current.players.isEmpty()) return null
             return current.players[current.currentPlayerIndex]
         }
+
+    fun publicDeckSummary(): PublicDeckSummary {
+        val current = engine
+        return PublicDeckSummary(
+            tileDrawCount = current?.tilePlacementEngine?.drawPile?.size ?: 0,
+            tileDiscardCount = current?.tilePlacementEngine?.discardPile?.size ?: 0,
+            foodDrawCount = current?.foodStockCount ?: 0,
+            foodDiscardCount = current?.foodDiscardCount ?: 0,
+        )
+    }
+
+    fun playScreenUiState(): PlayScreenUiState {
+        val current = engine
+        val phase = current?.currentPhase
+        val isPlaying = current?.gameState == GameState.PLAYING
+        val hasPendingDecision = phase == TurnPhase.DECIDE && pendingFoodDecision != null
+        val hasPendingDig = phase == TurnPhase.DIG && pendingDigPlacement != null
+        val canAdvanceFromDig = canAdvanceFromDigWithoutTargets()
+
+        return PlayScreenUiState(
+            currentPlayer = currentPlayerDisplay(currentPlayer, phase),
+            deckSummary = publicDeckSummary(),
+            digCandidates = digCandidateDisplays(hasPendingDig),
+            selectedRotation = rotationSelectionForPendingDig(hasPendingDig, pendingDigRotation),
+            lastDiceRoll = lastDiceRoll,
+            actionAvailability = ActionAvailability(
+                canCapture = isPlaying && canCapture(),
+                canEat = isPlaying && hasPendingDecision,
+                canCarry = isPlaying && hasPendingDecision,
+                canSkip = isPlaying && !hasPendingDecision &&
+                    (phase != TurnPhase.DIG || canAdvanceFromDig),
+                canEndTurn = isPlaying && phase != TurnPhase.DIG && !hasPendingDecision,
+                activePhase = phase,
+            ),
+        )
+    }
 
     fun startNewGame(playerCount: Int): GameActionResult {
         require(playerCount in 2..4) { "プレイヤー人数は2〜4人にしてください。" }
@@ -464,6 +533,23 @@ class MoguraGameController(
             DigTileChoice.REVEALED -> pending.revealedTile
             DigTileChoice.DRAWN -> pending.drawnTile
         }
+
+    private fun digCandidateDisplays(hasPendingDig: Boolean): List<DigCandidateDisplay> {
+        val pending = pendingDigPlacement
+        return DigTileChoice.entries.map { choice ->
+            val tile = when (choice) {
+                DigTileChoice.REVEALED -> pending?.revealedTile
+                DigTileChoice.DRAWN -> pending?.drawnTile
+            }
+            DigCandidateDisplay(
+                choice = choice,
+                label = choice.label(),
+                shape = tile?.shape,
+                selected = pendingDigTileChoice == choice,
+                enabled = hasPendingDig && (choice != DigTileChoice.DRAWN || tile != null),
+            )
+        }
+    }
 
     companion object {
         private const val MAX_LOG_LINES = 80

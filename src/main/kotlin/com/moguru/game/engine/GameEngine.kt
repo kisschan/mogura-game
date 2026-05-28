@@ -73,6 +73,12 @@ class GameEngine(
     private val foodStock = mutableListOf<FoodCard>()
     private val foodDiscard = mutableListOf<FoodCard>()
 
+    val foodStockCount: Int
+        get() = foodStock.size
+
+    val foodDiscardCount: Int
+        get() = foodDiscard.size
+
     private val winScore: Int
         get() = if (playerCount >= 4) 5 else 4
 
@@ -201,7 +207,10 @@ class GameEngine(
 
     /** 勝利条件を満たすプレイヤーがいれば返す。 */
     fun checkWinCondition(): Player? {
-        return players.firstOrNull { !it.isEliminated && it.score >= winScore }
+        val scoreWinner = players.firstOrNull { !it.isEliminated && it.score >= winScore }
+        if (scoreWinner != null) return scoreWinner
+
+        return players.filter { !it.isEliminated }.singleOrNull()
     }
 
     /** ゲーム終了状態を更新して返す。 */

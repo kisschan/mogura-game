@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-最終更新: 2026-05-19
+最終更新: 2026-05-22
 
 ## 現在の状況
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
@@ -27,13 +27,21 @@
 - [x] 現在手番プレイヤーパネルのモグラ画像を大きくし、カード内の文字を読みやすく調整
 - [x] 現在手番プレイヤー画像の透明余白を切り詰め、黄色い円内でカード部分が大きく見えるよう修正
 - [x] 逃走判定ダイスを振った捕獲成功でも、直近ダイスに出目を表示するよう修正
+- [x] `Burrowed_Logic.mp3` をプレイ中BGMとしてループ再生するよう追加
+- [x] 体力切れで最後の生存プレイヤーだけが残った場合にゲーム終了するよう修正
+- [x] Avast誤検知を避けるため、BGM再生からPowerShell実行を削除
+- [x] 外部メディアプレイヤーを出さず、Swing版アプリ内でMP3を再生するよう修正
 
 ## テスト結果
-- 最終実行日: 2026-05-19
-- 実行コマンド: `.\gradlew.bat test --no-daemon`
+- 最終実行日: 2026-05-22
+- 実行コマンド: `.\gradlew.bat clean build`
 - 結果: `BUILD SUCCESSFUL`
 
 ## 実装済みファイル
+- `assets/audio/burrowed_logic.mp3`
+- `libs/jlayer-1.0.1.jar`
+- `libs/README.md`
+- `src/main/kotlin/com/moguru/game/gui/BackgroundMusicPlayer.kt`
 - `src/main/kotlin/com/moguru/game/model/Board.kt`
 - `src/main/kotlin/com/moguru/game/model/HoleTile.kt`
 - `src/main/kotlin/com/moguru/game/model/Food.kt`
