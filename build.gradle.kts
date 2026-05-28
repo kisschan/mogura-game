@@ -14,6 +14,7 @@ repositories {
 }
 
 dependencies {
+    implementation(files("libs/jlayer-1.0.1.jar"))
     testImplementation(kotlin("test"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")
 }
