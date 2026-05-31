@@ -5,6 +5,7 @@ build/
 bin/
 *.iml
 .idea/
+local.properties
 mogura_asset_manifest.json
 mogura_*.jpg
 
