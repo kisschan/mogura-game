@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,6 +22,8 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -48,12 +51,12 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.CellType
 import com.moguru.game.model.FoodType
+import com.moguru.game.model.Player
 import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
 import com.moguru.game.model.TileShape
 import com.moguru.game.presenter.DigCandidateDisplay
 import com.moguru.game.presenter.DigTileChoice
-import com.moguru.game.presenter.PublicDeckSummary
 
 @Composable
 fun MoguraGameScreen(viewModel: AndroidGameViewModel = viewModel()) {
@@ -82,6 +85,7 @@ private fun SetupScreen(
         modifier = Modifier
             .fillMaxSize()
             .safeDrawingPadding()
+            .verticalScroll(rememberScrollState())
             .padding(20.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -162,6 +166,7 @@ private fun PlayScreen(
         modifier = Modifier
             .fillMaxSize()
             .safeDrawingPadding()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 4.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(5.dp),
@@ -198,30 +203,23 @@ private fun PlayStatusBar(
                 contentScale = ContentScale.Fit,
             )
         }
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
             Text(
-                text = current.titleText,
+                text = "${current.phaseText}　${current.scoreText}",
                 color = Color(0xFF2E2115),
-                fontSize = 18.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Black,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                maxLines = 2,
             )
             Text(
-                text = "${current.phaseText}  ${current.healthText}  ${current.scoreText}",
-                color = Color(0xFF2E2115),
+                text = "${current.carriedFoodText}　穴:${deck.tileDrawCount}/${deck.tileDiscardCount}　エサ:${deck.foodDrawCount}/${deck.foodDiscardCount}",
+                color = Color(0xFF4B3826),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = "${current.carriedFoodText}  穴:${deck.tileDrawCount}/${deck.tileDiscardCount}  エサ:${deck.foodDrawCount}/${deck.foodDiscardCount}",
-                color = Color(0xFF4B3826),
-                fontSize = 10.5.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                maxLines = 2,
             )
         }
         OutlinedButton(
@@ -246,7 +244,9 @@ private fun BoardView(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
-            .widthIn(max = 520.dp)
+            // 盤面は縦長(高さ≈幅÷0.75)。幅の上限で派生する高さを抑え、操作パネルを
+            // 画面外へ押し出しにくくする(幅360dp→高さ約480dp、歪みなし)。
+            .widthIn(max = 360.dp)
             .aspectRatio(BOARD_SOURCE_WIDTH / BOARD_SOURCE_HEIGHT)
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFFC88A4A))
@@ -258,7 +258,7 @@ private fun BoardView(
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.FillBounds,
         )
-        HungerMeterOverlay(maxWidth = maxWidth, maxHeight = maxHeight)
+        HungerMeterOverlay(maxWidth = maxWidth, maxHeight = maxHeight, markers = state.hungerMarkers)
 
         state.boardState.cells.forEach { cell ->
             cell.highlight?.let { tone ->
@@ -337,14 +337,86 @@ private fun BoardView(
 }
 
 @Composable
-private fun HungerMeterOverlay(maxWidth: Dp, maxHeight: Dp) {
+private fun HungerMeterOverlay(
+    maxWidth: Dp,
+    maxHeight: Dp,
+    markers: List<AndroidHungerMarkerUiState>,
+) {
     Image(
         painter = painterResource(R.drawable.hunger_meter_reference_transparent),
         contentDescription = null,
         modifier = Modifier
-            .boardRect(maxWidth, maxHeight, BoardRectSpec(0.14f, 0.018f, 0.72f, 0.247f))
+            .boardRect(maxWidth, maxHeight, BoardRectSpec(METER_LEFT, METER_TOP, METER_WIDTH, METER_HEIGHT))
             .zIndex(10f),
         contentScale = ContentScale.Fit,
+    )
+    markers.forEachIndexed { index, marker ->
+        Box(
+            modifier = Modifier
+                .boardRect(maxWidth, maxHeight, hungerMarkerRect(marker.health, index))
+                .zIndex(11f + index),
+        ) {
+            Image(
+                painter = painterResource(playerRes(marker.playerId)),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+            )
+            if (marker.isCurrent) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .border(2.dp, Color(0xFFFFD54F), RoundedCornerShape(999.dp)),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 体力に応じた腹減りメーター上のマーカー位置を求める。
+ * メーターは U 字で、満タン(13)が左上、空(0)が左下になるよう左上→右→下→左下へ進む。
+ * モックアップ (mockups/android/index.html) の hungerPoint と同じ計算を移植したもの。
+ */
+private fun hungerMarkerRect(health: Int, index: Int): BoardRectSpec {
+    val w = BOARD_SOURCE_WIDTH
+    val h = BOARD_SOURCE_HEIGHT
+    val rectX = METER_LEFT * w
+    val rectY = METER_TOP * h
+    val rectW = METER_WIDTH * w
+    val rectH = METER_HEIGHT * h
+    val left = rectX + rectW * 0.13f
+    val right = rectX + rectW * 0.88f
+    val top = rectY + rectH * 0.27f
+    val bottom = rectY + rectH * 0.78f
+    val topLength = right - left
+    val sideLength = bottom - top
+    val progress = (Player.MAX_HEALTH - health.coerceIn(0, Player.MAX_HEALTH)).toFloat() / Player.MAX_HEALTH
+    val distance = progress * (topLength + sideLength + topLength)
+    val pointX: Float
+    val pointY: Float
+    when {
+        distance <= topLength -> {
+            pointX = left + distance
+            pointY = top
+        }
+        distance <= topLength + sideLength -> {
+            pointX = right
+            pointY = top + (distance - topLength)
+        }
+        else -> {
+            pointX = right - (distance - topLength - sideLength)
+            pointY = bottom
+        }
+    }
+    val markerSize = rectH * 0.44f
+    val leftPx = pointX - markerSize / 2f - index * markerSize * 0.12f
+    val topPx = pointY - markerSize / 2f + index * markerSize * 0.08f
+    return BoardRectSpec(
+        left = leftPx / w,
+        top = topPx / h,
+        width = markerSize / w,
+        height = markerSize / h,
     )
 }
 
@@ -371,10 +443,9 @@ private fun ContextControls(
             Text(
                 text = phaseInstruction(state.playState.actionAvailability.activePhase),
                 color = Color(0xFF4B3826),
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                maxLines = 2,
             )
         }
     }
@@ -396,19 +467,10 @@ private fun DigControls(
             .padding(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text(
-            text = "掘るタイルを選ぼう",
-            color = Color(0xFF2E2115),
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Black,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             enabledCandidates.forEach { candidate ->
                 DigCandidateCard(
                     candidate = candidate,
-                    deck = state.playState.deckSummary,
                     onChoice = onChoice,
                     modifier = Modifier.weight(1f),
                 )
@@ -439,30 +501,28 @@ private fun DigControls(
 @Composable
 private fun DigCandidateCard(
     candidate: DigCandidateDisplay,
-    deck: PublicDeckSummary,
     onChoice: (DigTileChoice) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val borderColor = if (candidate.selected) Color(0xFF158A45) else Color(0xFFD3AA72)
     Surface(
         modifier = modifier
-            .height(94.dp)
             .clip(RoundedCornerShape(8.dp))
             .clickable { onChoice(candidate.choice) },
         shape = RoundedCornerShape(8.dp),
         color = if (candidate.selected) Color(0xFFEFFFF3) else Color(0xFFFFFCF4),
         border = BorderStroke(2.dp, borderColor),
     ) {
-        Row(
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 7.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                .fillMaxWidth()
+                .padding(horizontal = 7.dp, vertical = 7.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             Box(
                 modifier = Modifier
-                    .size(72.dp)
+                    .size(64.dp)
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color(0xFFEBD5B5))
                     .border(1.dp, Color(0xFF8B5C2D), RoundedCornerShape(6.dp)),
@@ -475,37 +535,21 @@ private fun DigCandidateCard(
                     contentScale = ContentScale.Fit,
                 )
             }
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.Center,
-            ) {
-                Text(
-                    text = candidate.label,
-                    color = Color(0xFF2E2115),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Black,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = tileShapeLabel(candidate.shape),
-                    color = Color(0xFF2E2115),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Black,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = "山 ${deck.tileDrawCount} / 捨 ${deck.tileDiscardCount}",
-                    color = Color(0xFF4B3826),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Text(
+                text = digCandidateShortLabel(candidate.choice),
+                color = Color(0xFF2E2115),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
+}
+
+private fun digCandidateShortLabel(choice: DigTileChoice): String = when (choice) {
+    DigTileChoice.REVEALED -> "めくり"
+    DigTileChoice.DRAWN -> "山札"
 }
 
 @Composable
@@ -513,9 +557,11 @@ private fun ActionControls(
     state: AndroidGameUiState,
     viewModel: AndroidGameViewModel,
 ) {
-    Row(
+    FlowRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        maxItemsInEachRow = 3,
     ) {
         state.visibleActions.forEach { action ->
             ActionButton(
@@ -593,14 +639,6 @@ private fun phaseInstruction(phase: TurnPhase?): String = when (phase) {
     TurnPhase.DECIDE -> "タベるかレンコウを選択"
     TurnPhase.END -> "ターン終了を押してください"
     null -> ""
-}
-
-private fun tileShapeLabel(shape: TileShape?): String = when (shape) {
-    TileShape.STRAIGHT -> "直線タイル"
-    TileShape.L_SHAPE -> "L字タイル"
-    TileShape.T_SHAPE -> "T字タイル"
-    TileShape.CROSS -> "十字タイル"
-    null -> "-"
 }
 
 private data class BoardRectSpec(
@@ -702,3 +740,10 @@ private const val GRID_RIGHT = 1038f
 private const val GRID_BOTTOM = 1364f
 private const val CELL_WIDTH = (GRID_RIGHT - GRID_LEFT) / 6f
 private const val CELL_HEIGHT = (GRID_BOTTOM - GRID_TOP) / 5f
+
+// 腹減りメーター画像の配置(盤面に対する比率)。高さは画像の自然比(1536:762)に
+// 合わせ、ContentScale.Fit でレターボックスが出ないようにする(マーカー位置が合う)。
+private const val METER_LEFT = 0.14f
+private const val METER_TOP = 0.018f
+private const val METER_WIDTH = 0.72f
+private const val METER_HEIGHT = 0.268f

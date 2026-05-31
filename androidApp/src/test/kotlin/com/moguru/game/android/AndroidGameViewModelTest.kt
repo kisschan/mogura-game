@@ -4,6 +4,7 @@ import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.FoodCard
 import com.moguru.game.model.FoodType
 import com.moguru.game.model.Position
+import com.moguru.game.model.Rotation
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.util.FixedDiceRoller
 import com.moguru.game.util.FixedShuffler
@@ -64,6 +65,8 @@ class AndroidGameViewModelTest {
         assertTrue(viewModel.uiState.value.visibleActions.isEmpty())
 
         viewModel.onCellClicked(target)
+        // 巣と接続する向き(左右開き)に回転し、移動フェーズで移動先を残す。
+        viewModel.selectRotation(Rotation.DEG_90)
         viewModel.onCellClicked(target)
 
         assertEquals(TurnPhase.MOVE, viewModel.uiState.value.playState.actionAvailability.activePhase)
@@ -71,6 +74,53 @@ class AndroidGameViewModelTest {
             listOf(AndroidVisibleAction.SKIP, AndroidVisibleAction.END_TURN),
             viewModel.uiState.value.visibleActions,
         )
+    }
+
+    @Test
+    fun `turn auto ends when no move or capture choice remains after digging`() {
+        val viewModel = testViewModel()
+        val target = Position(1, 1)
+        viewModel.startNewGame(2)
+
+        // 回転なし(上下開き)で掘ると巣と接続せず移動先が無いため、捕獲も無く自動でターンが終わる。
+        viewModel.onCellClicked(target)
+        viewModel.onCellClicked(target)
+
+        val state = viewModel.uiState.value
+        assertEquals(TurnPhase.DIG, state.playState.actionAvailability.activePhase)
+        assertEquals(1, state.playState.currentPlayer.playerId)
+    }
+
+    @Test
+    fun `failed board tap at end phase does not auto advance the turn`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+        viewModel.startNewGame(2)
+        val engine = controller.engine!!
+        engine.advancePhase()
+        engine.advancePhase()
+        engine.advancePhase()
+        assertEquals(TurnPhase.END, engine.currentPhase)
+        assertEquals(0, engine.currentPlayerIndex)
+
+        viewModel.onCellClicked(Position(0, 1))
+
+        val state = viewModel.uiState.value
+        assertEquals(TurnPhase.END, state.playState.actionAvailability.activePhase)
+        assertEquals(0, state.playState.currentPlayer.playerId)
+        assertEquals(0, engine.currentPlayerIndex)
+    }
+
+    @Test
+    fun `current hunger marker is exposed last when player health overlaps`() {
+        val viewModel = testViewModel()
+        viewModel.startNewGame(4)
+
+        val markers = viewModel.uiState.value.hungerMarkers
+
+        assertEquals(4, markers.size)
+        assertEquals(0, markers.last().playerId)
+        assertTrue(markers.last().isCurrent)
     }
 
     @Test

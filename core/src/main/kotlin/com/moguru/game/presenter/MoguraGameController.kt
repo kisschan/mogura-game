@@ -419,6 +419,41 @@ class MoguraGameController(
         }
     }
 
+    /**
+     * 選択肢の無いフェーズを自動で進める。
+     *
+     * 掘る対象なし・移動先なし・捕獲不可・エサ判断なし・END の各局面では
+     * プレイヤーが決めることが無いため、[skipPhase] で自動的に先へ進める
+     * （ENDでは [finishTurn] が呼ばれてターンが終わる）。選択肢のある局面で停止する。
+     * 次プレイヤーへも連鎖しうるが、通常は次の番の掘る局面で止まる。
+     *
+     * @return 自動で進めた最後の結果。何も進めなければ `null`。
+     */
+    fun autoAdvanceWhileNoChoice(): GameActionResult? {
+        val current = engine ?: return null
+        var last: GameActionResult? = null
+        var guard = 0
+        val max = (current.players.size + 1) * 6
+        while (current.gameState == GameState.PLAYING && guard++ < max) {
+            if (hasGenuineChoice()) break
+            val result = skipPhase()
+            if (!result.success) break
+            last = result
+        }
+        return last
+    }
+
+    private fun hasGenuineChoice(): Boolean {
+        val current = engine ?: return false
+        return when (current.currentPhase) {
+            TurnPhase.DIG -> pendingDigPlacement != null || digTargets().isNotEmpty()
+            TurnPhase.MOVE -> moveTargets().isNotEmpty()
+            TurnPhase.CAPTURE -> canCapture()
+            TurnPhase.DECIDE -> pendingFoodDecision != null
+            TurnPhase.END -> false
+        }
+    }
+
     fun finishTurn(): GameActionResult {
         val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
         val player = currentPlayer ?: return GameActionResult(false, "現在のプレイヤーがいません。")

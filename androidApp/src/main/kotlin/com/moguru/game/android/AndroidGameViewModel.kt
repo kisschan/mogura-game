@@ -22,10 +22,18 @@ data class AndroidGameUiState(
     val selectedPlayerCount: Int,
     val playState: PlayScreenUiState,
     val boardState: AndroidBoardUiState,
+    val hungerMarkers: List<AndroidHungerMarkerUiState>,
     val visibleActions: List<AndroidVisibleAction>,
     val showDigControls: Boolean,
     val logs: List<String>,
     val lastMessage: String?,
+)
+
+/** 腹減りメーターに表示する各プレイヤーの体力マーカー。 */
+data class AndroidHungerMarkerUiState(
+    val playerId: Int,
+    val health: Int,
+    val isCurrent: Boolean,
 )
 
 data class AndroidBoardUiState(
@@ -128,7 +136,11 @@ class AndroidGameViewModel(
             TurnPhase.END,
             -> GameActionResult(false, "右側の操作ボタンを使ってください。")
         }
-        refresh(result.message.takeIf { !result.success })
+        if (result.success) {
+            resolveAfterSuccessfulAction(null)
+        } else {
+            refresh(result.message)
+        }
     }
 
     fun selectDigChoice(choice: DigTileChoice) {
@@ -161,7 +173,20 @@ class AndroidGameViewModel(
 
     private fun runAction(action: () -> GameActionResult) {
         val result = action()
-        refresh(if (result.success) result.message else result.message)
+        if (result.success) {
+            resolveAfterSuccessfulAction(result.message)
+        } else {
+            refresh(result.message)
+        }
+    }
+
+    /**
+     * ユーザー操作の解決後に、選択肢の無いフェーズを自動で進める。
+     * 自動進行が発火したらメッセージはログ（「○○ の番です」等）に委ねる。
+     */
+    private fun resolveAfterSuccessfulAction(message: String?) {
+        val autoResult = controller.autoAdvanceWhileNoChoice()
+        refresh(if (autoResult != null) null else message)
     }
 
     private fun refresh(lastMessage: String?) {
@@ -185,6 +210,7 @@ class AndroidGameViewModel(
             boardState = AndroidBoardUiState(
                 cells = if (isGameStarted) buildBoardCells() else emptyList(),
             ),
+            hungerMarkers = if (isGameStarted) buildHungerMarkers() else emptyList(),
             visibleActions = if (isGameStarted) visibleActions(playState) else emptyList(),
             showDigControls = isGameStarted && playState.digCandidates.any { it.enabled },
             logs = if (isGameStarted) controller.logs.takeLast(5) else emptyList(),
@@ -201,6 +227,22 @@ class AndroidGameViewModel(
             if (actions.canSkip) add(AndroidVisibleAction.SKIP)
             if (actions.canEndTurn) add(AndroidVisibleAction.END_TURN)
         }
+    }
+
+    private fun buildHungerMarkers(): List<AndroidHungerMarkerUiState> {
+        val engine = controller.engine ?: return emptyList()
+        val currentPlayer = controller.currentPlayer
+        val activePlayers = engine.players
+            .filter { !it.isEliminated }
+
+        return (activePlayers.filter { it != currentPlayer } + activePlayers.filter { it == currentPlayer })
+            .map { player ->
+                AndroidHungerMarkerUiState(
+                    playerId = player.id,
+                    health = player.health,
+                    isCurrent = player == controller.currentPlayer,
+                )
+            }
     }
 
     private fun buildBoardCells(): List<AndroidBoardCellUiState> {
