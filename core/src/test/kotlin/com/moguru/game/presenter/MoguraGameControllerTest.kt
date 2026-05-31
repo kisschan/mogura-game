@@ -629,6 +629,43 @@ class MoguraGameControllerTest {
         assertEquals(GameState.FINISHED, engine.gameState)
     }
 
+    @Test
+    fun `auto advance ends turn when capture phase has no choice`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        engine.advancePhase()
+        engine.advancePhase()
+        assertEquals(TurnPhase.CAPTURE, engine.currentPhase)
+        assertFalse(controller.canCapture())
+
+        val result = controller.autoAdvanceWhileNoChoice()
+
+        assertTrue(result?.success == true)
+        assertEquals(1, engine.currentPlayerIndex)
+        assertEquals(TurnPhase.DIG, engine.currentPhase)
+    }
+
+    @Test
+    fun `auto advance stops while a captured food decision is pending`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        engine.placeFoodAt(player.position, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
+        engine.advancePhase()
+        engine.advancePhase()
+        controller.captureCurrentPosition()
+        assertEquals(TurnPhase.DECIDE, engine.currentPhase)
+
+        val result = controller.autoAdvanceWhileNoChoice()
+
+        assertNull(result)
+        assertEquals(TurnPhase.DECIDE, engine.currentPhase)
+        assertEquals(0, engine.currentPlayerIndex)
+        assertEquals(FoodType.BEETLE_LARVA, controller.pendingFoodDecision?.type)
+    }
+
     private fun testController(): MoguraGameController =
         MoguraGameController(
             diceRoller = FixedDiceRoller(listOf(6)),
