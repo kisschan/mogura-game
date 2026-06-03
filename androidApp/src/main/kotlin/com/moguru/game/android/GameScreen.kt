@@ -44,6 +44,9 @@ import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -54,7 +57,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moguru.game.engine.TurnPhase
-import com.moguru.game.model.CellType
 import com.moguru.game.model.FoodType
 import com.moguru.game.model.Player
 import com.moguru.game.model.Position
@@ -300,7 +302,7 @@ private fun BoardView(
                     contentDescription = null,
                     modifier = Modifier
                         .boardRect(maxWidth, maxHeight, foodRect(cell.position, scale))
-                        .zIndex(35f),
+                        .zIndex(65f),
                     contentScale = ContentScale.Fit,
                 )
             }
@@ -316,25 +318,38 @@ private fun BoardView(
                         contentDescription = player.name,
                         modifier = Modifier.fillMaxSize(),
                     )
-                    if (player.isCurrent) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .border(3.dp, Color(0xFFFFD54F), RoundedCornerShape(999.dp)),
-                        )
-                    }
                 }
             }
         }
 
         state.boardState.cells
-            .filter { it.cellType != CellType.INVALID }
+            .forEach { cell ->
+                cell.players.forEachIndexed { index, player ->
+                    if (player.isCurrent) {
+                        Box(
+                            modifier = Modifier
+                                .boardRect(maxWidth, maxHeight, playerRect(cell.position, index, cell.players.size))
+                                .zIndex(75f)
+                                .border(3.dp, Color(0xFFFFD54F), RoundedCornerShape(999.dp)),
+                        )
+                    }
+                }
+            }
+
+        state.boardState.cells
+            .filter { it.highlight != null }
             .forEach { cell ->
                 Box(
                     modifier = Modifier
                         .boardRect(maxWidth, maxHeight, cellRect(cell.position, scale = 1f))
                         .zIndex(80f)
-                        .clickable { onCellClicked(cell.position) },
+                        .semantics {
+                            contentDescription = cellDescription(cell)
+                        }
+                        .clickable(
+                            onClickLabel = cellClickLabel(cell),
+                            role = Role.Button,
+                        ) { onCellClicked(cell.position) },
                 )
             }
     }
@@ -706,6 +721,31 @@ private fun foodRect(position: Position, scale: Float): BoardRectSpec {
     )
 }
 
+private fun cellDescription(cell: AndroidBoardCellUiState): String =
+    buildList {
+        add("マス ${cell.position.col + 1},${cell.position.row + 1}")
+        cell.tile?.let { tile ->
+            add(if (tile.isFaceDown) "裏向きタイル" else "${tile.shape.boardLabel()} ${tile.rotation.steps * 90}度")
+        }
+        cell.food?.let { food ->
+            add(if (food.isFaceDown) "裏向きエサ" else food.type.boardLabel())
+        }
+        if (cell.players.isNotEmpty()) {
+            add("プレイヤー ${cell.players.joinToString { it.name }}")
+        }
+        cell.highlight?.let { tone ->
+            add(tone.boardLabel())
+        }
+    }.joinToString("、")
+
+private fun cellClickLabel(cell: AndroidBoardCellUiState): String =
+    when (cell.highlight) {
+        AndroidHighlightTone.DIG -> "このマスを掘る"
+        AndroidHighlightTone.MOVE -> "このマスへ移動"
+        AndroidHighlightTone.CAPTURE -> "このマスで捕獲"
+        null -> "このマスを選択"
+    }
+
 private fun playerRect(position: Position, index: Int, count: Int): BoardRectSpec {
     val base = cellRect(position, 1f)
     val size = when (count) {
@@ -739,6 +779,27 @@ private fun highlightStroke(tone: AndroidHighlightTone): Color = when (tone) {
     AndroidHighlightTone.DIG -> Color(0xFFF2C94C)
     AndroidHighlightTone.MOVE -> Color(0xFF158A45)
     AndroidHighlightTone.CAPTURE -> Color(0xFFE64B3F)
+}
+
+private fun AndroidHighlightTone.boardLabel(): String = when (this) {
+    AndroidHighlightTone.DIG -> "掘る候補"
+    AndroidHighlightTone.MOVE -> "移動候補"
+    AndroidHighlightTone.CAPTURE -> "捕獲候補"
+}
+
+private fun TileShape.boardLabel(): String = when (this) {
+    TileShape.STRAIGHT -> "直線タイル"
+    TileShape.L_SHAPE -> "L字タイル"
+    TileShape.T_SHAPE -> "T字タイル"
+    TileShape.CROSS -> "十字タイル"
+}
+
+private fun FoodType.boardLabel(): String = when (this) {
+    FoodType.BEETLE_LARVA -> "カブトムシの幼虫"
+    FoodType.EARTHWORM -> "ミミズ"
+    FoodType.MOLE_CRICKET -> "ケラ"
+    FoodType.CENTIPEDE -> "ムカデ"
+    FoodType.FROG -> "カエル"
 }
 
 private fun tileRes(shape: TileShape): Int = when (shape) {
