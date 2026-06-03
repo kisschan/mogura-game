@@ -3,6 +3,7 @@ package com.moguru.game.gui
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Board
 import com.moguru.game.model.CellType
+import com.moguru.game.model.FoodCard
 import com.moguru.game.model.FoodType
 import com.moguru.game.model.HoleTile
 import com.moguru.game.model.Player
@@ -410,19 +411,20 @@ class MoguraGameFrame(
             -> GameActionResult(false, "ターンを終えるには右側の操作ボタンを使ってください。")
         }
 
-        if (!result.success) {
-            Toolkit.getDefaultToolkit().beep()
-            showStatus(result.message)
-        }
-        refresh()
+        handleActionResult(result)
     }
 
     private fun selectedRotation(): Rotation =
         rotationButtons.entries.firstOrNull { it.value.isSelected }?.key ?: Rotation.DEG_0
 
     private fun runAction(action: () -> GameActionResult) {
-        val result = action()
-        if (!result.success) {
+        handleActionResult(action())
+    }
+
+    private fun handleActionResult(result: GameActionResult) {
+        if (result.success) {
+            controller.autoAdvanceWhileNoChoice()
+        } else {
             Toolkit.getDefaultToolkit().beep()
             showStatus(result.message)
         }
@@ -826,21 +828,6 @@ class BoardPanel(
                     drawTile(g, tile, cellRect)
                 }
 
-                current.foodPositions[position]?.let { food ->
-                    val image = if (food.isFaceDown) {
-                        assets.load("assets/images/foods/food_card_back.png")
-                    } else {
-                        assets.foodImage(food.type)
-                    }
-                    drawSmallImage(
-                        g = g,
-                        image = image,
-                        rect = cellRect,
-                        anchor = Anchor.BOTTOM_RIGHT,
-                        scale = foodCardScaleForPhase(current.currentPhase),
-                    )
-                }
-
                 if (position in highlights) {
                     drawHighlight(g, cellRect, current.currentPhase)
                 }
@@ -849,6 +836,8 @@ class BoardPanel(
 
         drawDigDirectionArrows(g, highlights)
         drawPlayers(g)
+        drawFoods(g)
+        drawCurrentPlayerOutline(g)
         drawHoveredFoodPreview(g)
     }
 
@@ -956,14 +945,48 @@ class BoardPanel(
                     } else {
                         drawPlaceholder(g, tokenRect, player.name.take(1), playerColor(player.id))
                     }
-
-                    if (player == controller.currentPlayer) {
-                        g.color = Color(0xFFE66D)
-                        g.stroke = BasicStroke(4f)
-                        g.drawOval(tokenRect.x, tokenRect.y, tokenRect.width, tokenRect.height)
-                    }
                 }
             }
+    }
+
+    private fun drawCurrentPlayerOutline(g: Graphics2D) {
+        val current = controller.engine ?: return
+        val currentPlayer = controller.currentPlayer?.takeUnless { it.isEliminated } ?: return
+        val rect = cellRect(currentPlayer.position) ?: return
+        val players = current.players
+            .filter { !it.isEliminated && it.position == currentPlayer.position }
+        val tokenRect = players
+            .zip(playerTokenRects(rect, players.size))
+            .firstOrNull { (player, _) -> player == currentPlayer }
+            ?.second
+            ?: return
+
+        g.color = Color(0xFFE66D)
+        g.stroke = BasicStroke(4f)
+        g.drawOval(tokenRect.x, tokenRect.y, tokenRect.width, tokenRect.height)
+    }
+
+    private fun drawFoods(g: Graphics2D) {
+        val current = controller.engine ?: return
+        current.foodPositions.forEach { (position, food) ->
+            val cellRect = cellRect(position) ?: return@forEach
+            drawFood(g, food, cellRect, foodCardScaleForPhase(current.currentPhase))
+        }
+    }
+
+    private fun drawFood(g: Graphics2D, food: FoodCard, cellRect: Rectangle, scale: Double) {
+        val image = if (food.isFaceDown) {
+            assets.load("assets/images/foods/food_card_back.png")
+        } else {
+            assets.foodImage(food.type)
+        }
+        drawSmallImage(
+            g = g,
+            image = image,
+            rect = cellRect,
+            anchor = Anchor.BOTTOM_RIGHT,
+            scale = scale,
+        )
     }
 
     private fun drawSmallImage(
