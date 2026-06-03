@@ -38,12 +38,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
@@ -306,11 +311,10 @@ private fun BoardView(
                         .boardRect(maxWidth, maxHeight, playerRect(cell.position, index, cell.players.size))
                         .zIndex(45f + index),
                 ) {
-                    Image(
-                        painter = painterResource(playerRes(player.playerId)),
+                    BoardPlayerImage(
+                        playerId = player.playerId,
                         contentDescription = player.name,
                         modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Fit,
                     )
                     if (player.isCurrent) {
                         Box(
@@ -334,6 +338,26 @@ private fun BoardView(
                 )
             }
     }
+}
+
+@Composable
+private fun BoardPlayerImage(
+    playerId: Int,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+) {
+    val image = ImageBitmap.imageResource(playerRes(playerId))
+    val source = playerImageSourceRect(playerId)
+    Image(
+        painter = BitmapPainter(
+            image = image,
+            srcOffset = IntOffset(source.left, source.top),
+            srcSize = IntSize(source.width, source.height),
+        ),
+        contentDescription = contentDescription,
+        modifier = modifier,
+        contentScale = ContentScale.Fit,
+    )
 }
 
 @Composable
@@ -648,6 +672,13 @@ private data class BoardRectSpec(
     val height: Float,
 )
 
+private data class SourceImageRect(
+    val left: Int,
+    val top: Int,
+    val width: Int,
+    val height: Int,
+)
+
 private fun Modifier.boardRect(maxWidth: Dp, maxHeight: Dp, rect: BoardRectSpec): Modifier =
     offset(x = maxWidth * rect.left, y = maxHeight * rect.top)
         .width(maxWidth * rect.width)
@@ -678,10 +709,10 @@ private fun foodRect(position: Position, scale: Float): BoardRectSpec {
 private fun playerRect(position: Position, index: Int, count: Int): BoardRectSpec {
     val base = cellRect(position, 1f)
     val size = when (count) {
-        1 -> minOf(base.width, base.height) * 0.85f
-        2 -> minOf(base.width, base.height) * 0.64f
-        3 -> minOf(base.width, base.height) * 0.56f
-        else -> minOf(base.width, base.height) * 0.50f
+        1 -> minOf(base.width, base.height) * 0.95f
+        2 -> minOf(base.width, base.height) * 0.70f
+        3 -> minOf(base.width, base.height) * 0.64f
+        else -> minOf(base.width, base.height) * 0.60f
     }
     val offsets = when (count) {
         1 -> listOf(0.5f to 0.5f)
@@ -730,6 +761,13 @@ private fun playerRes(playerId: Int): Int = when (playerId) {
     1 -> R.drawable.player_moguta_orange
     2 -> R.drawable.player_mogumi_pink
     else -> R.drawable.player_moguka_yellow
+}
+
+private fun playerImageSourceRect(playerId: Int): SourceImageRect = when (playerId) {
+    0 -> SourceImageRect(left = 264, top = 216, width = 726, height = 751)
+    1 -> SourceImageRect(left = 196, top = 145, width = 856, height = 890)
+    2 -> SourceImageRect(left = 206, top = 165, width = 839, height = 866)
+    else -> SourceImageRect(left = 252, top = 202, width = 768, height = 773)
 }
 
 private const val BOARD_SOURCE_WIDTH = 1086f

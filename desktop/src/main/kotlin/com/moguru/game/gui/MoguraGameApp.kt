@@ -952,7 +952,7 @@ class BoardPanel(
                 players.zip(playerTokenRects(rect, players.size)).forEach { (player, tokenRect) ->
                     val image = assets.playerImage(player.id)
                     if (image != null) {
-                        g.drawImage(image, tokenRect.x, tokenRect.y, tokenRect.width, tokenRect.height, null)
+                        drawImage(g, image, tokenRect, assets.visibleBounds(image))
                     } else {
                         drawPlaceholder(g, tokenRect, player.name.take(1), playerColor(player.id))
                     }
@@ -1200,6 +1200,7 @@ private fun playerTokenOffsets(playerCount: Int, stackOffset: Int): List<Point> 
 
 class GuiAssets {
     private val cache = mutableMapOf<String, BufferedImage?>()
+    private val visibleBoundsCache = mutableMapOf<BufferedImage, Rectangle>()
 
     fun load(path: String): BufferedImage? =
         cache.getOrPut(path) {
@@ -1244,6 +1245,9 @@ class GuiAssets {
         cache.getOrPut("transparent:assets/images/ui/hunger_meter_reference.jpg") {
             load("assets/images/ui/hunger_meter_reference.jpg")?.let(::makeWhiteTransparent)
         }
+
+    fun visibleBounds(image: BufferedImage): Rectangle =
+        visibleBoundsCache.getOrPut(image) { visibleImageBounds(image) }
 }
 
 private const val PLAYER_TOKEN_SCALE = 0.95
@@ -1273,6 +1277,21 @@ private fun drawRotatedImage(
     g.rotate(Math.toRadians(rotation.steps * 90.0), centerX, centerY)
     g.drawImage(image, rect.x, rect.y, rect.width, rect.height, null)
     g.transform = oldTransform
+}
+
+private fun drawImage(g: Graphics2D, image: BufferedImage, destination: Rectangle, source: Rectangle) {
+    g.drawImage(
+        image,
+        destination.x,
+        destination.y,
+        destination.x + destination.width,
+        destination.y + destination.height,
+        source.x,
+        source.y,
+        source.x + source.width,
+        source.y + source.height,
+        null,
+    )
 }
 
 fun makeWhiteTransparent(source: BufferedImage): BufferedImage {
