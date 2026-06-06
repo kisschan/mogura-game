@@ -5,6 +5,7 @@ plugins {
 
 android {
     namespace = "com.moguru.game.android"
+    enableKotlin = true
     buildToolsVersion = "36.1.0"
 
     compileSdk {
