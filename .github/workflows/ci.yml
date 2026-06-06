@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components
+        run: sdkmanager "platforms;android-36" "build-tools;36.1.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Use CI Gradle properties
+        shell: bash
+        run: |
+          sed -i \
+            -e '/trustStore/d' \
+            -e '/useSystemProxies/d' \
+            -e '/^org\.gradle\.jvmargs=/d' \
+            gradle.properties
+          printf '%s\n' 'org.gradle.jvmargs=-Dfile.encoding=UTF-8' >> gradle.properties
+
+      - name: Build
+        run: |
+          chmod +x ./gradlew
+          ./gradlew build --stacktrace
+
+      - name: Upload Gradle reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-reports
+          path: |
+            **/build/reports/**
+            **/build/test-results/**
