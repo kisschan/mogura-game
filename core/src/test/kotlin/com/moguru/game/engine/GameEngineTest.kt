@@ -479,6 +479,43 @@ class GameEngineTest {
     }
 
     @Test
+    fun `diagonal escape can move to a valid empty cell`() {
+        data class DiagonalEscapeCase(
+            val type: FoodType,
+            val roll: Int,
+            val direction: EscapeDirection,
+            val from: Position,
+            val to: Position,
+        )
+
+        val cases = listOf(
+            DiagonalEscapeCase(FoodType.MOLE_CRICKET, 3, EscapeDirection.TOP_RIGHT, Position(2, 2), Position(3, 1)),
+            DiagonalEscapeCase(FoodType.CENTIPEDE, 3, EscapeDirection.BOTTOM_LEFT, Position(3, 2), Position(2, 3)),
+        )
+
+        cases.forEach { case ->
+            val escapeEngine = GameEngine(
+                playerCount = 2,
+                diceRoller = FixedDiceRoller(listOf(case.roll)),
+                shuffler = shuffler,
+            )
+            escapeEngine.setupGame(defaultConfigs())
+            escapeEngine.removeFoodAt(case.to)
+            escapeEngine.placeFoodAt(
+                case.from,
+                FoodCard(case.type, mapOf(case.roll to case.direction), isFaceDown = false),
+            )
+
+            val result = escapeEngine.attemptCaptureAt(case.from)
+
+            assertTrue(result is CaptureResult.Escaped, "${case.direction} should escape to a valid empty cell")
+            assertEquals(case.direction, (result as CaptureResult.Escaped).direction)
+            assertNull(escapeEngine.foodPositions[case.from], "food should leave the source cell")
+            assertNotNull(escapeEngine.foodPositions[case.to], "food should move to the diagonal escape cell")
+        }
+    }
+
+    @Test
     fun `replenish recycles face-up hot-zone food when stock and discard are empty`() {
         setupDefaultGame()
 

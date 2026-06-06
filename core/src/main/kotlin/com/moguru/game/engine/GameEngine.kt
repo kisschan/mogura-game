@@ -198,7 +198,7 @@ class GameEngine(
             escapeCell == null ||
             escapeCell.type == CellType.INVALID ||
             escapeTo in _foodPositions ||
-            !movementEngine.isConnected(foodPosition, escapeTo, boardState)
+            !hasValidEscapePath(foodPosition, escapeTo, escapeDirection)
         ) {
             lastCaptureSuccess = true
             return CaptureResult.Success(roll)
@@ -269,6 +269,11 @@ class GameEngine(
         }
     }
 
+    private fun hasValidEscapePath(from: Position, to: Position, direction: EscapeDirection): Boolean {
+        if (!direction.isOrthogonal()) return true
+        return movementEngine.isConnected(from, to, boardState)
+    }
+
     /** 要確認フェーズの効果で、捕獲後選択へ直接入る。 */
     fun enterDecisionPhase() {
         currentPhase = TurnPhase.DECIDE
@@ -337,3 +342,5 @@ class GameEngine(
         } while (players[currentPlayerIndex].isEliminated && !players.all { it.isEliminated })
     }
 }
+
+private fun EscapeDirection.isOrthogonal(): Boolean = dc == 0 || dr == 0
