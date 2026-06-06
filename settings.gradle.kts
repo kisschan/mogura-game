@@ -1,19 +1,21 @@
 pluginManagement {
     repositories {
-        maven {
-            url = uri("https://repo1.maven.org/maven2/")
-        }
+        google()
         mavenCentral()
         gradlePluginPortal()
     }
+}
 
-    resolutionStrategy {
-        eachPlugin {
-            if (requested.id.id == "org.jetbrains.kotlin.jvm") {
-                useModule("org.jetbrains.kotlin:kotlin-gradle-plugin:${requested.version}")
-            }
-        }
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
     }
 }
 
 rootProject.name = "mogura-game"
+
+include(":core")
+include(":desktop")
+include(":androidApp")

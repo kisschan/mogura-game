@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-最終更新: 2026-05-22
+最終更新: 2026-05-28
 
 ## 現在の状況
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
@@ -31,11 +31,36 @@
 - [x] 体力切れで最後の生存プレイヤーだけが残った場合にゲーム終了するよう修正
 - [x] Avast誤検知を避けるため、BGM再生からPowerShell実行を削除
 - [x] 外部メディアプレイヤーを出さず、Swing版アプリ内でMP3を再生するよう修正
+- [x] Android版MVP作成のため、`core` / `desktop` / `androidApp` の3モジュール構成に再編
+- [x] 既存ゲームロジックと共通controllerを `core` に移し、Swing版は `desktop` として維持
+- [x] Jetpack Compose版Androidアプリを追加し、2〜4人ローカルプレイ、盤面操作、掘る候補、回転、捕獲、食べる/レンコウ、ログ表示を実装
+- [x] Android用画像リソースを `androidApp/src/main/res/drawable-nodpi` に配置
+- [x] Android画面の初期レイアウトを圧縮し、システムバー/カメラ領域を避けるよう調整
+- [x] Android版をセットアップ画面とプレイ画面に分離し、プレイ中は有効な操作だけ表示するよう再設計
+- [x] Android版の腹減りメーターを透過PNGリソースに差し替え
+- [x] Android版プレイ画面をVariant 2ベースで再調整し、HUD画像・盤面トークン・掘る候補カード・最新ログを拡大
+- [x] 表示用日本語ラベルと回転表記をテストで固定し、回転ラベルを `0° / 90° / 180° / 270°` に統一
 
 ## テスト結果
-- 最終実行日: 2026-05-22
-- 実行コマンド: `.\gradlew.bat clean build`
+- 最終実行日: 2026-05-28
+- 実行コマンド: `.\gradlew.bat :core:test`
 - 結果: `BUILD SUCCESSFUL`
+- 実行コマンド: `.\gradlew.bat :desktop:test`
+- 結果: `BUILD SUCCESSFUL`
+- 実行コマンド: `.\gradlew.bat :androidApp:testDebugUnitTest`
+- 結果: `BUILD SUCCESSFUL`
+- 実行コマンド: `.\gradlew.bat :androidApp:assembleDebug`
+- 結果: `BUILD SUCCESSFUL`
+- 実行コマンド: `.\gradlew.bat :androidApp:testDebugUnitTest :androidApp:assembleDebug`
+- 結果: `BUILD SUCCESSFUL`
+- 実行コマンド: `.\gradlew.bat :androidApp:testDebugUnitTest :androidApp:assembleDebug`
+- 結果: `BUILD SUCCESSFUL`（Android画面再設計後）
+- 実行コマンド: `.\gradlew.bat :core:test :androidApp:testDebugUnitTest`
+- 結果: `BUILD SUCCESSFUL`（Android視認性改善後）
+- 実行コマンド: `.\gradlew.bat :androidApp:assembleDebug`
+- 結果: `BUILD SUCCESSFUL`（Android視認性改善後）
+- 実行コマンド: `.\gradlew.bat :desktop:test`
+- 結果: `BUILD SUCCESSFUL`（回転ラベル変更後のSwing回帰確認）
 
 ## 実装済みファイル
 - `assets/audio/burrowed_logic.mp3`
@@ -69,6 +94,17 @@
 - `src/test/kotlin/com/moguru/game/gui/FoodDisplayTest.kt`
 - `src/test/kotlin/com/moguru/game/gui/DigRotationDisplayTest.kt`
 - `src/test/kotlin/com/moguru/game/gui/CurrentPlayerDisplayTest.kt`
+
+## Android版で追加・再配置した主なファイル
+- `core/src/main/kotlin/com/moguru/game/model/`
+- `core/src/main/kotlin/com/moguru/game/engine/`
+- `core/src/main/kotlin/com/moguru/game/presenter/MoguraGameController.kt`
+- `desktop/src/main/kotlin/com/moguru/game/gui/MoguraGameApp.kt`
+- `androidApp/src/main/kotlin/com/moguru/game/android/MainActivity.kt`
+- `androidApp/src/main/kotlin/com/moguru/game/android/AndroidGameViewModel.kt`
+- `androidApp/src/main/kotlin/com/moguru/game/android/GameScreen.kt`
+- `androidApp/src/test/kotlin/com/moguru/game/android/AndroidGameViewModelTest.kt`
+- `androidApp/src/main/res/drawable-nodpi/`
 
 ## TODO / 未確定・要確認
 - `Food.kt`: `// TODO: 【要確認】12-1` ケラは要件では3面逃走だが画像では3/4の2面のみ読めるため画像優先で仮実装
