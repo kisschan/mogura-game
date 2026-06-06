@@ -2,10 +2,13 @@ package com.moguru.game.engine
 
 import com.moguru.game.model.Board
 import com.moguru.game.model.CellType
+import com.moguru.game.model.Direction
 import com.moguru.game.model.EscapeDirection
 import com.moguru.game.model.FoodCard
 import com.moguru.game.model.FoodType
+import com.moguru.game.model.HoleTile
 import com.moguru.game.model.Position
+import com.moguru.game.model.TileShape
 import com.moguru.game.util.FixedDiceRoller
 import com.moguru.game.util.FixedShuffler
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -344,8 +347,11 @@ class GameEngineTest {
         escapeEngine.setupGame(defaultConfigs())
 
         val foodPos = Position(3, 2)
+        val escapeTo = Position(4, 2)
         val food = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT))
         escapeEngine.placeFoodAt(foodPos, food)
+        placeFaceUpTile(escapeEngine, foodPos, Direction.RIGHT)
+        placeFaceUpTile(escapeEngine, escapeTo, Direction.LEFT)
 
         val result = escapeEngine.attemptCaptureAt(foodPos)
         assertTrue(result is CaptureResult.Escaped, "有効マスへの逃走は成功するべき")
@@ -385,6 +391,8 @@ class GameEngineTest {
         val food = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT), isFaceDown = false)
         escapeEngine.placeFoodAt(Position(2, 2), food)
         escapeEngine.removeFoodAt(Position(3, 2))
+        placeFaceUpTile(escapeEngine, Position(2, 2), Direction.RIGHT)
+        placeFaceUpTile(escapeEngine, Position(3, 2), Direction.LEFT)
 
         val result = escapeEngine.attemptCaptureAt(Position(2, 2))
         assertTrue(result is CaptureResult.Escaped, "逃走先が空なら逃走になるべき")
@@ -424,8 +432,91 @@ class GameEngineTest {
         assertEquals(GameState.SETUP, state, "セットアップ前はSETUPのままであるべき")
     }
 
+    @Test
+    fun `escape into ground cell without tile path is captured`() {
+        val escapeEngine = GameEngine(
+            playerCount = 2,
+            diceRoller = FixedDiceRoller(listOf(1)),
+            shuffler = shuffler,
+        )
+        escapeEngine.setupGame(defaultConfigs())
+
+        val foodPosition = Position(1, 1)
+        val escapeTo = Position(1, 0)
+        val food = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.TOP), isFaceDown = false)
+        placeFaceUpTile(escapeEngine, foodPosition, Direction.TOP)
+        escapeEngine.placeFoodAt(foodPosition, food)
+
+        val result = escapeEngine.attemptCaptureAt(foodPosition)
+
+        assertTrue(result is CaptureResult.Success, "escape into a ground cell without a tile path should be captured")
+        assertNotNull(escapeEngine.foodPositions[foodPosition], "food should remain at the capture source")
+        assertNull(escapeEngine.foodPositions[escapeTo], "food should not move into an unreachable ground cell")
+    }
+
+    @Test
+    fun `escape into face-up tile without connected openings is captured`() {
+        val escapeEngine = GameEngine(
+            playerCount = 2,
+            diceRoller = FixedDiceRoller(listOf(1)),
+            shuffler = shuffler,
+        )
+        escapeEngine.setupGame(defaultConfigs())
+
+        val foodPosition = Position(2, 2)
+        val escapeTo = Position(3, 2)
+        val food = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT), isFaceDown = false)
+        escapeEngine.removeFoodAt(escapeTo)
+        placeFaceUpTile(escapeEngine, foodPosition, Direction.RIGHT)
+        placeFaceUpTile(escapeEngine, escapeTo, Direction.RIGHT)
+        escapeEngine.placeFoodAt(foodPosition, food)
+
+        val result = escapeEngine.attemptCaptureAt(foodPosition)
+
+        assertTrue(result is CaptureResult.Success, "escape without connected tile openings should be captured")
+        assertNotNull(escapeEngine.foodPositions[foodPosition], "food should remain at the capture source")
+        assertNull(escapeEngine.foodPositions[escapeTo], "food should not move into an unreachable tile")
+    }
+
+    @Test
+    fun `replenish recycles face-up hot-zone food when stock and discard are empty`() {
+        setupDefaultGame()
+
+        repeat(2) {
+            Board.HOT_ZONE_POSITIONS.forEach { position ->
+                engine.removeFoodAt(position)
+            }
+            engine.replenishFood()
+        }
+        assertEquals(0, engine.foodStockCount)
+        assertEquals(0, engine.foodDiscardCount)
+
+        Board.HOT_ZONE_POSITIONS.forEach { position ->
+            val food = engine.removeFoodAt(position)
+            if (food != null) {
+                engine.placeFoodAt(position, food.copy(isFaceDown = false))
+            }
+        }
+        assertTrue(engine.shouldReplenishFood())
+
+        engine.replenishFood()
+
+        Board.HOT_ZONE_POSITIONS.forEach { position ->
+            val food = engine.foodPositions[position]
+            assertNotNull(food, "hot-zone food should be recycled back into $position")
+            assertTrue(food!!.isFaceDown, "recycled hot-zone food should be face down")
+        }
+    }
+
     private fun setupDefaultGame() {
         engine.setupGame(defaultConfigs())
+    }
+
+    private fun placeFaceUpTile(engine: GameEngine, position: Position, vararg openSides: Direction) {
+        engine.boardState.placeTile(
+            position,
+            HoleTile(TileShape.CROSS, openSides.toSet(), isFaceDown = false),
+        )
     }
 
     private fun defaultConfigs(): List<PlayerConfig> = listOf(

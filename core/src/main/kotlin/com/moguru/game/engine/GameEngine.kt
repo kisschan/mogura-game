@@ -194,7 +194,12 @@ class GameEngine(
 
         val escapeTo = escapeDirection.applyTo(foodPosition)
         val escapeCell = board.getCell(escapeTo)
-        if (escapeCell == null || escapeCell.type == CellType.INVALID || escapeTo in _foodPositions) {
+        if (
+            escapeCell == null ||
+            escapeCell.type == CellType.INVALID ||
+            escapeTo in _foodPositions ||
+            !movementEngine.isConnected(foodPosition, escapeTo, boardState)
+        ) {
             lastCaptureSuccess = true
             return CaptureResult.Success(roll)
         }
@@ -238,6 +243,8 @@ class GameEngine(
      * 表向きエサは捨て札へ送り、空いたホットゾーンを裏向きエサで埋める。
      */
     fun replenishFood() {
+        sweepFaceUpHotZoneFood()
+
         if (foodStock.isEmpty() && foodDiscard.isEmpty()) return
 
         if (foodStock.isEmpty()) {
@@ -246,14 +253,18 @@ class GameEngine(
         }
 
         Board.HOT_ZONE_POSITIONS.forEach { position ->
+            if (position !in _foodPositions && foodStock.isNotEmpty()) {
+                _foodPositions[position] = foodStock.removeFirst()
+            }
+        }
+    }
+
+    private fun sweepFaceUpHotZoneFood() {
+        Board.HOT_ZONE_POSITIONS.forEach { position ->
             val existing = _foodPositions[position]
             if (existing != null && !existing.isFaceDown) {
                 _foodPositions.remove(position)
                 foodDiscard.add(existing.copy(isFaceDown = true))
-            }
-
-            if (position !in _foodPositions && foodStock.isNotEmpty()) {
-                _foodPositions[position] = foodStock.removeFirst()
             }
         }
     }

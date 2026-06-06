@@ -66,7 +66,7 @@ class MovementEngine(private val board: Board) {
     /**
      * 隣接する2マス間が接続されているか判定する。
      */
-    private fun isConnected(from: Position, to: Position, boardState: BoardState): Boolean {
+    internal fun isConnected(from: Position, to: Position, boardState: BoardState): Boolean {
         val directionFromTo = getDirection(from, to) ?: return false
         val directionToFrom = directionFromTo.opposite()
 
