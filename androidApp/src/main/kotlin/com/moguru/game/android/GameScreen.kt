@@ -65,6 +65,13 @@ import com.moguru.game.model.TileShape
 import com.moguru.game.presenter.DigCandidateDisplay
 import com.moguru.game.presenter.DigTileChoice
 
+internal const val BOARD_HIGHLIGHT_Z = 15f
+internal const val BOARD_TILE_Z = 20f
+internal const val BOARD_FOOD_Z = 40f
+internal const val BOARD_PLAYER_BASE_Z = 45f
+internal const val BOARD_CURRENT_PLAYER_OUTLINE_Z = 75f
+internal const val BOARD_CLICK_TARGET_Z = 80f
+
 @Composable
 fun MoguraGameScreen(viewModel: AndroidGameViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsState()
@@ -272,7 +279,7 @@ private fun BoardView(
                 Box(
                     modifier = Modifier
                         .boardRect(maxWidth, maxHeight, cellRect(cell.position, scale = 0.98f))
-                        .zIndex(15f)
+                        .zIndex(BOARD_HIGHLIGHT_Z)
                         .background(highlightFill(tone))
                         .border(3.dp, highlightStroke(tone)),
                 )
@@ -286,7 +293,7 @@ private fun BoardView(
                     contentDescription = null,
                     modifier = Modifier
                         .boardRect(maxWidth, maxHeight, cellRect(cell.position, scale = 0.84f))
-                        .zIndex(20f)
+                        .zIndex(BOARD_TILE_Z)
                         .graphicsLayer {
                             if (!tile.isFaceDown) rotationZ = tile.rotation.steps * 90f
                         },
@@ -302,7 +309,7 @@ private fun BoardView(
                     contentDescription = null,
                     modifier = Modifier
                         .boardRect(maxWidth, maxHeight, foodRect(cell.position, scale))
-                        .zIndex(65f),
+                        .zIndex(BOARD_FOOD_Z),
                     contentScale = ContentScale.Fit,
                 )
             }
@@ -311,7 +318,7 @@ private fun BoardView(
                 Box(
                     modifier = Modifier
                         .boardRect(maxWidth, maxHeight, playerRect(cell.position, index, cell.players.size))
-                        .zIndex(45f + index),
+                        .zIndex(BOARD_PLAYER_BASE_Z + index),
                 ) {
                     BoardPlayerImage(
                         playerId = player.playerId,
@@ -329,7 +336,7 @@ private fun BoardView(
                         Box(
                             modifier = Modifier
                                 .boardRect(maxWidth, maxHeight, playerRect(cell.position, index, cell.players.size))
-                                .zIndex(75f)
+                                .zIndex(BOARD_CURRENT_PLAYER_OUTLINE_Z)
                                 .border(3.dp, Color(0xFFFFD54F), RoundedCornerShape(999.dp)),
                         )
                     }
@@ -342,7 +349,7 @@ private fun BoardView(
                 Box(
                     modifier = Modifier
                         .boardRect(maxWidth, maxHeight, cellRect(cell.position, scale = 1f))
-                        .zIndex(80f)
+                        .zIndex(BOARD_CLICK_TARGET_Z)
                         .semantics {
                             contentDescription = cellDescription(cell)
                         }
