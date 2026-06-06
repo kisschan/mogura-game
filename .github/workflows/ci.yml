@@ -37,15 +37,17 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Use CI Gradle properties
+      - name: Create CI truststore
         shell: bash
         run: |
-          sed -i \
-            -e '/trustStore/d' \
-            -e '/useSystemProxies/d' \
-            -e '/^org\.gradle\.jvmargs=/d' \
-            gradle.properties
-          printf '%s\n' 'org.gradle.jvmargs=-Dfile.encoding=UTF-8' >> gradle.properties
+          mkdir -p gradle/certs
+          keytool -importkeystore \
+            -srckeystore "$JAVA_HOME/lib/security/cacerts" \
+            -srcstorepass changeit \
+            -destkeystore gradle/certs/gradle-truststore.p12 \
+            -deststoretype PKCS12 \
+            -deststorepass changeit \
+            -noprompt
 
       - name: Build
         run: |
