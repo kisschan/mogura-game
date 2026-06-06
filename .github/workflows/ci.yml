@@ -49,9 +49,14 @@ jobs:
             -deststorepass changeit \
             -noprompt
 
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Test
+        run: ./gradlew test --stacktrace
+
       - name: Build
         run: |
-          chmod +x ./gradlew
           ./gradlew build --stacktrace
 
       - name: Upload Gradle reports
