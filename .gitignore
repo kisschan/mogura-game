@@ -14,5 +14,7 @@ assets/source/
 
 # Local TLS truststore/certificates for this machine.
 gradle/certs/
+.devcontainer/certs/*
+!.devcontainer/certs/.gitkeep
 *.p12
 *.pfx
