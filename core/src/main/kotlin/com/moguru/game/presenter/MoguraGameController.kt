@@ -9,6 +9,7 @@ import com.moguru.game.model.Board
 import com.moguru.game.model.CellType
 import com.moguru.game.model.Direction
 import com.moguru.game.model.FoodCard
+import com.moguru.game.model.FoodType
 import com.moguru.game.model.HoleTile
 import com.moguru.game.model.Player
 import com.moguru.game.model.Position
@@ -54,6 +55,10 @@ data class PlayScreenUiState(
     val digCandidates: List<DigCandidateDisplay>,
     val selectedRotation: Rotation,
     val lastDiceRoll: Int?,
+    val diceRouletteActive: Boolean,
+    val diceRouletteResult: Int?,
+    val diceRouletteFood: FoodType?,
+    val diceRouletteEscapeRolls: List<Int>,
     val actionAvailability: ActionAvailability,
 )
 
@@ -66,6 +71,17 @@ data class PendingDigPlacement(
     val position: Position,
     val revealedTile: HoleTile,
     val drawnTile: HoleTile?,
+)
+
+/**
+ * ダイスルーレット待ちの捕獲。
+ *
+ * [roll] が null の間はルーレット回転中（出目未確定）を表す。
+ */
+data class PendingCaptureRoll(
+    val position: Position,
+    val food: FoodCard,
+    val roll: Int? = null,
 )
 
 class MoguraGameController(
@@ -82,6 +98,9 @@ class MoguraGameController(
         private set
 
     var pendingFoodDecision: FoodCard? = null
+        private set
+
+    var pendingCaptureRoll: PendingCaptureRoll? = null
         private set
 
     var pendingDigPlacement: PendingDigPlacement? = null
@@ -127,13 +146,18 @@ class MoguraGameController(
             digCandidates = digCandidateDisplays(hasPendingDig),
             selectedRotation = rotationSelectionForPendingDig(hasPendingDig, pendingDigRotation),
             lastDiceRoll = lastDiceRoll,
+            diceRouletteActive = pendingCaptureRoll != null,
+            diceRouletteResult = pendingCaptureRoll?.roll,
+            diceRouletteFood = pendingCaptureRoll?.food?.type,
+            diceRouletteEscapeRolls = pendingCaptureRoll?.food?.escapeMap?.keys?.sorted().orEmpty(),
             actionAvailability = ActionAvailability(
-                canCapture = isPlaying && canCapture(),
+                canCapture = isPlaying && canCapture() && pendingCaptureRoll == null,
                 canEat = isPlaying && hasPendingDecision,
                 canCarry = isPlaying && hasPendingDecision,
-                canSkip = isPlaying && !hasPendingDecision &&
+                canSkip = isPlaying && !hasPendingDecision && pendingCaptureRoll == null &&
                     (phase != TurnPhase.DIG || canAdvanceFromDig),
-                canEndTurn = isPlaying && phase != TurnPhase.DIG && !hasPendingDecision,
+                canEndTurn = isPlaying && phase != TurnPhase.DIG && !hasPendingDecision &&
+                    pendingCaptureRoll == null,
                 activePhase = phase,
             ),
         )
@@ -153,6 +177,7 @@ class MoguraGameController(
         lastCaptureResult = null
         lastDiceRoll = null
         pendingFoodDecision = null
+        pendingCaptureRoll = null
         pendingDigPlacement = null
         pendingDigRotation = null
         pendingDigTileChoice = null
@@ -320,6 +345,9 @@ class MoguraGameController(
     fun captureCurrentPosition(): GameActionResult {
         val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
         val player = currentPlayer ?: return GameActionResult(false, "現在のプレイヤーがいません。")
+        if (pendingCaptureRoll != null) {
+            return GameActionResult(false, "ダイス判定の解決を待っています。")
+        }
         if (!canCapture()) {
             return GameActionResult(false, "ここには捕獲できるエサがありません。")
         }
@@ -328,10 +356,81 @@ class MoguraGameController(
         val food = current.foodPositions[position]
             ?: return GameActionResult(false, "ここにはエサがありません。")
 
-        val result = current.attemptCaptureAt(position)
+        pendingCaptureRoll = PendingCaptureRoll(position, food)
+        if (food.escapeMap.isEmpty()) {
+            addLog("${player.name} が ${food.type.displayName()} を見つけた！逃げないエサだ。タップして捕まえてください。")
+        } else {
+            addLog("${player.name} が ${food.type.displayName()} を見つけた！タップしてダイスを回してください。")
+        }
+        return GameActionResult(true, "エサカードを公開しました。")
+    }
+
+    /**
+     * ルーレット演出を挟まずに捕獲判定を一括で解決する。
+     *
+     * カード公開演出を持たないUI（デスクトップ版など）向け。
+     */
+    fun captureCurrentPositionImmediately(): GameActionResult {
+        val started = captureCurrentPosition()
+        if (!started.success) return started
+        val pending = pendingCaptureRoll ?: return started
+        if (pending.food.escapeMap.isNotEmpty()) {
+            val rolled = rollCaptureDice()
+            if (!rolled.success) return rolled
+        }
+        return resolveCaptureRoll()
+    }
+
+    /** ルーレットを止めて出目を確定する（演出はUI側で継続する）。 */
+    fun rollCaptureDice(): GameActionResult {
+        val pending = pendingCaptureRoll
+            ?: return GameActionResult(false, "ダイス判定はありません。")
+        if (pending.roll != null) {
+            return GameActionResult(false, "すでにダイスは振られています。")
+        }
+
+        val roll = diceRoller.roll()
+        pendingCaptureRoll = pending.copy(roll = roll)
+        lastDiceRoll = roll
+        addLog("ダイスの目は $roll！")
+        return GameActionResult(true, "ダイスの目が確定しました。")
+    }
+
+    /**
+     * 確定した出目で捕獲を解決し、フェーズを進める。
+     *
+     * 逃走ダイスの無いエサはダイスを振らずに（出目未確定のまま）解決できる。
+     */
+    fun resolveCaptureRoll(): GameActionResult {
+        val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
+        val pending = pendingCaptureRoll
+            ?: return GameActionResult(false, "ダイス判定はありません。")
+        val roll = pending.roll
+        if (roll == null && pending.food.escapeMap.isNotEmpty()) {
+            return GameActionResult(false, "先にダイスを止めてください。")
+        }
+
+        pendingCaptureRoll = null
+        val result = if (roll == null) {
+            current.attemptCaptureAt(pending.position)
+        } else {
+            current.attemptCaptureAt(pending.position, roll)
+        }
+        return resolveCaptureOutcome(pending.position, pending.food, result)
+    }
+
+    /** 捕獲判定の結果を盤面・ログ・フェーズへ反映する。 */
+    private fun resolveCaptureOutcome(
+        position: Position,
+        food: FoodCard,
+        result: CaptureResult,
+    ): GameActionResult {
+        val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
+        val player = currentPlayer ?: return GameActionResult(false, "現在のプレイヤーがいません。")
+
         lastCaptureResult = result
         lastDiceRoll = when (result) {
-            is CaptureResult.Success -> result.diceRoll
+            is CaptureResult.Success -> result.diceRoll ?: lastDiceRoll
             is CaptureResult.Escaped -> result.diceRoll
         }
 
@@ -397,6 +496,9 @@ class MoguraGameController(
         if (current.gameState == GameState.FINISHED) {
             return GameActionResult(false, "ゲームはすでに終了しています。")
         }
+        if (pendingCaptureRoll != null) {
+            return GameActionResult(false, "ダイスルーレット中はスキップできません。")
+        }
         if (current.currentPhase == TurnPhase.DIG) {
             if (canAdvanceFromDigWithoutTargets()) {
                 current.advancePhase()
@@ -448,7 +550,7 @@ class MoguraGameController(
         return when (current.currentPhase) {
             TurnPhase.DIG -> pendingDigPlacement != null || digTargets().isNotEmpty()
             TurnPhase.MOVE -> moveTargets().isNotEmpty()
-            TurnPhase.CAPTURE -> canCapture()
+            TurnPhase.CAPTURE -> canCapture() || pendingCaptureRoll != null
             TurnPhase.DECIDE -> pendingFoodDecision != null
             TurnPhase.END -> false
         }
@@ -459,6 +561,9 @@ class MoguraGameController(
         val player = currentPlayer ?: return GameActionResult(false, "現在のプレイヤーがいません。")
         if (current.gameState == GameState.FINISHED) {
             return GameActionResult(false, "ゲームはすでに終了しています。")
+        }
+        if (pendingCaptureRoll != null) {
+            return GameActionResult(false, "ダイスルーレット中はターン終了できません。")
         }
         if (current.currentPhase == TurnPhase.DIG) {
             return GameActionResult(false, "掘るフェーズを終えるまでターン終了できません。")

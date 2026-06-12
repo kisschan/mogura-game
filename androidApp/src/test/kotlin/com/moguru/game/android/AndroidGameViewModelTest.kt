@@ -124,7 +124,7 @@ class AndroidGameViewModelTest {
     }
 
     @Test
-    fun `capture action updates last dice roll`() {
+    fun `capture with escape dice runs the roulette flow`() {
         val controller = testController()
         val viewModel = AndroidGameViewModel(controller)
         viewModel.startNewGame(2)
@@ -139,12 +139,93 @@ class AndroidGameViewModelTest {
 
         viewModel.capture()
 
-        assertEquals(6, viewModel.uiState.value.playState.lastDiceRoll)
-        assertEquals(TurnPhase.DECIDE, viewModel.uiState.value.playState.actionAvailability.activePhase)
+        var state = viewModel.uiState.value.playState
+        assertTrue(state.diceRouletteActive, "捕獲でルーレットが始まるべき")
+        assertNull(state.diceRouletteResult)
+        assertEquals(FoodType.EARTHWORM, state.diceRouletteFood, "カード公開用にエサ種別を見せるべき")
+        assertEquals(listOf(1, 2), state.diceRouletteEscapeRolls, "逃走目を見せるべき")
+        assertEquals(TurnPhase.CAPTURE, state.actionAvailability.activePhase)
+        assertTrue(viewModel.uiState.value.visibleActions.isEmpty(), "ルーレット中は操作ボタンを隠す")
+
+        viewModel.stopDiceRoulette()
+
+        state = viewModel.uiState.value.playState
+        assertTrue(state.diceRouletteActive, "着地演出中はオーバーレイ表示が続く")
+        assertEquals(6, state.diceRouletteResult)
+        assertEquals(TurnPhase.CAPTURE, state.actionAvailability.activePhase)
+
+        viewModel.finishDiceRoulette()
+
+        state = viewModel.uiState.value.playState
+        assertFalse(state.diceRouletteActive)
+        assertEquals(6, state.lastDiceRoll)
+        assertEquals(TurnPhase.DECIDE, state.actionAvailability.activePhase)
         assertEquals(
             listOf(AndroidVisibleAction.EAT, AndroidVisibleAction.CARRY),
             viewModel.uiState.value.visibleActions,
         )
+    }
+
+    @Test
+    fun `capture without escape dice reveals the card then resolves without spinning`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+        viewModel.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        engine.placeFoodAt(
+            player.position,
+            FoodCard(FoodType.BEETLE_LARVA, emptyMap()),
+        )
+        engine.advancePhase()
+        engine.advancePhase()
+
+        viewModel.capture()
+
+        var state = viewModel.uiState.value.playState
+        assertTrue(state.diceRouletteActive, "逃走なしエサでもカード公開を見せるべき")
+        assertEquals(FoodType.BEETLE_LARVA, state.diceRouletteFood)
+        assertTrue(state.diceRouletteEscapeRolls.isEmpty(), "逃走目なしとして公開するべき")
+        assertEquals(TurnPhase.CAPTURE, state.actionAvailability.activePhase)
+
+        viewModel.finishDiceRoulette()
+
+        state = viewModel.uiState.value.playState
+        assertFalse(state.diceRouletteActive)
+        assertEquals(TurnPhase.DECIDE, state.actionAvailability.activePhase)
+        assertEquals(
+            listOf(AndroidVisibleAction.EAT, AndroidVisibleAction.CARRY),
+            viewModel.uiState.value.visibleActions,
+        )
+    }
+
+    @Test
+    fun `repeated roulette taps are ignored`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+        viewModel.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        engine.placeFoodAt(
+            player.position,
+            FoodCard.createDummyCards(FoodType.EARTHWORM).first(),
+        )
+        engine.advancePhase()
+        engine.advancePhase()
+        viewModel.capture()
+        viewModel.stopDiceRoulette()
+
+        viewModel.stopDiceRoulette()
+
+        val state = viewModel.uiState.value.playState
+        assertTrue(state.diceRouletteActive)
+        assertEquals(6, state.diceRouletteResult)
+        assertEquals(TurnPhase.CAPTURE, state.actionAvailability.activePhase)
+
+        viewModel.finishDiceRoulette()
+        viewModel.finishDiceRoulette()
+
+        assertEquals(TurnPhase.DECIDE, viewModel.uiState.value.playState.actionAvailability.activePhase)
     }
 
     private fun testViewModel(): AndroidGameViewModel =
