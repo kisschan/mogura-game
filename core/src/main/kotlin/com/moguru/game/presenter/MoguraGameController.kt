@@ -430,7 +430,7 @@ class MoguraGameController(
 
         lastCaptureResult = result
         lastDiceRoll = when (result) {
-            is CaptureResult.Success -> result.diceRoll ?: lastDiceRoll
+            is CaptureResult.Success -> result.diceRoll
             is CaptureResult.Escaped -> result.diceRoll
         }
 

@@ -128,6 +128,32 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `last dice roll clears when a later capture needs no dice`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        engine.advancePhase()
+        engine.advancePhase()
+        controller.captureCurrentPositionImmediately()
+        assertEquals(6, controller.lastDiceRoll, "ダイス捕獲では出目が残るべき")
+
+        controller.eatPendingFood()
+        engine.advancePhase()
+        val nextPlayer = controller.currentPlayer!!
+        engine.placeFoodAt(nextPlayer.position, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
+        engine.advancePhase()
+        engine.advancePhase()
+
+        val result = controller.captureCurrentPositionImmediately()
+
+        assertTrue(result.success)
+        assertNull(controller.lastDiceRoll, "ダイスを使わない捕獲では古い出目をクリアするべき")
+        assertNull(controller.playScreenUiState().lastDiceRoll)
+    }
+
+    @Test
     fun `capture immediately resolves the whole flow for plain uis`() {
         val controller = testController()
         controller.startNewGame(2)
