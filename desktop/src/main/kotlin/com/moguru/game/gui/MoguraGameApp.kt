@@ -120,7 +120,7 @@ class MoguraGameFrame(
         newGameButton.addActionListener { promptNewGame() }
         digGuideButton.addActionListener { showStatus(phaseHelp(controller.engine?.currentPhase)) }
         moveGuideButton.addActionListener { showStatus(phaseHelp(controller.engine?.currentPhase)) }
-        captureButton.addActionListener { runAction { controller.captureCurrentPosition() } }
+        captureButton.addActionListener { runAction { controller.captureCurrentPositionImmediately() } }
         eatButton.addActionListener { runAction { controller.eatPendingFood() } }
         carryButton.addActionListener { runAction { controller.carryPendingFood() } }
         skipButton.addActionListener { runAction { controller.skipPhase() } }
@@ -400,7 +400,7 @@ class MoguraGameFrame(
             TurnPhase.CAPTURE -> {
                 val player = controller.currentPlayer
                 if (player?.position == position) {
-                    controller.captureCurrentPosition()
+                    controller.captureCurrentPositionImmediately()
                 } else {
                     GameActionResult(false, "捕獲するには現在のプレイヤーがいるマスをクリックしてください。")
                 }

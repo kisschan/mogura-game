@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -398,6 +399,69 @@ class GameEngineTest {
         assertTrue(result is CaptureResult.Escaped, "逃走先が空なら逃走になるべき")
         assertNull(escapeEngine.foodPositions[Position(2, 2)], "元の位置からエサが消えるべき")
         assertNotNull(escapeEngine.foodPositions[Position(3, 2)], "逃走先にエサが移動するべき")
+    }
+
+    @Test
+    fun `出目を指定した捕獲判定はダイスローラーを使わない`() {
+        val escapeEngine = GameEngine(
+            playerCount = 2,
+            diceRoller = FixedDiceRoller(listOf(6)),
+            shuffler = shuffler,
+        )
+        escapeEngine.setupGame(defaultConfigs())
+
+        val food = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT), isFaceDown = false)
+        escapeEngine.placeFoodAt(Position(2, 2), food)
+        escapeEngine.removeFoodAt(Position(3, 2))
+        placeFaceUpTile(escapeEngine, Position(2, 2), Direction.RIGHT)
+        placeFaceUpTile(escapeEngine, Position(3, 2), Direction.LEFT)
+
+        val result = escapeEngine.attemptCaptureAt(Position(2, 2), roll = 1)
+        assertTrue(result is CaptureResult.Escaped, "指定した出目1で逃走になるべき（ローラーの6は無視）")
+        assertEquals(1, (result as CaptureResult.Escaped).diceRoll)
+        assertNull(escapeEngine.foodPositions[Position(2, 2)], "元の位置からエサが消えるべき")
+        assertNotNull(escapeEngine.foodPositions[Position(3, 2)], "逃走先にエサが移動するべき")
+    }
+
+    @Test
+    fun `出目を指定した捕獲判定で逃走目以外なら捕獲成功`() {
+        val captureEngine = GameEngine(
+            playerCount = 2,
+            diceRoller = FixedDiceRoller(listOf(1)),
+            shuffler = shuffler,
+        )
+        captureEngine.setupGame(defaultConfigs())
+
+        val food = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT), isFaceDown = false)
+        captureEngine.placeFoodAt(Position(2, 2), food)
+
+        val result = captureEngine.attemptCaptureAt(Position(2, 2), roll = 6)
+        assertTrue(result is CaptureResult.Success, "指定した出目6は逃走目ではないので捕獲成功")
+        assertEquals(6, (result as CaptureResult.Success).diceRoll)
+    }
+
+    @Test
+    fun `出目を指定しても逃走しないエサは確定捕獲`() {
+        setupDefaultGame()
+        val food = FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false)
+        engine.placeFoodAt(Position(2, 2), food)
+
+        val result = engine.attemptCaptureAt(Position(2, 2), roll = 3)
+        assertTrue(result is CaptureResult.Success)
+    }
+
+    @Test
+    fun `出目は1から6の範囲外なら例外`() {
+        setupDefaultGame()
+        val food = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT), isFaceDown = false)
+        engine.placeFoodAt(Position(2, 2), food)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            engine.attemptCaptureAt(Position(2, 2), roll = 0)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            engine.attemptCaptureAt(Position(2, 2), roll = 7)
+        }
     }
 
     @Test

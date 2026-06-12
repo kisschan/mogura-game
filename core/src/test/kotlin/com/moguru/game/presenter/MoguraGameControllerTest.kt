@@ -4,6 +4,7 @@ import com.moguru.game.engine.GameState
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Board
 import com.moguru.game.model.Direction
+import com.moguru.game.model.EscapeDirection
 import com.moguru.game.model.FoodCard
 import com.moguru.game.model.FoodType
 import com.moguru.game.model.HoleTile
@@ -14,6 +15,7 @@ import com.moguru.game.util.FixedDiceRoller
 import com.moguru.game.util.FixedShuffler
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -86,6 +88,9 @@ class MoguraGameControllerTest {
         assertTrue(state.digCandidates.none { it.enabled })
         assertEquals(Rotation.DEG_0, state.selectedRotation)
         assertNull(state.lastDiceRoll)
+        assertFalse(state.diceRouletteActive)
+        assertNull(state.diceRouletteFood)
+        assertTrue(state.diceRouletteEscapeRolls.isEmpty())
         assertEquals(TurnPhase.DIG, state.actionAvailability.activePhase)
         assertFalse(state.actionAvailability.canCapture)
         assertFalse(state.actionAvailability.canEat)
@@ -105,13 +110,40 @@ class MoguraGameControllerTest {
         engine.advancePhase()
         engine.advancePhase()
 
-        val result = controller.captureCurrentPosition()
+        val reveal = controller.captureCurrentPosition()
 
-        assertTrue(result.success)
+        assertTrue(reveal.success)
+        assertNotNull(controller.pendingCaptureRoll, "逃走なしエサでもカード公開を経由するべき")
+        assertTrue(controller.playScreenUiState().diceRouletteEscapeRolls.isEmpty())
+        assertEquals(FoodType.BEETLE_LARVA, controller.playScreenUiState().diceRouletteFood)
+        assertEquals(TurnPhase.CAPTURE, engine.currentPhase)
+
+        val result = controller.resolveCaptureRoll()
+
+        assertTrue(result.success, "逃走なしエサはダイスを振らずに解決できるべき")
         assertNull(engine.foodPositions[player.position])
         assertFalse(player.isCarrying)
         assertEquals(FoodType.BEETLE_LARVA, controller.pendingFoodDecision?.type)
         assertEquals(TurnPhase.DECIDE, engine.currentPhase)
+    }
+
+    @Test
+    fun `capture immediately resolves the whole flow for plain uis`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        engine.advancePhase()
+        engine.advancePhase()
+
+        val result = controller.captureCurrentPositionImmediately()
+
+        assertTrue(result.success)
+        assertNull(controller.pendingCaptureRoll)
+        assertEquals(6, controller.lastDiceRoll)
+        assertEquals(TurnPhase.DECIDE, engine.currentPhase)
+        assertEquals(FoodType.EARTHWORM, controller.pendingFoodDecision?.type)
     }
 
     @Test
@@ -125,11 +157,228 @@ class MoguraGameControllerTest {
         engine.advancePhase()
         engine.advancePhase()
 
-        val result = controller.captureCurrentPosition()
+        assertTrue(controller.captureCurrentPosition().success)
+        assertTrue(controller.rollCaptureDice().success)
+        val result = controller.resolveCaptureRoll()
 
         assertTrue(result.success)
         assertEquals(TurnPhase.DECIDE, engine.currentPhase)
         assertEquals(6, controller.lastDiceRoll)
+    }
+
+    @Test
+    fun `capture with escape dice enters roulette pending without resolving`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val food = FoodCard.createDummyCards(FoodType.EARTHWORM).first()
+        engine.placeFoodAt(player.position, food)
+        engine.advancePhase()
+        engine.advancePhase()
+
+        val result = controller.captureCurrentPosition()
+
+        assertTrue(result.success)
+        assertNotNull(controller.pendingCaptureRoll)
+        assertNull(controller.pendingCaptureRoll!!.roll)
+        assertEquals(TurnPhase.CAPTURE, engine.currentPhase)
+        assertNotNull(engine.foodPositions[player.position], "解決前にエサが消えてはならない")
+        assertNull(controller.pendingFoodDecision)
+        assertNull(controller.lastCaptureResult)
+
+        val state = controller.playScreenUiState()
+        assertTrue(state.diceRouletteActive)
+        assertNull(state.diceRouletteResult)
+        assertEquals(FoodType.EARTHWORM, state.diceRouletteFood, "カード公開用にエサ種別を見せるべき")
+        assertEquals(listOf(1, 2), state.diceRouletteEscapeRolls, "逃走目を昇順で見せるべき")
+        assertFalse(state.actionAvailability.canCapture)
+        assertFalse(state.actionAvailability.canSkip)
+        assertFalse(state.actionAvailability.canEndTurn)
+    }
+
+    @Test
+    fun `roll capture dice fixes the roll without resolving capture`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        engine.advancePhase()
+        engine.advancePhase()
+        controller.captureCurrentPosition()
+
+        val result = controller.rollCaptureDice()
+
+        assertTrue(result.success)
+        assertEquals(6, controller.lastDiceRoll)
+        assertEquals(6, controller.pendingCaptureRoll?.roll)
+        assertEquals(TurnPhase.CAPTURE, engine.currentPhase)
+        assertNotNull(engine.foodPositions[player.position], "出目確定だけではエサは動かない")
+        assertNull(controller.pendingFoodDecision)
+
+        val state = controller.playScreenUiState()
+        assertTrue(state.diceRouletteActive)
+        assertEquals(6, state.diceRouletteResult)
+    }
+
+    @Test
+    fun `resolve capture roll success enters decide phase`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        engine.advancePhase()
+        engine.advancePhase()
+        controller.captureCurrentPosition()
+        controller.rollCaptureDice()
+
+        val result = controller.resolveCaptureRoll()
+
+        assertTrue(result.success)
+        assertEquals(FoodType.EARTHWORM, controller.pendingFoodDecision?.type)
+        assertEquals(TurnPhase.DECIDE, engine.currentPhase)
+        assertNull(controller.pendingCaptureRoll)
+        assertFalse(controller.playScreenUiState().diceRouletteActive)
+    }
+
+    @Test
+    fun `resolve capture roll escape moves food and skips decide`() {
+        val controller = MoguraGameController(
+            diceRoller = FixedDiceRoller(listOf(1)),
+            shuffler = FixedShuffler(),
+        )
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val foodPos = Position(2, 2)
+        val escapeTo = Position(3, 2)
+        player.moveTo(foodPos)
+        engine.placeFoodAt(foodPos, FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT)))
+        engine.removeFoodAt(escapeTo)
+        engine.boardState.placeTile(foodPos, HoleTile(TileShape.CROSS, setOf(Direction.RIGHT), isFaceDown = false))
+        engine.boardState.placeTile(escapeTo, HoleTile(TileShape.CROSS, setOf(Direction.LEFT), isFaceDown = false))
+        engine.advancePhase()
+        engine.advancePhase()
+        controller.captureCurrentPosition()
+        controller.rollCaptureDice()
+
+        val result = controller.resolveCaptureRoll()
+
+        assertTrue(result.success)
+        assertNull(engine.foodPositions[foodPos], "逃走したエサは元の位置から消えるべき")
+        assertNotNull(engine.foodPositions[escapeTo], "エサは逃走先へ移動するべき")
+        assertNull(controller.pendingFoodDecision)
+        assertNull(controller.pendingCaptureRoll)
+        assertEquals(TurnPhase.END, engine.currentPhase)
+        assertTrue(controller.logs.any { it.contains("逃げました") })
+    }
+
+    @Test
+    fun `capture is rejected while roulette pending`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        engine.advancePhase()
+        engine.advancePhase()
+        controller.captureCurrentPosition()
+
+        val result = controller.captureCurrentPosition()
+
+        assertFalse(result.success)
+        assertNull(controller.pendingCaptureRoll!!.roll, "二度目の捕獲で状態が壊れてはならない")
+    }
+
+    @Test
+    fun `skip and finish turn are rejected while roulette pending`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        engine.advancePhase()
+        engine.advancePhase()
+        controller.captureCurrentPosition()
+
+        assertFalse(controller.skipPhase().success)
+        assertFalse(controller.finishTurn().success)
+        assertEquals(TurnPhase.CAPTURE, engine.currentPhase)
+        assertNotNull(controller.pendingCaptureRoll)
+    }
+
+    @Test
+    fun `auto advance stops while roulette pending`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        engine.advancePhase()
+        engine.advancePhase()
+        controller.captureCurrentPosition()
+
+        val result = controller.autoAdvanceWhileNoChoice()
+
+        assertNull(result)
+        assertEquals(TurnPhase.CAPTURE, engine.currentPhase)
+        assertNotNull(controller.pendingCaptureRoll)
+    }
+
+    @Test
+    fun `roll capture dice fails when not pending or already rolled`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+
+        assertFalse(controller.rollCaptureDice().success, "ルーレット待ちでなければ振れない")
+
+        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        engine.advancePhase()
+        engine.advancePhase()
+        controller.captureCurrentPosition()
+        assertTrue(controller.rollCaptureDice().success)
+
+        assertFalse(controller.rollCaptureDice().success, "出目確定後は二度振れない")
+        assertEquals(6, controller.pendingCaptureRoll?.roll)
+    }
+
+    @Test
+    fun `resolve capture roll fails before dice is rolled`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+
+        assertFalse(controller.resolveCaptureRoll().success, "ルーレット待ちでなければ解決できない")
+
+        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        engine.advancePhase()
+        engine.advancePhase()
+        controller.captureCurrentPosition()
+
+        assertFalse(controller.resolveCaptureRoll().success, "出目確定前は解決できない")
+        assertEquals(TurnPhase.CAPTURE, engine.currentPhase)
+    }
+
+    @Test
+    fun `start new game clears roulette pending`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        engine.advancePhase()
+        engine.advancePhase()
+        controller.captureCurrentPosition()
+
+        controller.startNewGame(2)
+
+        assertNull(controller.pendingCaptureRoll)
+        assertFalse(controller.playScreenUiState().diceRouletteActive)
     }
 
     @Test
@@ -158,7 +407,7 @@ class MoguraGameControllerTest {
         assertTrue(captureActions.canSkip)
         assertTrue(captureActions.canEndTurn)
 
-        controller.captureCurrentPosition()
+        controller.captureCurrentPositionImmediately()
 
         val decideActions = controller.playScreenUiState().actionAvailability
         assertEquals(TurnPhase.DECIDE, decideActions.activePhase)
@@ -179,7 +428,7 @@ class MoguraGameControllerTest {
         engine.placeFoodAt(player.position, FoodCard(FoodType.MOLE_CRICKET, emptyMap(), isFaceDown = true))
         engine.advancePhase()
         engine.advancePhase()
-        controller.captureCurrentPosition()
+        controller.captureCurrentPositionImmediately()
 
         val result = controller.eatPendingFood()
 
@@ -199,7 +448,7 @@ class MoguraGameControllerTest {
         engine.placeFoodAt(player.position, FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = true))
         engine.advancePhase()
         engine.advancePhase()
-        controller.captureCurrentPosition()
+        controller.captureCurrentPositionImmediately()
 
         val result = controller.carryPendingFood()
 
@@ -539,7 +788,7 @@ class MoguraGameControllerTest {
         engine.placeFoodAt(player.position, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
         engine.advancePhase()
         engine.advancePhase()
-        controller.captureCurrentPosition()
+        controller.captureCurrentPositionImmediately()
 
         val result = controller.finishTurn()
 
@@ -567,7 +816,7 @@ class MoguraGameControllerTest {
         engine.advancePhase()
         engine.advancePhase()
 
-        val result = controller.captureCurrentPosition()
+        val result = controller.captureCurrentPositionImmediately()
 
         assertTrue(result.success)
         Board.HOT_ZONE_POSITIONS.forEach { position ->
@@ -655,7 +904,7 @@ class MoguraGameControllerTest {
         engine.placeFoodAt(player.position, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
         engine.advancePhase()
         engine.advancePhase()
-        controller.captureCurrentPosition()
+        controller.captureCurrentPositionImmediately()
         assertEquals(TurnPhase.DECIDE, engine.currentPhase)
 
         val result = controller.autoAdvanceWhileNoChoice()

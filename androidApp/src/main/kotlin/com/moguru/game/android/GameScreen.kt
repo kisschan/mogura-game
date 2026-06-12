@@ -81,10 +81,22 @@ fun MoguraGameScreen(viewModel: AndroidGameViewModel = viewModel()) {
             modifier = Modifier.fillMaxSize(),
             color = Color(0xFFFFF7E4),
         ) {
-            if (state.isGameStarted) {
-                PlayScreen(state = state, viewModel = viewModel)
-            } else {
-                SetupScreen(state = state, viewModel = viewModel)
+            Box {
+                if (state.isGameStarted) {
+                    PlayScreen(state = state, viewModel = viewModel)
+                } else {
+                    SetupScreen(state = state, viewModel = viewModel)
+                }
+                val rouletteFood = state.playState.diceRouletteFood
+                if (state.playState.diceRouletteActive && rouletteFood != null) {
+                    DiceRouletteOverlay(
+                        foodType = rouletteFood,
+                        escapeRolls = state.playState.diceRouletteEscapeRolls,
+                        targetFace = state.playState.diceRouletteResult,
+                        onTap = viewModel::stopDiceRoulette,
+                        onFinished = viewModel::finishDiceRoulette,
+                    )
+                }
             }
         }
     }
@@ -816,7 +828,7 @@ private fun tileRes(shape: TileShape): Int = when (shape) {
     TileShape.CROSS -> R.drawable.tile_cross
 }
 
-private fun foodRes(type: FoodType): Int = when (type) {
+internal fun foodRes(type: FoodType): Int = when (type) {
     FoodType.BEETLE_LARVA -> R.drawable.food_beetle_larva
     FoodType.EARTHWORM -> R.drawable.food_earthworm
     FoodType.MOLE_CRICKET -> R.drawable.food_mole_cricket
