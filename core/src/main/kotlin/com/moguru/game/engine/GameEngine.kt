@@ -185,7 +185,24 @@ class GameEngine(
             return CaptureResult.Success()
         }
 
-        val roll = diceRoller.roll()
+        return attemptCaptureAt(foodPosition, diceRoller.roll())
+    }
+
+    /**
+     * 指定したダイス目で盤面上のエサの捕獲判定を解決する。
+     *
+     * UI 側でルーレット演出を挟むなど、出目を外部で確定させてから
+     * 解決したい場合に使う。判定ルールは [attemptCaptureAt] と同一。
+     */
+    fun attemptCaptureAt(foodPosition: Position, roll: Int): CaptureResult {
+        require(roll in 1..6) { "ダイス目は1〜6にしてください: $roll" }
+        val food = _foodPositions[foodPosition] ?: error("指定位置にエサがありません: $foodPosition")
+
+        if (food.escapeMap.isEmpty()) {
+            lastCaptureSuccess = true
+            return CaptureResult.Success()
+        }
+
         val escapeDirection = food.escapeMap[roll]
         if (escapeDirection == null) {
             lastCaptureSuccess = true
