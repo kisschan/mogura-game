@@ -155,6 +155,26 @@ class AndroidGameViewModel(
         runAction { controller.captureCurrentPosition() }
     }
 
+    /**
+     * ルーレットを止めて出目を確定する（着地演出は UI 側で継続）。
+     * 連打などで既に確定済みの場合は黙って無視する。
+     */
+    fun stopDiceRoulette() {
+        val result = controller.rollCaptureDice()
+        if (result.success) refresh(null)
+    }
+
+    /**
+     * 着地演出の終了後に捕獲を解決し、オーバーレイを閉じる。
+     * 再コンポーズによる重複呼び出しは黙って無視する。
+     */
+    fun finishDiceRoulette() {
+        val result = controller.resolveCaptureRoll()
+        if (result.success) {
+            resolveAfterSuccessfulAction(result.message)
+        }
+    }
+
     fun eat() {
         runAction { controller.eatPendingFood() }
     }
