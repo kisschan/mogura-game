@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-最終更新: 2026-05-28
+最終更新: 2026-06-14
 
 ## 現在の状況
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
@@ -40,9 +40,10 @@
 - [x] Android版の腹減りメーターを透過PNGリソースに差し替え
 - [x] Android版プレイ画面をVariant 2ベースで再調整し、HUD画像・盤面トークン・掘る候補カード・最新ログを拡大
 - [x] 表示用日本語ラベルと回転表記をテストで固定し、回転ラベルを `0° / 90° / 180° / 270°` に統一
+- [x] 内部テスト用AAB作成に向けて、Android release署名設定を `keystore.properties` から読み込む構成にし、keystore・パスワード・AAB/APKをGit管理外にする設定を追加
 
 ## テスト結果
-- 最終実行日: 2026-05-28
+- 最終実行日: 2026-06-14
 - 実行コマンド: `.\gradlew.bat :core:test`
 - 結果: `BUILD SUCCESSFUL`
 - 実行コマンド: `.\gradlew.bat :desktop:test`
@@ -61,6 +62,9 @@
 - 結果: `BUILD SUCCESSFUL`（Android視認性改善後）
 - 実行コマンド: `.\gradlew.bat :desktop:test`
 - 結果: `BUILD SUCCESSFUL`（回転ラベル変更後のSwing回帰確認）
+- 実行コマンド: `.\gradlew.bat :androidApp:bundleRelease`
+- 結果: `BUILD SUCCESSFUL`（`keystore.properties` 無しでもrelease AAB作成可。実keystore未作成のためPlay Console用署名は未適用）
+- 運用: 生成AAB/APKはGitHubへpushせず、Play Consoleの内部テストトラックへ直接アップロードする
 
 ## 実装済みファイル
 - `assets/audio/burrowed_logic.mp3`
@@ -105,6 +109,9 @@
 - `androidApp/src/main/kotlin/com/moguru/game/android/GameScreen.kt`
 - `androidApp/src/test/kotlin/com/moguru/game/android/AndroidGameViewModelTest.kt`
 - `androidApp/src/main/res/drawable-nodpi/`
+- `androidApp/build.gradle.kts`
+- `.gitignore`
+- `keystore.properties.example`
 
 ## TODO / 未確定・要確認
 - `Food.kt`: `// TODO: 【要確認】12-1` ケラは要件では3面逃走だが画像では3/4の2面のみ読めるため画像優先で仮実装
@@ -120,3 +127,4 @@
 ## 次の作業
 - 未確定 / 要確認ルールの確定後に仮実装を調整する
 - 強奪フェーズは移動後自動発動の仮実装なので、`13-3` 確定後に調整する
+- 内部テスト前にローカルでupload keyを作成し、Git管理外の `keystore.properties` を設定して署名済みAABを作成する。生成AAB/APKはGitHubへ上げず、Play Consoleへ直接アップロードする
