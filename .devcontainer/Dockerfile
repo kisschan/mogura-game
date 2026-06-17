@@ -3,16 +3,24 @@ FROM node:20
 ARG TZ=Asia/Tokyo
 ENV TZ="$TZ"
 
-ARG CLAUDE_CODE_VERSION=latest
+ARG CLAUDE_CODE_VERSION=2.1.140
+ARG CODEX_CLI_VERSION=0.138.0
 
 # 基本ツール + ファイアウォール用パッケージ
 RUN apt-get update && apt-get install -y --no-install-recommends \
     less git procps sudo fzf zsh man-db unzip gnupg2 gh \
     iptables ipset iproute2 dnsutils aggregate jq \
+    bubblewrap socat \
     openjdk-17-jdk \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+
+COPY certs/ /usr/local/share/ca-certificates/devcontainer/
+RUN if find /usr/local/share/ca-certificates/devcontainer -type f -name '*.crt' | grep -q .; then \
+        update-ca-certificates; \
+    fi
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 
 ARG USERNAME=node
 
@@ -25,8 +33,8 @@ RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhisto
 ENV DEVCONTAINER=true
 
 # ワークスペースとClaude設定ディレクトリ
-RUN mkdir -p /workspace /home/node/.claude /home/node/.npm-global && \
-    chown -R node:node /workspace /home/node/.claude /home/node/.npm-global
+RUN mkdir -p /workspace /home/node/.claude /home/node/.codex /home/node/.npm-global && \
+    chown -R node:node /workspace /home/node/.claude /home/node/.codex /home/node/.npm-global
 
 WORKDIR /workspace
 
@@ -35,12 +43,15 @@ USER node
 # Claude Code インストール
 ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
 ENV PATH=/home/node/.npm-global/bin:$PATH
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+RUN npm install -g \
+    @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION} \
+    @openai/codex@${CODEX_CLI_VERSION}
 
 # ファイアウォールスクリプト
 COPY init-firewall.sh /usr/local/bin/
 USER root
-RUN chmod +x /usr/local/bin/init-firewall.sh && \
+RUN sed -i 's/\r$//' /usr/local/bin/init-firewall.sh && \
+    chmod +x /usr/local/bin/init-firewall.sh && \
     echo "node ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/node-firewall && \
     chmod 0440 /etc/sudoers.d/node-firewall
 
