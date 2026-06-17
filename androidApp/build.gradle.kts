@@ -11,12 +11,23 @@ val keystoreProperties = Properties().apply {
         keystorePropertiesFile.inputStream().use { load(it) }
     }
 }
-val hasReleaseSigning = listOf(
+val requiredReleaseSigningKeys = listOf(
     "storeFile",
     "storePassword",
     "keyAlias",
     "keyPassword",
-).all { key -> keystoreProperties.getProperty(key).isNullOrBlank().not() }
+)
+val missingReleaseSigningKeys = requiredReleaseSigningKeys.filter { key ->
+    keystoreProperties.getProperty(key).isNullOrBlank()
+}
+if (keystorePropertiesFile.isFile && missingReleaseSigningKeys.isNotEmpty()) {
+    throw GradleException(
+        "keystore.properties is missing required release signing key(s): ${
+            missingReleaseSigningKeys.joinToString()
+        }"
+    )
+}
+val hasReleaseSigning = keystorePropertiesFile.isFile && missingReleaseSigningKeys.isEmpty()
 
 android {
     namespace = "com.moguru.game.android"
