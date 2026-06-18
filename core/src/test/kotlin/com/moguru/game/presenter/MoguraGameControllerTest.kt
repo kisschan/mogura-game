@@ -193,6 +193,38 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `same capture conditions resolve the same for player one and player two`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val capturePosition = Position(2, 2)
+
+        fun captureForCurrentPlayer(): Pair<TurnPhase, FoodType?> {
+            val player = controller.currentPlayer!!
+            player.moveTo(capturePosition)
+            engine.placeFoodAt(
+                capturePosition,
+                FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT), isFaceDown = true),
+            )
+            engine.advancePhase()
+            engine.advancePhase()
+
+            val result = controller.captureCurrentPositionImmediately()
+
+            assertTrue(result.success)
+            return engine.currentPhase to controller.pendingFoodDecision?.type
+        }
+
+        val playerOneResult = captureForCurrentPlayer()
+        controller.eatPendingFood()
+        controller.finishTurn()
+        val playerTwoResult = captureForCurrentPlayer()
+
+        assertEquals(TurnPhase.DECIDE to FoodType.EARTHWORM, playerOneResult)
+        assertEquals(playerOneResult, playerTwoResult)
+    }
+
+    @Test
     fun `capture with escape dice enters roulette pending without resolving`() {
         val controller = testController()
         controller.startNewGame(2)
@@ -485,6 +517,28 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `player carrying food cannot capture another food`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        player.carryFood(FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false))
+        engine.placeFoodAt(player.position, FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = true))
+        engine.advancePhase()
+        engine.advancePhase()
+
+        val result = controller.captureCurrentPosition()
+
+        assertFalse(controller.canCapture())
+        assertFalse(result.success)
+        assertNull(controller.pendingCaptureRoll)
+        assertNull(controller.pendingFoodDecision)
+        assertEquals(FoodType.EARTHWORM, engine.foodPositions[player.position]?.type)
+        assertEquals(FoodType.BEETLE_LARVA, player.carriedFood?.type)
+        assertEquals(TurnPhase.CAPTURE, engine.currentPhase)
+    }
+
+    @Test
     fun `food carried to own nest is stored without healing when homecoming resolves`() {
         val controller = testController()
         controller.startNewGame(2)
@@ -611,6 +665,36 @@ class MoguraGameControllerTest {
         val targets = controller.digTargets().toSet()
 
         assertTrue(target in targets)
+    }
+
+    @Test
+    fun `dig targets exclude hole tiles occupied by another player`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val target = Position(1, 1)
+        engine.players[1].moveTo(target)
+
+        val targets = controller.digTargets().toSet()
+        val revealResult = controller.revealDigTile(target)
+
+        assertFalse(target in targets)
+        assertFalse(revealResult.success)
+    }
+
+    @Test
+    fun `dig targets include hole tiles occupied only by food`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val target = Position(1, 1)
+        engine.placeFoodAt(target, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
+
+        val targets = controller.digTargets().toSet()
+        val revealResult = controller.revealDigTile(target)
+
+        assertTrue(target in targets)
+        assertTrue(revealResult.success)
     }
 
     @Test

@@ -195,10 +195,16 @@ class MoguraGameController(
         val allowedDirections = digDirectionsFromCurrentPosition(current, player.position)
         if (allowedDirections.isEmpty()) return emptyList()
 
+        val occupiedByOtherPlayers = current.players
+            .filter { it != player && !it.isEliminated }
+            .map { it.position }
+            .toSet()
+
         return current.tilePlacementEngine
             .getAdjacentHoleTiles(player.position, current.boardState, current.board)
             .filter { (position, _) ->
-                directionBetween(player.position, position) in allowedDirections
+                position !in occupiedByOtherPlayers &&
+                    directionBetween(player.position, position) in allowedDirections
             }
             .map { it.first }
     }
