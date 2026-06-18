@@ -517,14 +517,11 @@ class MoguraGameControllerTest {
     }
 
     @Test
-    fun `dig phase advances to move when no face down adjacent tile exists`() {
+    fun `dig phase advances to move when no adjacent hole tile exists`() {
         val controller = testController()
         controller.startNewGame(2)
         val engine = controller.engine!!
-        controller.digTargets().forEach { position ->
-            val tile = engine.boardState.getTile(position)!!
-            engine.boardState.placeTile(position, tile.flip())
-        }
+        engine.boardState.clear()
 
         val result = controller.skipPhase()
 
@@ -551,7 +548,7 @@ class MoguraGameControllerTest {
     }
 
     @Test
-    fun `dig targets only include face down tiles along current tile open sides`() {
+    fun `dig targets only include hole tiles along current tile open sides`() {
         val controller = testController()
         controller.startNewGame(2)
         val engine = controller.engine!!
@@ -575,7 +572,7 @@ class MoguraGameControllerTest {
     }
 
     @Test
-    fun `vertical straight tile can dig only top and bottom face down tiles`() {
+    fun `vertical straight tile can dig only top and bottom hole tiles`() {
         val controller = testController()
         controller.startNewGame(2)
         val engine = controller.engine!!
@@ -594,6 +591,55 @@ class MoguraGameControllerTest {
         val targets = controller.digTargets().toSet()
 
         assertEquals(setOf(top, bottom), targets)
+    }
+
+    @Test
+    fun `dig targets include face up hole tiles along current tile open sides`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val currentPosition = Position(3, 1)
+        val target = Position(4, 1)
+        player.moveTo(currentPosition)
+        engine.boardState.placeTile(
+            currentPosition,
+            HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+        )
+        engine.boardState.placeTile(target, HoleTile(TileShape.T_SHAPE).flip())
+
+        val targets = controller.digTargets().toSet()
+
+        assertTrue(target in targets)
+    }
+
+    @Test
+    fun `dig can replace a face up hole tile with the drawn tile`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val currentPosition = Position(3, 1)
+        val target = Position(4, 1)
+        player.moveTo(currentPosition)
+        engine.boardState.placeTile(
+            currentPosition,
+            HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+        )
+        engine.boardState.placeTile(target, HoleTile(TileShape.T_SHAPE).flip())
+
+        val revealResult = controller.revealDigTile(target)
+        val selectResult = controller.selectPendingDigTile(DigTileChoice.DRAWN)
+        val confirmResult = controller.confirmPendingDig()
+
+        assertTrue(revealResult.success)
+        assertTrue(selectResult.success)
+        assertTrue(confirmResult.success)
+        assertEquals(TurnPhase.MOVE, engine.currentPhase)
+        val placedTile = engine.boardState.getTile(target)!!
+        assertEquals(TileShape.L_SHAPE, placedTile.shape)
+        assertFalse(placedTile.isFaceDown)
+        assertEquals(listOf(TileShape.T_SHAPE), engine.tilePlacementEngine.discardPile.map { it.shape })
     }
 
     @Test

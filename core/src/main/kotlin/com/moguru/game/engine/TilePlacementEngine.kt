@@ -45,6 +45,17 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
         }
     }
 
+    /** モグラに隣接する既存の穴タイルを返す。 */
+    fun getAdjacentHoleTiles(
+        molePosition: Position,
+        boardState: BoardState,
+        board: Board,
+    ): List<Pair<Position, HoleTile>> {
+        return board.getValidNeighbors(molePosition).mapNotNull { position ->
+            boardState.getTile(position)?.let { tile -> position to tile }
+        }
+    }
+
     /**
      * タイルを配置可能なマスを返す。
      *
@@ -73,6 +84,6 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
 
     /** タイルを捨て札に追加する。 */
     fun discard(tile: HoleTile) {
-        discardPile.add(tile)
+        discardPile.add(tile.copy(isFaceDown = true))
     }
 }
