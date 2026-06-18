@@ -1,5 +1,7 @@
 package com.moguru.game.model
 
+import com.moguru.game.presenter.displayName
+import com.moguru.game.presenter.shortLabel
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -11,6 +13,16 @@ class FoodTest {
         val type = FoodType.BEETLE_LARVA
         assertEquals(1, type.points)
         assertEquals(1, type.recovery)
+    }
+
+    @Test
+    fun `カブトムシの幼虫は表示名もカード短縮名も正しい`() {
+        val card = FoodCard(FoodType.BEETLE_LARVA, emptyMap())
+
+        assertEquals("カブトムシの幼虫", FoodType.BEETLE_LARVA.displayName())
+        assertEquals("カブトムシの幼虫", card.shortLabel())
+        assertTrue("ダンゴムシ" !in FoodType.BEETLE_LARVA.displayName())
+        assertTrue("ダンゴムシ" !in card.shortLabel())
     }
 
     @Test

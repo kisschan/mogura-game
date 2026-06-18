@@ -183,7 +183,7 @@ class MoguraGameController(
         pendingDigTileChoice = null
         messages.clear()
         addLog("${playerCount}人プレイで開始しました。")
-        addLog("${currentPlayer?.name} の番です。隣の裏向きタイルを掘ってください。")
+        addLog("${currentPlayer?.name} の番です。隣の穴タイルを掘ってください。")
         return GameActionResult(true, "新しいゲームを開始しました。")
     }
 
@@ -196,7 +196,7 @@ class MoguraGameController(
         if (allowedDirections.isEmpty()) return emptyList()
 
         return current.tilePlacementEngine
-            .getAdjacentFaceDownTiles(player.position, current.boardState, current.board)
+            .getAdjacentHoleTiles(player.position, current.boardState, current.board)
             .filter { (position, _) ->
                 directionBetween(player.position, position) in allowedDirections
             }
@@ -256,7 +256,7 @@ class MoguraGameController(
             return GameActionResult(false, "先にめくったタイルの配置を確定してください。")
         }
         if (position !in digTargets()) {
-            return GameActionResult(false, "現在のプレイヤーに隣接する裏向きタイルを選んでください。")
+            return GameActionResult(false, "現在のプレイヤーに隣接する掘れる穴タイルを選んでください。")
         }
 
         val drawn = current.tilePlacementEngine.drawFromPile()
@@ -502,7 +502,7 @@ class MoguraGameController(
         if (current.currentPhase == TurnPhase.DIG) {
             if (canAdvanceFromDigWithoutTargets()) {
                 current.advancePhase()
-                addLog("掘れる裏向きタイルがないため、移動へ進みました。")
+                addLog("掘れる穴タイルがないため、移動へ進みました。")
                 return GameActionResult(true, "移動へ進みました。")
             }
             return GameActionResult(false, "掘るフェーズはスキップできません。")
@@ -593,7 +593,7 @@ class MoguraGameController(
 
         current.advancePhase()
         val nextPlayer = currentPlayer
-        addLog("${nextPlayer?.name} の番です。隣の裏向きタイルを掘ってください。")
+        addLog("${nextPlayer?.name} の番です。隣の穴タイルを掘ってください。")
         return GameActionResult(true, "ターンを終了しました。")
     }
 
