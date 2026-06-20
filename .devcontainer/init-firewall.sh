@@ -73,7 +73,45 @@ ALLOWED_DOMAINS=(
     "statsig.anthropic.com"
     "sentry.io"
     "registry.npmjs.org"
+    "api.openai.com"
+    "auth.openai.com"
+    "auth0.openai.com"
+    "device-auth.openai.com"
+    "chat.openai.com"
+    "chatgpt.com"
+    "platform.openai.com"
+    "cdn.openai.com"
+    "cdn.oaistatic.com"
+    "persistent.oaistatic.com"
+    "update.code.visualstudio.com"
+    "code.visualstudio.com"
+    "go.microsoft.com"
+    "marketplace.visualstudio.com"
+    "raw.githubusercontent.com"
+    "vsmarketplacebadges.dev"
+    "vscode.download.prss.microsoft.com"
+    "download.visualstudio.microsoft.com"
+    "vscode-sync.trafficmanager.net"
+    "vscode.dev"
 )
+
+if [ -f /workspace/.devcontainer/devcontainer.json ]; then
+    mapfile -t EXTENSION_PUBLISHERS < <(
+        jq -r '.customizations.vscode.extensions[]? | split(".")[0] | ascii_downcase' \
+            /workspace/.devcontainer/devcontainer.json 2>/dev/null | sort -u || true
+    )
+
+    for publisher in "${EXTENSION_PUBLISHERS[@]}"; do
+        if [ -n "$publisher" ]; then
+            ALLOWED_DOMAINS+=(
+                "${publisher}.gallery.vsassets.io"
+                "${publisher}.gallerycdn.vsassets.io"
+                "${publisher}.gallery.azure.cn"
+                "${publisher}.gallerycdn.azure.cn"
+            )
+        fi
+    done
+fi
 
 for domain in "${ALLOWED_DOMAINS[@]}"; do
     ips=$(dig +short A "$domain" 2>/dev/null | grep -E '^[0-9]+\.' || true)
