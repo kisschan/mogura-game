@@ -727,6 +727,37 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `revealed face up dig tile rotation starts from canonical orientation`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val currentPosition = Position(3, 1)
+        val target = Position(4, 1)
+        player.moveTo(currentPosition)
+        engine.boardState.placeTile(
+            currentPosition,
+            HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+        )
+        engine.boardState.placeTile(
+            target,
+            HoleTile(TileShape.L_SHAPE).rotate(Rotation.DEG_90).flip(),
+        )
+
+        val revealResult = controller.revealDigTile(target)
+        val rotateResult = controller.setPendingDigRotation(Rotation.DEG_90)
+        val confirmResult = controller.confirmPendingDig()
+
+        assertTrue(revealResult.success)
+        assertTrue(rotateResult.success)
+        assertTrue(confirmResult.success)
+        val placedTile = engine.boardState.getTile(target)!!
+        assertEquals(TileShape.L_SHAPE, placedTile.shape)
+        assertFalse(placedTile.isFaceDown)
+        assertEquals(HoleTile(TileShape.L_SHAPE).rotate(Rotation.DEG_90).openSides, placedTile.openSides)
+    }
+
+    @Test
     fun `nest can dig adjacent face down tiles without a current hole tile`() {
         val controller = testController()
         controller.startNewGame(2)
