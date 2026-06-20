@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-最終更新: 2026-06-14
+最終更新: 2026-06-20
 
 ## 現在の状況
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
@@ -124,7 +124,59 @@
 - `moguru_requirements_v2(3).txt`: `12-2` 未開示の追加ルール
 - `moguru_requirements_v2(3).txt`: `13-6` 地上と地下の接続条件
 
+## 2026-06-20 コードレビューで起票した未実装 issue
+- [#16](https://github.com/kisschan/mogura-game/issues/16) セットアップでモグラ・巣・先手をプレイヤーが自由に選べるようにする
+- [#17](https://github.com/kisschan/mogura-game/issues/17) 逃走先に別のエサがある場合でも逃走できるようにする
+- [#18](https://github.com/kisschan/mogura-game/issues/18) エサの逃走先が巣マスの場合は逃走失敗として捕獲成功にする
+- [#19](https://github.com/kisschan/mogura-game/issues/19) 巣マスを通過不可にし、防衛中の巣へ侵入できないようにする
+- [#20](https://github.com/kisschan/mogura-game/issues/20) 巣ごとの固定追い出し先マスを定義して追い出し処理に使う
+- [#21](https://github.com/kisschan/mogura-game/issues/21) 強奪を移動時自動発動ではなく④強奪選択として実行する
+- [#22](https://github.com/kisschan/mogura-game/issues/22) 強奪UIと強奪後の食べる/レンコウ結果を実装する
+- [#23](https://github.com/kisschan/mogura-game/issues/23) エサカード13枚の逃走ダイス目と方向を確定し実装データを更新する
+
+## 未実装解消ロードマップ
+### Phase 1: 盤面ルールの土台を先に直す
+- [ ] [#17](https://github.com/kisschan/mogura-game/issues/17) 1マス複数エサを表現できる盤面データへ変更する。
+  - `foodPositions: Map<Position, FoodCard>` 前提を見直す。
+  - coreの捕獲・補充・表示用DTOを同時に更新する。
+  - 旧仕様テスト `逃走先に別のエサがある場合は捕獲成功` を新仕様へ置き換える。
+- [ ] [#18](https://github.com/kisschan/mogura-game/issues/18) 巣マスへのエサ逃走を禁止する。
+  - `CellType.NEST` を逃走不可条件に入れる。
+  - 巣マスにエサが生成されないことをテストで固定する。
+
+### Phase 2: 巣と移動の不変条件を確定する
+- [ ] [#19](https://github.com/kisschan/mogura-game/issues/19) 巣マスを通過不可にする。
+  - BFSで巣マス到達後に探索を継続しない。
+  - 防衛中の巣は停止先にも中継先にも含めない。
+- [ ] [#20](https://github.com/kisschan/mogura-game/issues/20) 巣ごとの固定追い出し先を実装する。
+  - 4つの巣に対する固定追い出し先座標を定義する。
+  - 追い出し先に駒やエサがある場合の扱いを要件定義書と同期する。
+
+### Phase 3: 強奪を正式フローへ置き換える
+- [ ] [#21](https://github.com/kisschan/mogura-game/issues/21) 強奪を移動時自動発動から④選択式へ変更する。
+  - 他人の巣に入った手番では強奪不可。
+  - 次の自分の手番以降に強奪可能になる状態を保持する。
+- [ ] [#22](https://github.com/kisschan/mogura-game/issues/22) 強奪専用UIと強奪後の結果処理を実装する。
+  - 通常捕獲由来と強奪由来の pending decision を型で分ける。
+  - 強奪後の「食べる」は回復、「レンコウ」は自分の巣へ移して得点化する。
+  - Android/Swing で「強奪」表示を追加する。
+
+### Phase 4: セットアップとカードデータを仕上げる
+- [ ] [#16](https://github.com/kisschan/mogura-game/issues/16) セットアップ自由選択を実装する。
+  - モグラ選択、巣選択、スタートプレイヤー選択を core/presenter/UI に通す。
+  - 固定配置・固定先手の仮実装をテストから外す。
+- [ ] [#23](https://github.com/kisschan/mogura-game/issues/23) エサカード個別データを確定後に更新する。
+  - 設計者確認が必要なため、確定データ入手後に実装する。
+  - 13枚それぞれの逃走目・方向をテストで固定する。
+
+### Phase 5: 回帰確認
+- [ ] `:core:test` で盤面ルール、捕獲、強奪、巣防衛の回帰を確認する。
+- [ ] `:androidApp:testDebugUnitTest` でAndroid表示状態と操作可否を確認する。
+- [ ] `:desktop:test` でSwing表示ロジックと共通presenter利用箇所を確認する。
+- [ ] `PROGRESS.md` とコード内TODOを、解消した issue 番号に合わせて整理する。
+
 ## 次の作業
+- 未実装解消ロードマップの Phase 1 から着手する
 - 未確定 / 要確認ルールの確定後に仮実装を調整する
-- 強奪フェーズは移動後自動発動の仮実装なので、`13-3` 確定後に調整する
+- 強奪フェーズは移動後自動発動の仮実装なので、[#21](https://github.com/kisschan/mogura-game/issues/21) で正式フローへ置き換える
 - 内部テスト前にローカルでupload keyを作成し、Git管理外の `keystore.properties` を設定して署名済みAABを作成する。生成AAB/APKはGitHubへ上げず、Play Consoleへ直接アップロードする
