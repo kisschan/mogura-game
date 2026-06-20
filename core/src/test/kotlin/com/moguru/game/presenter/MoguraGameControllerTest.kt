@@ -193,6 +193,38 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `same capture conditions resolve the same for player one and player two`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val capturePosition = Position(2, 2)
+
+        fun captureForCurrentPlayer(): Pair<TurnPhase, FoodType?> {
+            val player = controller.currentPlayer!!
+            player.moveTo(capturePosition)
+            engine.placeFoodAt(
+                capturePosition,
+                FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT), isFaceDown = true),
+            )
+            engine.advancePhase()
+            engine.advancePhase()
+
+            val result = controller.captureCurrentPositionImmediately()
+
+            assertTrue(result.success)
+            return engine.currentPhase to controller.pendingFoodDecision?.type
+        }
+
+        val playerOneResult = captureForCurrentPlayer()
+        controller.eatPendingFood()
+        controller.finishTurn()
+        val playerTwoResult = captureForCurrentPlayer()
+
+        assertEquals(TurnPhase.DECIDE to FoodType.EARTHWORM, playerOneResult)
+        assertEquals(playerOneResult, playerTwoResult)
+    }
+
+    @Test
     fun `capture with escape dice enters roulette pending without resolving`() {
         val controller = testController()
         controller.startNewGame(2)
@@ -485,6 +517,28 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `player carrying food cannot capture another food`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        player.carryFood(FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false))
+        engine.placeFoodAt(player.position, FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = true))
+        engine.advancePhase()
+        engine.advancePhase()
+
+        val result = controller.captureCurrentPosition()
+
+        assertFalse(controller.canCapture())
+        assertFalse(result.success)
+        assertNull(controller.pendingCaptureRoll)
+        assertNull(controller.pendingFoodDecision)
+        assertEquals(FoodType.EARTHWORM, engine.foodPositions[player.position]?.type)
+        assertEquals(FoodType.BEETLE_LARVA, player.carriedFood?.type)
+        assertEquals(TurnPhase.CAPTURE, engine.currentPhase)
+    }
+
+    @Test
     fun `food carried to own nest is stored without healing when homecoming resolves`() {
         val controller = testController()
         controller.startNewGame(2)
@@ -517,14 +571,11 @@ class MoguraGameControllerTest {
     }
 
     @Test
-    fun `dig phase advances to move when no face down adjacent tile exists`() {
+    fun `dig phase advances to move when no adjacent hole tile exists`() {
         val controller = testController()
         controller.startNewGame(2)
         val engine = controller.engine!!
-        controller.digTargets().forEach { position ->
-            val tile = engine.boardState.getTile(position)!!
-            engine.boardState.placeTile(position, tile.flip())
-        }
+        engine.boardState.clear()
 
         val result = controller.skipPhase()
 
@@ -551,7 +602,7 @@ class MoguraGameControllerTest {
     }
 
     @Test
-    fun `dig targets only include face down tiles along current tile open sides`() {
+    fun `dig targets only include hole tiles along current tile open sides`() {
         val controller = testController()
         controller.startNewGame(2)
         val engine = controller.engine!!
@@ -575,7 +626,7 @@ class MoguraGameControllerTest {
     }
 
     @Test
-    fun `vertical straight tile can dig only top and bottom face down tiles`() {
+    fun `vertical straight tile can dig only top and bottom hole tiles`() {
         val controller = testController()
         controller.startNewGame(2)
         val engine = controller.engine!!
@@ -594,6 +645,163 @@ class MoguraGameControllerTest {
         val targets = controller.digTargets().toSet()
 
         assertEquals(setOf(top, bottom), targets)
+    }
+
+    @Test
+    fun `dig targets include empty ground cells along current tile open sides`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val currentPosition = Position(1, 1)
+        val ground = Position(1, 0)
+        player.moveTo(currentPosition)
+        engine.boardState.placeTile(
+            currentPosition,
+            HoleTile(TileShape.CROSS, setOf(Direction.TOP), isFaceDown = false),
+        )
+
+        val targets = controller.digTargets().toSet()
+
+        assertTrue(ground in targets)
+        assertFalse(controller.canAdvanceFromDigWithoutTargets())
+    }
+
+    @Test
+    fun `dig can place drawn tile on empty ground cell`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val currentPosition = Position(1, 1)
+        val ground = Position(1, 0)
+        player.moveTo(currentPosition)
+        engine.boardState.placeTile(
+            currentPosition,
+            HoleTile(TileShape.CROSS, setOf(Direction.TOP), isFaceDown = false),
+        )
+
+        val revealResult = controller.revealDigTile(ground)
+
+        assertTrue(revealResult.success)
+        assertEquals(DigTileChoice.DRAWN, controller.pendingDigTileChoice)
+        val confirmResult = controller.confirmPendingDig()
+
+        assertTrue(confirmResult.success)
+        assertEquals(TurnPhase.MOVE, engine.currentPhase)
+        val placedTile = engine.boardState.getTile(ground)!!
+        assertEquals(TileShape.L_SHAPE, placedTile.shape)
+        assertFalse(placedTile.isFaceDown)
+    }
+
+    @Test
+    fun `dig targets include face up hole tiles along current tile open sides`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val currentPosition = Position(3, 1)
+        val target = Position(4, 1)
+        player.moveTo(currentPosition)
+        engine.boardState.placeTile(
+            currentPosition,
+            HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+        )
+        engine.boardState.placeTile(target, HoleTile(TileShape.T_SHAPE).flip())
+
+        val targets = controller.digTargets().toSet()
+
+        assertTrue(target in targets)
+    }
+
+    @Test
+    fun `dig targets exclude hole tiles occupied by another player`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val target = Position(1, 1)
+        engine.players[1].moveTo(target)
+
+        val targets = controller.digTargets().toSet()
+        val revealResult = controller.revealDigTile(target)
+
+        assertFalse(target in targets)
+        assertFalse(revealResult.success)
+    }
+
+    @Test
+    fun `dig targets include hole tiles occupied only by food`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val target = Position(1, 1)
+        engine.placeFoodAt(target, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
+
+        val targets = controller.digTargets().toSet()
+        val revealResult = controller.revealDigTile(target)
+
+        assertTrue(target in targets)
+        assertTrue(revealResult.success)
+    }
+
+    @Test
+    fun `dig can replace a face up hole tile with the drawn tile`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val currentPosition = Position(3, 1)
+        val target = Position(4, 1)
+        player.moveTo(currentPosition)
+        engine.boardState.placeTile(
+            currentPosition,
+            HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+        )
+        engine.boardState.placeTile(target, HoleTile(TileShape.T_SHAPE).flip())
+
+        val revealResult = controller.revealDigTile(target)
+        val selectResult = controller.selectPendingDigTile(DigTileChoice.DRAWN)
+        val confirmResult = controller.confirmPendingDig()
+
+        assertTrue(revealResult.success)
+        assertTrue(selectResult.success)
+        assertTrue(confirmResult.success)
+        assertEquals(TurnPhase.MOVE, engine.currentPhase)
+        val placedTile = engine.boardState.getTile(target)!!
+        assertEquals(TileShape.L_SHAPE, placedTile.shape)
+        assertFalse(placedTile.isFaceDown)
+        assertEquals(listOf(TileShape.T_SHAPE), engine.tilePlacementEngine.discardPile.map { it.shape })
+    }
+
+    @Test
+    fun `revealed face up dig tile rotation starts from canonical orientation`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val currentPosition = Position(3, 1)
+        val target = Position(4, 1)
+        player.moveTo(currentPosition)
+        engine.boardState.placeTile(
+            currentPosition,
+            HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+        )
+        engine.boardState.placeTile(
+            target,
+            HoleTile(TileShape.L_SHAPE).rotate(Rotation.DEG_90).flip(),
+        )
+
+        val revealResult = controller.revealDigTile(target)
+        val rotateResult = controller.setPendingDigRotation(Rotation.DEG_90)
+        val confirmResult = controller.confirmPendingDig()
+
+        assertTrue(revealResult.success)
+        assertTrue(rotateResult.success)
+        assertTrue(confirmResult.success)
+        val placedTile = engine.boardState.getTile(target)!!
+        assertEquals(TileShape.L_SHAPE, placedTile.shape)
+        assertFalse(placedTile.isFaceDown)
+        assertEquals(HoleTile(TileShape.L_SHAPE).rotate(Rotation.DEG_90).openSides, placedTile.openSides)
     }
 
     @Test

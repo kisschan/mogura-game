@@ -69,7 +69,7 @@ enum class DigTileChoice {
 
 data class PendingDigPlacement(
     val position: Position,
-    val revealedTile: HoleTile,
+    val revealedTile: HoleTile?,
     val drawnTile: HoleTile?,
 )
 
@@ -183,7 +183,7 @@ class MoguraGameController(
         pendingDigTileChoice = null
         messages.clear()
         addLog("${playerCount}人プレイで開始しました。")
-        addLog("${currentPlayer?.name} の番です。隣の裏向きタイルを掘ってください。")
+        addLog("${currentPlayer?.name} の番です。隣の穴タイルを掘ってください。")
         return GameActionResult(true, "新しいゲームを開始しました。")
     }
 
@@ -195,12 +195,17 @@ class MoguraGameController(
         val allowedDirections = digDirectionsFromCurrentPosition(current, player.position)
         if (allowedDirections.isEmpty()) return emptyList()
 
+        val occupiedByOtherPlayers = current.players
+            .filter { it != player && !it.isEliminated }
+            .map { it.position }
+            .toSet()
+
         return current.tilePlacementEngine
-            .getAdjacentFaceDownTiles(player.position, current.boardState, current.board)
-            .filter { (position, _) ->
-                directionBetween(player.position, position) in allowedDirections
+            .getDiggableAdjacentPositions(player.position, current.boardState, current.board)
+            .filter { position ->
+                position !in occupiedByOtherPlayers &&
+                    directionBetween(player.position, position) in allowedDirections
             }
-            .map { it.first }
     }
 
     fun canAdvanceFromDigWithoutTargets(): Boolean {
@@ -256,14 +261,31 @@ class MoguraGameController(
             return GameActionResult(false, "先にめくったタイルの配置を確定してください。")
         }
         if (position !in digTargets()) {
-            return GameActionResult(false, "現在のプレイヤーに隣接する裏向きタイルを選んでください。")
+            return GameActionResult(false, "現在のプレイヤーに隣接する掘れる穴タイルを選んでください。")
         }
 
         val drawn = current.tilePlacementEngine.drawFromPile()
+        if (current.boardState.getTile(position) == null) {
+            val drawnTile = drawn
+                ?: return GameActionResult(false, "配置できるタイルがありません。")
+            pendingDigPlacement = PendingDigPlacement(
+                position = position,
+                revealedTile = null,
+                drawnTile = HoleTile(drawnTile.shape),
+            )
+            pendingDigTileChoice = DigTileChoice.DRAWN
+            setPendingDigRotation(Rotation.DEG_0)
+            addLog("${currentPlayer?.name} が ${position.label()} に置く ${drawnTile.shape.displayName()} を山札から引きました。")
+            return GameActionResult(true, "タイルを引きました。")
+        }
         val revealed = current.boardState.getTile(position)
             ?: return GameActionResult(false, "その場所に置けるタイルがありません。")
 
-        pendingDigPlacement = PendingDigPlacement(position, revealed, drawn)
+        pendingDigPlacement = PendingDigPlacement(
+            position = position,
+            revealedTile = HoleTile(revealed.shape),
+            drawnTile = drawn?.let { HoleTile(it.shape) },
+        )
         pendingDigTileChoice = DigTileChoice.REVEALED
         setPendingDigRotation(Rotation.DEG_0)
         val drawnLabel = drawn?.shape?.displayName() ?: "なし"
@@ -276,6 +298,10 @@ class MoguraGameController(
             ?: return GameActionResult(false, "選択するタイルがありません。")
         if (choice == DigTileChoice.DRAWN && pending.drawnTile == null) {
             return GameActionResult(false, "山札に選択できるタイルがありません。")
+        }
+
+        if (choice == DigTileChoice.REVEALED && pending.revealedTile == null) {
+            return GameActionResult(false, "選択できるタイルがありません。")
         }
 
         pendingDigTileChoice = choice
@@ -309,7 +335,7 @@ class MoguraGameController(
 
         when (choice) {
             DigTileChoice.REVEALED -> pending.drawnTile?.let(current.tilePlacementEngine::discard)
-            DigTileChoice.DRAWN -> current.tilePlacementEngine.discard(pending.revealedTile)
+            DigTileChoice.DRAWN -> pending.revealedTile?.let(current.tilePlacementEngine::discard)
         }
         pendingDigPlacement = null
         pendingDigRotation = null
@@ -502,7 +528,7 @@ class MoguraGameController(
         if (current.currentPhase == TurnPhase.DIG) {
             if (canAdvanceFromDigWithoutTargets()) {
                 current.advancePhase()
-                addLog("掘れる裏向きタイルがないため、移動へ進みました。")
+                addLog("掘れる穴タイルがないため、移動へ進みました。")
                 return GameActionResult(true, "移動へ進みました。")
             }
             return GameActionResult(false, "掘るフェーズはスキップできません。")
@@ -593,7 +619,7 @@ class MoguraGameController(
 
         current.advancePhase()
         val nextPlayer = currentPlayer
-        addLog("${nextPlayer?.name} の番です。隣の裏向きタイルを掘ってください。")
+        addLog("${nextPlayer?.name} の番です。隣の穴タイルを掘ってください。")
         return GameActionResult(true, "ターンを終了しました。")
     }
 
@@ -686,7 +712,7 @@ class MoguraGameController(
                 label = choice.label(),
                 shape = tile?.shape,
                 selected = pendingDigTileChoice == choice,
-                enabled = hasPendingDig && (choice != DigTileChoice.DRAWN || tile != null),
+                enabled = hasPendingDig && tile != null,
             )
         }
     }

@@ -124,6 +124,11 @@ class AndroidGameViewModelTest {
     }
 
     @Test
+    fun `beetle larva food resource uses beetle larva asset`() {
+        assertEquals(R.drawable.food_beetle_larva, foodRes(FoodType.BEETLE_LARVA))
+    }
+
+    @Test
     fun `capture with escape dice runs the roulette flow`() {
         val controller = testController()
         val viewModel = AndroidGameViewModel(controller)
