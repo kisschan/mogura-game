@@ -269,7 +269,11 @@ class MoguraGameController(
         val revealed = current.boardState.getTile(position)
             ?: return GameActionResult(false, "その場所に置けるタイルがありません。")
 
-        pendingDigPlacement = PendingDigPlacement(position, revealed, drawn)
+        pendingDigPlacement = PendingDigPlacement(
+            position = position,
+            revealedTile = HoleTile(revealed.shape),
+            drawnTile = drawn?.let { HoleTile(it.shape) },
+        )
         pendingDigTileChoice = DigTileChoice.REVEALED
         setPendingDigRotation(Rotation.DEG_0)
         val drawnLabel = drawn?.shape?.displayName() ?: "なし"
