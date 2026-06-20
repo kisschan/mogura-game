@@ -1,6 +1,7 @@
 package com.moguru.game.engine
 
 import com.moguru.game.model.Board
+import com.moguru.game.model.CellType
 import com.moguru.game.model.HoleTile
 import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
@@ -53,6 +54,19 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
     ): List<Pair<Position, HoleTile>> {
         return board.getValidNeighbors(molePosition).mapNotNull { position ->
             boardState.getTile(position)?.let { tile -> position to tile }
+        }
+    }
+
+    fun getDiggableAdjacentPositions(
+        molePosition: Position,
+        boardState: BoardState,
+        board: Board,
+    ): List<Position> {
+        val currentCell = board.getCell(molePosition)
+        return board.getValidNeighbors(molePosition).filter { position ->
+            val tile = boardState.getTile(position)
+            val cell = board.getCell(position)
+            tile != null || (cell?.type == CellType.GROUND && currentCell?.type != CellType.NEST)
         }
     }
 

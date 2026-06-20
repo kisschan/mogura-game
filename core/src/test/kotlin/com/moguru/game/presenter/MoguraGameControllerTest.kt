@@ -648,6 +648,53 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `dig targets include empty ground cells along current tile open sides`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val currentPosition = Position(1, 1)
+        val ground = Position(1, 0)
+        player.moveTo(currentPosition)
+        engine.boardState.placeTile(
+            currentPosition,
+            HoleTile(TileShape.CROSS, setOf(Direction.TOP), isFaceDown = false),
+        )
+
+        val targets = controller.digTargets().toSet()
+
+        assertTrue(ground in targets)
+        assertFalse(controller.canAdvanceFromDigWithoutTargets())
+    }
+
+    @Test
+    fun `dig can place drawn tile on empty ground cell`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val currentPosition = Position(1, 1)
+        val ground = Position(1, 0)
+        player.moveTo(currentPosition)
+        engine.boardState.placeTile(
+            currentPosition,
+            HoleTile(TileShape.CROSS, setOf(Direction.TOP), isFaceDown = false),
+        )
+
+        val revealResult = controller.revealDigTile(ground)
+
+        assertTrue(revealResult.success)
+        assertEquals(DigTileChoice.DRAWN, controller.pendingDigTileChoice)
+        val confirmResult = controller.confirmPendingDig()
+
+        assertTrue(confirmResult.success)
+        assertEquals(TurnPhase.MOVE, engine.currentPhase)
+        val placedTile = engine.boardState.getTile(ground)!!
+        assertEquals(TileShape.L_SHAPE, placedTile.shape)
+        assertFalse(placedTile.isFaceDown)
+    }
+
+    @Test
     fun `dig targets include face up hole tiles along current tile open sides`() {
         val controller = testController()
         controller.startNewGame(2)
