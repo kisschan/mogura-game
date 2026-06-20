@@ -1,6 +1,7 @@
 package com.moguru.game.gui
 
 import com.moguru.game.engine.TurnPhase
+import com.moguru.game.model.FoodType
 import java.awt.Point
 import java.awt.Rectangle
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -21,6 +22,14 @@ class FoodDisplayTest {
         assertEquals(0.75, foodCardScaleForPhase(TurnPhase.CAPTURE))
         assertEquals(0.75, foodCardScaleForPhase(TurnPhase.DECIDE))
         assertEquals(0.75, foodCardScaleForPhase(TurnPhase.END))
+    }
+
+    @Test
+    fun `beetle larva food image uses beetle larva asset`() {
+        val path = foodImagePath(FoodType.BEETLE_LARVA)
+
+        assertEquals("assets/images/foods/food_beetle_larva.png", path)
+        assertFalse(path.contains("dango", ignoreCase = true))
     }
 
     @Test

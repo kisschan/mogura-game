@@ -285,7 +285,7 @@ class MoguraGameFrame(
         actionPanel.maximumSize = Dimension(Short.MAX_VALUE.toInt(), 146)
         actionPanel.background = Color(0xFFF7E4)
 
-        styleActionButton(digGuideButton, "ハイライトされた裏向きタイルをクリック")
+        styleActionButton(digGuideButton, "ハイライトされた穴タイルをクリック")
         styleActionButton(moveGuideButton, "ハイライトされた移動先マスをクリック")
         styleActionButton(captureButton, "現在地のエサを捕獲")
         styleActionButton(eatButton, "保留中のエサを食べる")
@@ -445,7 +445,7 @@ class MoguraGameFrame(
             val drawn = pending.drawnTile?.shape?.displayName() ?: "なし"
             "${selected}を選択中。山札: ${drawn}。回転を選び、同じマスをもう一度クリックしてください。"
         } ?: if (canAdvanceFromDig) {
-            "掘れる裏向きタイルがありません。移動へ進んでください。"
+            "掘れる穴タイルがありません。移動へ進んでください。"
         } else {
             phaseHelp(current?.currentPhase)
         }
@@ -522,7 +522,7 @@ class MoguraGameFrame(
             .replace(">", "&gt;")
 
     private fun phaseHelp(phase: TurnPhase?): String = when (phase) {
-        TurnPhase.DIG -> "ハイライトされた裏向きタイルをクリックしてください。"
+        TurnPhase.DIG -> "ハイライトされた穴タイルをクリックしてください。"
         TurnPhase.MOVE -> "ハイライトされた移動可能マスをクリックしてください。"
         TurnPhase.CAPTURE -> "プレイヤーの足元にエサがあれば捕獲できます。"
         TurnPhase.DECIDE -> "タベるかレンコウを選んでください。"
@@ -1221,6 +1221,14 @@ private fun playerTokenOffsets(playerCount: Int, stackOffset: Int): List<Point> 
         ).take(playerCount)
     }
 
+internal fun foodImagePath(type: FoodType): String = when (type) {
+    FoodType.BEETLE_LARVA -> "assets/images/foods/food_beetle_larva.png"
+    FoodType.EARTHWORM -> "assets/images/foods/food_earthworm.png"
+    FoodType.MOLE_CRICKET -> "assets/images/foods/food_mole_cricket.png"
+    FoodType.CENTIPEDE -> "assets/images/foods/food_centipede.png"
+    FoodType.FROG -> "assets/images/foods/food_frog.png"
+}
+
 class GuiAssets {
     private val cache = mutableMapOf<String, BufferedImage?>()
     private val visibleBoundsCache = mutableMapOf<BufferedImage, Rectangle>()
@@ -1245,15 +1253,7 @@ class GuiAssets {
         },
     )
 
-    fun foodImage(type: FoodType): BufferedImage? = load(
-        when (type) {
-            FoodType.BEETLE_LARVA -> "assets/images/foods/food_beetle_larva.png"
-            FoodType.EARTHWORM -> "assets/images/foods/food_earthworm.png"
-            FoodType.MOLE_CRICKET -> "assets/images/foods/food_mole_cricket.png"
-            FoodType.CENTIPEDE -> "assets/images/foods/food_centipede.png"
-            FoodType.FROG -> "assets/images/foods/food_frog.png"
-        },
-    )
+    fun foodImage(type: FoodType): BufferedImage? = load(foodImagePath(type))
 
     fun playerImage(id: Int): BufferedImage? = load(
         when (id) {

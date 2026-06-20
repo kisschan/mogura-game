@@ -3,6 +3,7 @@ package com.moguru.game.engine
 import com.moguru.game.model.Board
 import com.moguru.game.model.HoleTile
 import com.moguru.game.model.Position
+import com.moguru.game.model.Rotation
 import com.moguru.game.model.TileShape
 import com.moguru.game.util.FixedShuffler
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -76,6 +77,19 @@ class TilePlacementEngineTest {
         val engine = TilePlacementEngine(shuffler)
         engine.discard(HoleTile(TileShape.STRAIGHT))
         assertEquals(1, engine.discardPile.size)
+    }
+
+    @Test
+    fun `discard resets rotated tile to canonical face down orientation`() {
+        val engine = TilePlacementEngine(shuffler)
+        val rotatedTile = HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip()
+
+        engine.discard(rotatedTile)
+        val drawn = engine.drawFromPile()
+
+        assertNotNull(drawn)
+        assertTrue(drawn!!.isFaceDown)
+        assertEquals(TileShape.STRAIGHT.defaultOpenSides, drawn.openSides)
     }
 
     @Test
