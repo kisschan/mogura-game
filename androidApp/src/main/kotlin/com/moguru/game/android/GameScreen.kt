@@ -313,15 +313,15 @@ private fun BoardView(
                 )
             }
 
-            cell.food?.let { food ->
+            cell.foods.forEachIndexed { index, food ->
                 val phase = state.playState.actionAvailability.activePhase
                 val scale = if (phase == TurnPhase.DIG || phase == TurnPhase.MOVE) 0.58f else 0.76f
                 Image(
                     painter = painterResource(if (food.isFaceDown) R.drawable.food_card_back else foodRes(food.type)),
                     contentDescription = null,
                     modifier = Modifier
-                        .boardRect(maxWidth, maxHeight, foodRect(cell.position, scale))
-                        .zIndex(BOARD_FOOD_Z),
+                        .boardRect(maxWidth, maxHeight, foodRect(cell.position, scale, index, cell.foods.size))
+                        .zIndex(BOARD_FOOD_Z + (cell.foods.size - index) * 0.01f),
                     contentScale = ContentScale.Fit,
                 )
             }
@@ -713,6 +713,14 @@ private data class SourceImageRect(
     val height: Int,
 )
 
+private fun sourceBoardRect(left: Float, top: Float, width: Float, height: Float): BoardRectSpec =
+    BoardRectSpec(
+        left = left / BOARD_SOURCE_WIDTH,
+        top = top / BOARD_SOURCE_HEIGHT,
+        width = width / BOARD_SOURCE_WIDTH,
+        height = height / BOARD_SOURCE_HEIGHT,
+    )
+
 private fun Modifier.boardRect(maxWidth: Dp, maxHeight: Dp, rect: BoardRectSpec): Modifier =
     offset(x = maxWidth * rect.left, y = maxHeight * rect.top)
         .width(maxWidth * rect.width)
@@ -729,12 +737,21 @@ private fun cellRect(position: Position, scale: Float): BoardRectSpec {
     )
 }
 
-private fun foodRect(position: Position, scale: Float): BoardRectSpec {
-    val base = cellRect(position, 1f)
-    val size = minOf(base.width * scale, base.height * scale)
-    return BoardRectSpec(
-        left = base.left + base.width - size - 0.004f,
-        top = base.top + base.height - size - 0.004f,
+private fun foodRect(
+    position: Position,
+    scale: Float,
+    stackIndex: Int = 0,
+    stackSize: Int = 1,
+): BoardRectSpec {
+    val cellLeft = GRID_LEFT + position.col * CELL_WIDTH
+    val cellTop = GRID_TOP + position.row * CELL_HEIGHT
+    val size = minOf(CELL_WIDTH, CELL_HEIGHT) * scale
+    val maxOffset = (minOf(CELL_WIDTH, CELL_HEIGHT) - size - FOOD_CARD_BOARD_PADDING).coerceAtLeast(0f)
+    val offset = ((stackSize - 1 - stackIndex).coerceAtLeast(0) * FOOD_CARD_STACK_OFFSET)
+        .coerceAtMost(maxOffset)
+    return sourceBoardRect(
+        left = cellLeft + CELL_WIDTH - size - FOOD_CARD_BOARD_PADDING - offset,
+        top = cellTop + CELL_HEIGHT - size - FOOD_CARD_BOARD_PADDING - offset,
         width = size,
         height = size,
     )
@@ -746,8 +763,12 @@ private fun cellDescription(cell: AndroidBoardCellUiState): String =
         cell.tile?.let { tile ->
             add(if (tile.isFaceDown) "裏向きタイル" else "${tile.shape.boardLabel()} ${tile.rotation.steps * 90}度")
         }
-        cell.food?.let { food ->
-            add(if (food.isFaceDown) "裏向きエサ" else food.type.boardLabel())
+        if (cell.foods.isNotEmpty()) {
+            add(
+                cell.foods.joinToString(prefix = "エサ ", separator = "、") { food ->
+                    if (food.isFaceDown) "裏向き" else food.type.boardLabel()
+                },
+            )
         }
         if (cell.players.isNotEmpty()) {
             add("プレイヤー ${cell.players.joinToString { it.name }}")
@@ -858,6 +879,8 @@ private const val GRID_RIGHT = 1038f
 private const val GRID_BOTTOM = 1364f
 private const val CELL_WIDTH = (GRID_RIGHT - GRID_LEFT) / 6f
 private const val CELL_HEIGHT = (GRID_BOTTOM - GRID_TOP) / 5f
+private const val FOOD_CARD_BOARD_PADDING = 4f
+private const val FOOD_CARD_STACK_OFFSET = 6f
 
 // 腹減りメーター画像の配置(盤面に対する比率)。高さは画像の自然比(1536:762)に
 // 合わせ、ContentScale.Fit でレターボックスが出ないようにする(マーカー位置が合う)。

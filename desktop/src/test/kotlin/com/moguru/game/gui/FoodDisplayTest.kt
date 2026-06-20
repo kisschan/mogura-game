@@ -64,4 +64,15 @@ class FoodDisplayTest {
         assertTrue(cell.contains(Point(20, 30)))
         assertFalse(card.contains(Point(20, 30)))
     }
+
+    @Test
+    fun `stacked food cards offset older visible cards up and left`() {
+        val cell = Rectangle(10, 20, 100, 80)
+
+        val front = foodCardRect(cell, 0.5, stackIndex = 0, stackSize = 2)
+        val back = foodCardRect(cell, 0.5, stackIndex = 1, stackSize = 2)
+
+        assertEquals(Rectangle(61, 51, 40, 40), front)
+        assertEquals(Rectangle(67, 57, 40, 40), back)
+    }
 }

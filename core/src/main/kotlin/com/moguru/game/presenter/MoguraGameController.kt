@@ -237,7 +237,7 @@ class MoguraGameController(
         val player = currentPlayer ?: return false
         return current.currentPhase == TurnPhase.CAPTURE &&
             !player.isCarrying &&
-            player.position in current.foodPositions
+            current.foodAt(player.position) != null
     }
 
     fun digAt(position: Position, rotation: Rotation): GameActionResult {
@@ -379,7 +379,7 @@ class MoguraGameController(
         }
 
         val position = player.position
-        val food = current.foodPositions[position]
+        val food = current.foodAt(position)
             ?: return GameActionResult(false, "ここにはエサがありません。")
 
         pendingCaptureRoll = PendingCaptureRoll(position, food)
@@ -462,7 +462,7 @@ class MoguraGameController(
 
         when (result) {
             is CaptureResult.Success -> {
-                val captured = current.removeFoodAt(position) ?: food
+                val captured = current.removeFoodAt(position, food) ?: food
                 pendingFoodDecision = captured.copy(isFaceDown = false)
                 addLog("${player.name} が ${captured.type.displayName()} を捕獲しました。タベるかレンコウを選んでください。")
             }
