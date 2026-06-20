@@ -84,6 +84,6 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
 
     /** タイルを捨て札に追加する。 */
     fun discard(tile: HoleTile) {
-        discardPile.add(tile.copy(isFaceDown = true))
+        discardPile.add(HoleTile(tile.shape))
     }
 }
