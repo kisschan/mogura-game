@@ -968,13 +968,23 @@ class BoardPanel(
 
     private fun drawFoods(g: Graphics2D) {
         val current = controller.engine ?: return
-        current.foodPositions.forEach { (position, food) ->
+        current.foodPositions.forEach { (position, foods) ->
             val cellRect = cellRect(position) ?: return@forEach
-            drawFood(g, food, cellRect, foodCardScaleForPhase(current.currentPhase))
+            foods.asReversed().forEachIndexed { reversedIndex, food ->
+                val stackIndex = foods.lastIndex - reversedIndex
+                drawFood(g, food, cellRect, foodCardScaleForPhase(current.currentPhase), stackIndex, foods.size)
+            }
         }
     }
 
-    private fun drawFood(g: Graphics2D, food: FoodCard, cellRect: Rectangle, scale: Double) {
+    private fun drawFood(
+        g: Graphics2D,
+        food: FoodCard,
+        cellRect: Rectangle,
+        scale: Double,
+        stackIndex: Int,
+        stackSize: Int,
+    ) {
         val image = if (food.isFaceDown) {
             assets.load("assets/images/foods/food_card_back.png")
         } else {
@@ -986,6 +996,8 @@ class BoardPanel(
             rect = cellRect,
             anchor = Anchor.BOTTOM_RIGHT,
             scale = scale,
+            stackIndex = stackIndex,
+            stackSize = stackSize,
         )
     }
 
@@ -995,9 +1007,11 @@ class BoardPanel(
         rect: Rectangle,
         anchor: Anchor,
         scale: Double,
+        stackIndex: Int = 0,
+        stackSize: Int = 1,
     ) {
         val smallRect = when (anchor) {
-            Anchor.BOTTOM_RIGHT -> foodCardRect(rect, scale)
+            Anchor.BOTTOM_RIGHT -> foodCardRect(rect, scale, stackIndex = stackIndex, stackSize = stackSize)
         }
         if (image != null) {
             g.drawImage(image, smallRect.x, smallRect.y, smallRect.width, smallRect.height, null)
@@ -1009,7 +1023,7 @@ class BoardPanel(
     private fun drawHoveredFoodPreview(g: Graphics2D) {
         val current = controller.engine ?: return
         val position = hoveredFoodPosition ?: return
-        val food = current.foodPositions[position] ?: return
+        val food = current.foodAt(position) ?: return
         val cellRect = cellRect(position) ?: return
         val image = if (food.isFaceDown) {
             assets.load("assets/images/foods/food_card_back.png")
@@ -1125,9 +1139,17 @@ class BoardPanel(
             null
         } else {
             current.foodPositions.keys.firstOrNull { position ->
+                val foods = current.foodsAt(position)
                 val cellRect = cellRect(position) ?: return@firstOrNull false
-                val cardRect = foodCardRect(cellRect, foodCardScaleForPhase(current.currentPhase))
-                cardRect.contains(point)
+                foods.indices.any { index ->
+                    val cardRect = foodCardRect(
+                        cellRect = cellRect,
+                        scale = foodCardScaleForPhase(current.currentPhase),
+                        stackIndex = index,
+                        stackSize = foods.size,
+                    )
+                    cardRect.contains(point)
+                }
             }
         }
         if (hoveredFoodPosition != next) {
