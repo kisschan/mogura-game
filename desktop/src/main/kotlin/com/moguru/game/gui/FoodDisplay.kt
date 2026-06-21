@@ -40,17 +40,27 @@ fun foodPreviewRect(cellRect: Rectangle, imageRect: Rectangle): Rectangle {
     return Rectangle(x, y, size, size)
 }
 
-fun foodCardRect(cellRect: Rectangle, scale: Double, padding: Int = FOOD_CARD_PADDING): Rectangle {
+fun foodCardRect(
+    cellRect: Rectangle,
+    scale: Double,
+    padding: Int = FOOD_CARD_PADDING,
+    stackIndex: Int = 0,
+    stackSize: Int = 1,
+): Rectangle {
     val size = (min(cellRect.width, cellRect.height) * scale).roundToInt()
+    val maxOffset = (min(cellRect.width, cellRect.height) - size - padding).coerceAtLeast(0)
+    val offset = ((stackSize - 1 - stackIndex).coerceAtLeast(0) * FOOD_CARD_STACK_OFFSET)
+        .coerceAtMost(maxOffset)
     return Rectangle(
-        cellRect.x + cellRect.width - size - padding,
-        cellRect.y + cellRect.height - size - padding,
+        cellRect.x + cellRect.width - size - padding - offset,
+        cellRect.y + cellRect.height - size - padding - offset,
         size,
         size,
     )
 }
 
 const val FOOD_CARD_PADDING = 3
+const val FOOD_CARD_STACK_OFFSET = 6
 
 private const val FOOD_CARD_COMPACT_SCALE = 0.42
 private const val FOOD_CARD_LARGE_SCALE = 0.75
