@@ -1,8 +1,10 @@
 package com.moguru.game.android
 
+import com.moguru.game.engine.GameEngine
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.FoodCard
 import com.moguru.game.model.FoodType
+import com.moguru.game.model.Player
 import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
 import com.moguru.game.presenter.MoguraGameController
@@ -135,10 +137,7 @@ class AndroidGameViewModelTest {
         viewModel.startNewGame(2)
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
-        engine.placeFoodAt(
-            player.position,
-            FoodCard.createDummyCards(FoodType.EARTHWORM).first(),
-        )
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
         engine.advancePhase()
         engine.advancePhase()
 
@@ -178,10 +177,7 @@ class AndroidGameViewModelTest {
         viewModel.startNewGame(2)
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
-        engine.placeFoodAt(
-            player.position,
-            FoodCard(FoodType.BEETLE_LARVA, emptyMap()),
-        )
+        placeFoodForCapture(engine, player, FoodCard(FoodType.BEETLE_LARVA, emptyMap()))
         engine.advancePhase()
         engine.advancePhase()
 
@@ -211,10 +207,7 @@ class AndroidGameViewModelTest {
         viewModel.startNewGame(2)
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
-        engine.placeFoodAt(
-            player.position,
-            FoodCard.createDummyCards(FoodType.EARTHWORM).first(),
-        )
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
         engine.advancePhase()
         engine.advancePhase()
         viewModel.capture()
@@ -235,6 +228,15 @@ class AndroidGameViewModelTest {
 
     private fun testViewModel(): AndroidGameViewModel =
         AndroidGameViewModel(testController())
+
+    private fun placeFoodForCapture(
+        engine: GameEngine,
+        player: Player,
+        food: FoodCard,
+    ) {
+        player.moveTo(Position(1, 1))
+        engine.placeFoodAt(player.position, food)
+    }
 
     private fun testController(): MoguraGameController =
         MoguraGameController(

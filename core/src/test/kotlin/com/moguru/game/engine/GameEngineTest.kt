@@ -520,6 +520,36 @@ class GameEngineTest {
     }
 
     @Test
+    fun `placeFoodAt rejects food on nest cells`() {
+        setupDefaultGame()
+        val nest = Position(0, 1)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            engine.placeFoodAt(nest, FoodCard(FoodType.BEETLE_LARVA, emptyMap()))
+        }
+
+        assertNull(engine.foodPositions[nest])
+    }
+
+    @Test
+    fun `placeFoodAt rejects invalid and off-board cells`() {
+        setupDefaultGame()
+        val invalid = Position(0, 2)
+        val offBoard = Position(-1, 0)
+        val food = FoodCard(FoodType.BEETLE_LARVA, emptyMap())
+
+        assertThrows(IllegalArgumentException::class.java) {
+            engine.placeFoodAt(invalid, food)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            engine.placeFoodAt(offBoard, food)
+        }
+
+        assertNull(engine.foodPositions[invalid])
+        assertNull(engine.foodPositions[offBoard])
+    }
+
+    @Test
     fun `escape into ground cell without tile path is captured`() {
         val escapeEngine = GameEngine(
             playerCount = 2,

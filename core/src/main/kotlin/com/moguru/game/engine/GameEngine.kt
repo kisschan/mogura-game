@@ -373,6 +373,11 @@ class GameEngine(
 
     /** 指定位置へエサを配置する。 */
     fun placeFoodAt(position: Position, food: FoodCard) {
+        val cell = board.getCell(position)
+            ?: throw IllegalArgumentException("Food cannot be placed outside the board: $position")
+        require(cell.type != CellType.INVALID) { "Food cannot be placed on an invalid cell: $position" }
+        require(cell.type != CellType.NEST) { "Food cannot be placed on a nest cell: $position" }
+
         _foodPositions.getOrPut(position) { mutableListOf() }.add(food)
     }
 

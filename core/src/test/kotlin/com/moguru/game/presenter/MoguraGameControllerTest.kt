@@ -9,6 +9,7 @@ import com.moguru.game.model.EscapeDirection
 import com.moguru.game.model.FoodCard
 import com.moguru.game.model.FoodType
 import com.moguru.game.model.HoleTile
+import com.moguru.game.model.Player
 import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
 import com.moguru.game.model.TileShape
@@ -107,7 +108,7 @@ class MoguraGameControllerTest {
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
         val food = FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true)
-        engine.placeFoodAt(player.position, food)
+        placeFoodForCapture(engine, player, food)
         engine.advancePhase()
         engine.advancePhase()
 
@@ -155,7 +156,7 @@ class MoguraGameControllerTest {
         controller.startNewGame(2)
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
-        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
         engine.advancePhase()
         engine.advancePhase()
         controller.captureCurrentPositionImmediately()
@@ -164,7 +165,7 @@ class MoguraGameControllerTest {
         controller.eatPendingFood()
         engine.advancePhase()
         val nextPlayer = controller.currentPlayer!!
-        engine.placeFoodAt(nextPlayer.position, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
+        placeFoodForCapture(engine, nextPlayer, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
         engine.advancePhase()
         engine.advancePhase()
 
@@ -181,7 +182,7 @@ class MoguraGameControllerTest {
         controller.startNewGame(2)
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
-        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
         engine.advancePhase()
         engine.advancePhase()
 
@@ -201,7 +202,7 @@ class MoguraGameControllerTest {
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
         val food = FoodCard.createDummyCards(FoodType.EARTHWORM).first()
-        engine.placeFoodAt(player.position, food)
+        placeFoodForCapture(engine, player, food)
         engine.advancePhase()
         engine.advancePhase()
 
@@ -254,7 +255,7 @@ class MoguraGameControllerTest {
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
         val food = FoodCard.createDummyCards(FoodType.EARTHWORM).first()
-        engine.placeFoodAt(player.position, food)
+        placeFoodForCapture(engine, player, food)
         engine.advancePhase()
         engine.advancePhase()
 
@@ -284,7 +285,7 @@ class MoguraGameControllerTest {
         controller.startNewGame(2)
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
-        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
         engine.advancePhase()
         engine.advancePhase()
         controller.captureCurrentPosition()
@@ -309,7 +310,7 @@ class MoguraGameControllerTest {
         controller.startNewGame(2)
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
-        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
         engine.advancePhase()
         engine.advancePhase()
         controller.captureCurrentPosition()
@@ -362,7 +363,7 @@ class MoguraGameControllerTest {
         controller.startNewGame(2)
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
-        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
         engine.advancePhase()
         engine.advancePhase()
         controller.captureCurrentPosition()
@@ -379,7 +380,7 @@ class MoguraGameControllerTest {
         controller.startNewGame(2)
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
-        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
         engine.advancePhase()
         engine.advancePhase()
         controller.captureCurrentPosition()
@@ -396,7 +397,7 @@ class MoguraGameControllerTest {
         controller.startNewGame(2)
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
-        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
         engine.advancePhase()
         engine.advancePhase()
         controller.captureCurrentPosition()
@@ -417,7 +418,7 @@ class MoguraGameControllerTest {
 
         assertFalse(controller.rollCaptureDice().success, "ルーレット待ちでなければ振れない")
 
-        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
         engine.advancePhase()
         engine.advancePhase()
         controller.captureCurrentPosition()
@@ -436,7 +437,7 @@ class MoguraGameControllerTest {
 
         assertFalse(controller.resolveCaptureRoll().success, "ルーレット待ちでなければ解決できない")
 
-        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
         engine.advancePhase()
         engine.advancePhase()
         controller.captureCurrentPosition()
@@ -451,7 +452,7 @@ class MoguraGameControllerTest {
         controller.startNewGame(2)
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
-        engine.placeFoodAt(player.position, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
         engine.advancePhase()
         engine.advancePhase()
         controller.captureCurrentPosition()
@@ -468,7 +469,6 @@ class MoguraGameControllerTest {
         controller.startNewGame(2)
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
-        engine.placeFoodAt(player.position, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
 
         val initialActions = controller.playScreenUiState().actionAvailability
         assertEquals(TurnPhase.DIG, initialActions.activePhase)
@@ -478,6 +478,7 @@ class MoguraGameControllerTest {
         assertFalse(initialActions.canSkip)
         assertFalse(initialActions.canEndTurn)
 
+        placeFoodForCapture(engine, player, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
         engine.advancePhase()
         engine.advancePhase()
         val captureActions = controller.playScreenUiState().actionAvailability
@@ -506,7 +507,7 @@ class MoguraGameControllerTest {
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
         repeat(5) { player.reduceHealth(isOnSurface = false) }
-        engine.placeFoodAt(player.position, FoodCard(FoodType.MOLE_CRICKET, emptyMap(), isFaceDown = true))
+        placeFoodForCapture(engine, player, FoodCard(FoodType.MOLE_CRICKET, emptyMap(), isFaceDown = true))
         engine.advancePhase()
         engine.advancePhase()
         controller.captureCurrentPositionImmediately()
@@ -526,7 +527,7 @@ class MoguraGameControllerTest {
         controller.startNewGame(2)
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
-        engine.placeFoodAt(player.position, FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = true))
+        placeFoodForCapture(engine, player, FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = true))
         engine.advancePhase()
         engine.advancePhase()
         controller.captureCurrentPositionImmediately()
@@ -546,7 +547,7 @@ class MoguraGameControllerTest {
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
         player.carryFood(FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false))
-        engine.placeFoodAt(player.position, FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = true))
+        placeFoodForCapture(engine, player, FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = true))
         engine.advancePhase()
         engine.advancePhase()
 
@@ -1042,7 +1043,7 @@ class MoguraGameControllerTest {
         controller.startNewGame(2)
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
-        engine.placeFoodAt(player.position, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
+        placeFoodForCapture(engine, player, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
         engine.advancePhase()
         engine.advancePhase()
         controller.captureCurrentPositionImmediately()
@@ -1161,7 +1162,7 @@ class MoguraGameControllerTest {
         controller.startNewGame(2)
         val engine = controller.engine!!
         val player = controller.currentPlayer!!
-        engine.placeFoodAt(player.position, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
+        placeFoodForCapture(engine, player, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
         engine.advancePhase()
         engine.advancePhase()
         controller.captureCurrentPositionImmediately()
@@ -1180,6 +1181,11 @@ class MoguraGameControllerTest {
             // Remove the previous stack so this test controls the capture target.
         }
         engine.placeFoodAt(position, food)
+    }
+
+    private fun placeFoodForCapture(engine: GameEngine, player: Player, food: FoodCard) {
+        player.moveTo(Position(1, 1))
+        engine.placeFoodAt(player.position, food)
     }
 
     private fun testController(): MoguraGameController =
