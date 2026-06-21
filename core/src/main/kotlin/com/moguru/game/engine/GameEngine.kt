@@ -180,14 +180,19 @@ class GameEngine(
      * 逃走先に別エサがいる場合は同じマスに重ねて配置する。
      */
     fun attemptCaptureAt(foodPosition: Position): CaptureResult {
-        val food = foodAt(foodPosition) ?: error("指定位置にエサがありません: $foodPosition")
+        return attemptCaptureAtFoodIndex(foodPosition, foodIndex = 0)
+    }
+
+    fun attemptCaptureAtFoodIndex(foodPosition: Position, foodIndex: Int): CaptureResult {
+        val food = foodAt(foodPosition, foodIndex)
+            ?: error("指定位置に捕獲対象のエサがありません: $foodPosition index=$foodIndex")
 
         if (food.escapeMap.isEmpty()) {
             lastCaptureSuccess = true
             return CaptureResult.Success()
         }
 
-        return attemptCaptureAt(foodPosition, diceRoller.roll())
+        return attemptCaptureAt(foodPosition, foodIndex = foodIndex, roll = diceRoller.roll())
     }
 
     /**
@@ -197,8 +202,13 @@ class GameEngine(
      * 解決したい場合に使う。判定ルールは [attemptCaptureAt] と同一。
      */
     fun attemptCaptureAt(foodPosition: Position, roll: Int): CaptureResult {
+        return attemptCaptureAt(foodPosition, foodIndex = 0, roll = roll)
+    }
+
+    fun attemptCaptureAt(foodPosition: Position, foodIndex: Int, roll: Int): CaptureResult {
         require(roll in 1..6) { "ダイス目は1〜6にしてください: $roll" }
-        val food = foodAt(foodPosition) ?: error("指定位置にエサがありません: $foodPosition")
+        val food = foodAt(foodPosition, foodIndex)
+            ?: error("指定位置に捕獲対象のエサがありません: $foodPosition index=$foodIndex")
 
         if (food.escapeMap.isEmpty()) {
             lastCaptureSuccess = true
@@ -223,7 +233,7 @@ class GameEngine(
             return CaptureResult.Success(roll)
         }
 
-        removeFoodAt(foodPosition, food)
+        removeFoodAt(foodPosition, foodIndex)
         placeFoodAt(escapeTo, food.copy(isFaceDown = false))
         lastCaptureSuccess = false
         return CaptureResult.Escaped(escapeDirection, roll)
@@ -248,6 +258,8 @@ class GameEngine(
     /** 指定位置で次に捕獲対象になるエサを返す。 */
     fun foodAt(position: Position): FoodCard? = _foodPositions[position]?.firstOrNull()
 
+    fun foodAt(position: Position, foodIndex: Int): FoodCard? = _foodPositions[position]?.getOrNull(foodIndex)
+
     /** 指定位置にあるエサスタックを返す。 */
     fun foodsAt(position: Position): List<FoodCard> = _foodPositions[position]?.toList().orEmpty()
 
@@ -260,6 +272,16 @@ class GameEngine(
             stack.indexOf(food).takeIf { it >= 0 } ?: return null
         }
         val removed = stack.removeAt(index)
+        if (stack.isEmpty()) {
+            _foodPositions.remove(position)
+        }
+        return removed
+    }
+
+    fun removeFoodAt(position: Position, foodIndex: Int): FoodCard? {
+        val stack = _foodPositions[position] ?: return null
+        if (foodIndex !in stack.indices) return null
+        val removed = stack.removeAt(foodIndex)
         if (stack.isEmpty()) {
             _foodPositions.remove(position)
         }

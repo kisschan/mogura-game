@@ -151,6 +151,34 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `capture target can be selected from stacked food`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val target = Position(1, 1)
+        player.moveTo(target)
+        engine.placeFoodAt(target, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = true))
+        engine.placeFoodAt(target, FoodCard(FoodType.MOLE_CRICKET, emptyMap(), isFaceDown = true))
+        engine.advancePhase()
+        engine.advancePhase()
+
+        val initialTargets = controller.playScreenUiState().captureTargets
+        assertEquals(listOf(FoodType.BEETLE_LARVA, FoodType.MOLE_CRICKET), initialTargets.map { it.type })
+        assertTrue(initialTargets[0].selected)
+
+        val selectResult = controller.selectCaptureTarget(1)
+        val selectedTargets = controller.playScreenUiState().captureTargets
+        val captureResult = controller.captureCurrentPositionImmediately()
+
+        assertTrue(selectResult.success)
+        assertTrue(selectedTargets[1].selected)
+        assertTrue(captureResult.success)
+        assertEquals(FoodType.MOLE_CRICKET, controller.pendingFoodDecision?.type)
+        assertEquals(listOf(FoodType.BEETLE_LARVA), engine.foodsAt(target).map { it.type })
+    }
+
+    @Test
     fun `last dice roll clears when a later capture needs no dice`() {
         val controller = testController()
         controller.startNewGame(2)

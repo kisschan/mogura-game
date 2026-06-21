@@ -120,7 +120,7 @@ class MoguraGameFrame(
         newGameButton.addActionListener { promptNewGame() }
         digGuideButton.addActionListener { showStatus(phaseHelp(controller.engine?.currentPhase)) }
         moveGuideButton.addActionListener { showStatus(phaseHelp(controller.engine?.currentPhase)) }
-        captureButton.addActionListener { runAction { controller.captureCurrentPositionImmediately() } }
+        captureButton.addActionListener { runAction { captureSelectedOrPromptImmediately() } }
         eatButton.addActionListener { runAction { controller.eatPendingFood() } }
         carryButton.addActionListener { runAction { controller.carryPendingFood() } }
         skipButton.addActionListener { runAction { controller.skipPhase() } }
@@ -400,7 +400,7 @@ class MoguraGameFrame(
             TurnPhase.CAPTURE -> {
                 val player = controller.currentPlayer
                 if (player?.position == position) {
-                    controller.captureCurrentPositionImmediately()
+                    captureSelectedOrPromptImmediately()
                 } else {
                     GameActionResult(false, "捕獲するには現在のプレイヤーがいるマスをクリックしてください。")
                 }
@@ -416,6 +416,31 @@ class MoguraGameFrame(
 
     private fun selectedRotation(): Rotation =
         rotationButtons.entries.firstOrNull { it.value.isSelected }?.key ?: Rotation.DEG_0
+
+    private fun captureSelectedOrPromptImmediately(): GameActionResult {
+        val targets = controller.playScreenUiState().captureTargets
+        if (targets.size > 1) {
+            val labels = targets.map { target ->
+                "${target.index + 1}: ${if (target.isFaceDown) "?" else target.type.displayName()}"
+            }.toTypedArray()
+            val defaultLabel = targets.firstOrNull { it.selected }
+                ?.let { labels.getOrNull(it.index) }
+                ?: labels.first()
+            val choice = JOptionPane.showInputDialog(
+                this,
+                "捕獲するエサを選んでください",
+                "捕獲対象",
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                labels,
+                defaultLabel,
+            ) as? String ?: return GameActionResult(false, "捕獲対象を選んでください。")
+            val selectedIndex = labels.indexOf(choice)
+            val selected = controller.selectCaptureTarget(selectedIndex)
+            if (!selected.success) return selected
+        }
+        return controller.captureCurrentPositionImmediately()
+    }
 
     private fun runAction(action: () -> GameActionResult) {
         handleActionResult(action())

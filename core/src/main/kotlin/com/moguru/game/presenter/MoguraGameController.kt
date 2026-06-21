@@ -40,6 +40,14 @@ data class DigCandidateDisplay(
     val enabled: Boolean,
 )
 
+data class CaptureTargetDisplay(
+    val index: Int,
+    val type: FoodType,
+    val isFaceDown: Boolean,
+    val selected: Boolean,
+    val enabled: Boolean,
+)
+
 data class ActionAvailability(
     val canCapture: Boolean,
     val canEat: Boolean,
@@ -59,6 +67,7 @@ data class PlayScreenUiState(
     val diceRouletteResult: Int?,
     val diceRouletteFood: FoodType?,
     val diceRouletteEscapeRolls: List<Int>,
+    val captureTargets: List<CaptureTargetDisplay>,
     val actionAvailability: ActionAvailability,
 )
 
@@ -80,6 +89,7 @@ data class PendingDigPlacement(
  */
 data class PendingCaptureRoll(
     val position: Position,
+    val foodIndex: Int,
     val food: FoodCard,
     val roll: Int? = null,
 )
@@ -110,6 +120,9 @@ class MoguraGameController(
         private set
 
     var pendingDigTileChoice: DigTileChoice? = null
+        private set
+
+    var selectedCaptureFoodIndex: Int? = null
         private set
 
     private val messages = ArrayDeque<String>()
@@ -150,6 +163,7 @@ class MoguraGameController(
             diceRouletteResult = pendingCaptureRoll?.roll,
             diceRouletteFood = pendingCaptureRoll?.food?.type,
             diceRouletteEscapeRolls = pendingCaptureRoll?.food?.escapeMap?.keys?.sorted().orEmpty(),
+            captureTargets = captureTargetDisplays(),
             actionAvailability = ActionAvailability(
                 canCapture = isPlaying && canCapture() && pendingCaptureRoll == null,
                 canEat = isPlaying && hasPendingDecision,
@@ -181,6 +195,7 @@ class MoguraGameController(
         pendingDigPlacement = null
         pendingDigRotation = null
         pendingDigTileChoice = null
+        selectedCaptureFoodIndex = null
         messages.clear()
         addLog("${playerCount}人プレイで開始しました。")
         addLog("${currentPlayer?.name} の番です。隣の穴タイルを掘ってください。")
@@ -237,7 +252,7 @@ class MoguraGameController(
         val player = currentPlayer ?: return false
         return current.currentPhase == TurnPhase.CAPTURE &&
             !player.isCarrying &&
-            current.foodAt(player.position) != null
+            selectedCaptureFood(current, player.position) != null
     }
 
     fun digAt(position: Position, rotation: Rotation): GameActionResult {
@@ -357,6 +372,7 @@ class MoguraGameController(
         }
 
         player.moveTo(position)
+        selectedCaptureFoodIndex = null
         addLog("${player.name} が ${position.label()} に移動しました。")
         val needsDecision = resolveCurrentPlayerPositionEffects()
         if (needsDecision) {
@@ -366,6 +382,28 @@ class MoguraGameController(
             current.advancePhase()
         }
         return GameActionResult(true, "移動しました。")
+    }
+
+    fun selectCaptureTarget(index: Int): GameActionResult {
+        val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
+        val player = currentPlayer ?: return GameActionResult(false, "現在のプレイヤーがいません。")
+        if (current.currentPhase != TurnPhase.CAPTURE) {
+            return GameActionResult(false, "捕獲対象を選べるのは捕獲フェーズだけです。")
+        }
+        if (pendingCaptureRoll != null) {
+            return GameActionResult(false, "ダイス判定の解決を待っています。")
+        }
+        if (player.isCarrying) {
+            return GameActionResult(false, "エサをレンコウ中は捕獲できません。")
+        }
+
+        val foods = current.foodsAt(player.position)
+        if (index !in foods.indices) {
+            return GameActionResult(false, "その捕獲対象は選べません。")
+        }
+
+        selectedCaptureFoodIndex = index
+        return GameActionResult(true, "${foods[index].type.displayName()} を捕獲対象にしました。")
     }
 
     fun captureCurrentPosition(): GameActionResult {
@@ -379,10 +417,11 @@ class MoguraGameController(
         }
 
         val position = player.position
-        val food = current.foodAt(position)
+        val targetIndex = selectedCaptureIndex(current, position)
+        val food = targetIndex?.let { current.foodAt(position, it) }
             ?: return GameActionResult(false, "ここにはエサがありません。")
 
-        pendingCaptureRoll = PendingCaptureRoll(position, food)
+        pendingCaptureRoll = PendingCaptureRoll(position, targetIndex, food)
         if (food.escapeMap.isEmpty()) {
             addLog("${player.name} が ${food.type.displayName()} を見つけた！逃げないエサだ。タップして捕まえてください。")
         } else {
@@ -438,16 +477,17 @@ class MoguraGameController(
 
         pendingCaptureRoll = null
         val result = if (roll == null) {
-            current.attemptCaptureAt(pending.position)
+            current.attemptCaptureAtFoodIndex(pending.position, pending.foodIndex)
         } else {
-            current.attemptCaptureAt(pending.position, roll)
+            current.attemptCaptureAt(pending.position, pending.foodIndex, roll)
         }
-        return resolveCaptureOutcome(pending.position, pending.food, result)
+        return resolveCaptureOutcome(pending.position, pending.foodIndex, pending.food, result)
     }
 
     /** 捕獲判定の結果を盤面・ログ・フェーズへ反映する。 */
     private fun resolveCaptureOutcome(
         position: Position,
+        foodIndex: Int,
         food: FoodCard,
         result: CaptureResult,
     ): GameActionResult {
@@ -462,13 +502,14 @@ class MoguraGameController(
 
         when (result) {
             is CaptureResult.Success -> {
-                val captured = current.removeFoodAt(position, food) ?: food
+                val captured = current.removeFoodAt(position, foodIndex) ?: food
                 pendingFoodDecision = captured.copy(isFaceDown = false)
                 addLog("${player.name} が ${captured.type.displayName()} を捕獲しました。タベるかレンコウを選んでください。")
             }
 
             is CaptureResult.Escaped -> {
                 pendingFoodDecision = null
+                selectedCaptureFoodIndex = null
                 addLog(
                     "${food.type.displayName()} はダイス ${result.diceRoll} で " +
                         "${result.direction.displayName()} に逃げました。",
@@ -477,6 +518,9 @@ class MoguraGameController(
         }
 
         replenishFoodIfNeeded()
+        if (result is CaptureResult.Success) {
+            selectedCaptureFoodIndex = null
+        }
         current.advancePhase()
         return GameActionResult(true, "捕獲判定を解決しました。")
     }
@@ -541,6 +585,7 @@ class MoguraGameController(
             finishTurn()
         } else {
             val skipped = current.currentPhase
+            selectedCaptureFoodIndex = null
             current.advancePhase()
             addLog("${skipped.displayName()} フェーズをスキップしました。")
             GameActionResult(true, "フェーズをスキップしました。")
@@ -599,6 +644,7 @@ class MoguraGameController(
         }
 
         moveToEndPhase()
+        selectedCaptureFoodIndex = null
         resolveHomecoming(player)
         current.endTurn()
         addLog("${player.name} の番を終了しました。体力: ${player.health}")
@@ -713,6 +759,35 @@ class MoguraGameController(
                 shape = tile?.shape,
                 selected = pendingDigTileChoice == choice,
                 enabled = hasPendingDig && tile != null,
+            )
+        }
+    }
+
+    private fun selectedCaptureIndex(current: GameEngine, position: Position): Int? {
+        val foods = current.foodsAt(position)
+        if (foods.isEmpty()) return null
+        return selectedCaptureFoodIndex?.takeIf { it in foods.indices } ?: 0
+    }
+
+    private fun selectedCaptureFood(current: GameEngine, position: Position): FoodCard? =
+        selectedCaptureIndex(current, position)?.let { index -> current.foodAt(position, index) }
+
+    private fun captureTargetDisplays(): List<CaptureTargetDisplay> {
+        val current = engine ?: return emptyList()
+        val player = currentPlayer ?: return emptyList()
+        if (current.currentPhase != TurnPhase.CAPTURE || player.isCarrying || pendingCaptureRoll != null) {
+            return emptyList()
+        }
+
+        val foods = current.foodsAt(player.position)
+        val selectedIndex = selectedCaptureIndex(current, player.position)
+        return foods.mapIndexed { index, food ->
+            CaptureTargetDisplay(
+                index = index,
+                type = food.type,
+                isFaceDown = food.isFaceDown,
+                selected = index == selectedIndex,
+                enabled = true,
             )
         }
     }

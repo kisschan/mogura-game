@@ -201,6 +201,38 @@ class AndroidGameViewModelTest {
     }
 
     @Test
+    fun `stacked capture target selection is reflected in roulette state`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+        viewModel.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val target = Position(1, 1)
+        player.moveTo(target)
+        engine.placeFoodAt(target, FoodCard(FoodType.BEETLE_LARVA, emptyMap()))
+        engine.placeFoodAt(target, FoodCard(FoodType.MOLE_CRICKET, emptyMap()))
+        engine.advancePhase()
+        engine.advancePhase()
+
+        viewModel.selectCaptureTarget(1)
+
+        var state = viewModel.uiState.value.playState
+        assertEquals(listOf(FoodType.BEETLE_LARVA, FoodType.MOLE_CRICKET), state.captureTargets.map { it.type })
+        assertTrue(state.captureTargets[1].selected)
+
+        viewModel.capture()
+
+        state = viewModel.uiState.value.playState
+        assertTrue(state.diceRouletteActive)
+        assertEquals(FoodType.MOLE_CRICKET, state.diceRouletteFood)
+
+        viewModel.finishDiceRoulette()
+
+        assertEquals(FoodType.MOLE_CRICKET, controller.pendingFoodDecision?.type)
+        assertEquals(listOf(FoodType.BEETLE_LARVA), engine.foodsAt(target).map { it.type })
+    }
+
+    @Test
     fun `repeated roulette taps are ignored`() {
         val controller = testController()
         val viewModel = AndroidGameViewModel(controller)
