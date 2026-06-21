@@ -412,11 +412,19 @@ class MoguraGameControllerTest {
         val result = controller.captureCurrentPositionImmediately()
 
         assertTrue(result.success)
+        val escapeStack = engine.foodsAt(escapeTo)
         assertEquals(
             listOf(FoodType.BEETLE_LARVA, FoodType.EARTHWORM),
-            engine.foodsAt(escapeTo).map { it.type },
+            escapeStack.take(2).map { it.type },
         )
-        assertTrue(engine.foodsAt(escapeTo).none { it.isFaceDown }, "逃走先の表向きスタックは補充で捨てない")
+        assertTrue(escapeStack.take(2).none { it.isFaceDown }, "逃走先の表向きスタックは補充で捨てない")
+        assertEquals(3, escapeStack.size, "保存対象のホットゾーンにも裏向きエサを補充する")
+        assertTrue(escapeStack.last().isFaceDown, "保存対象のホットゾーンにも裏向きエサを補充する")
+        assertEquals(
+            4,
+            Board.HOT_ZONE_POSITIONS.sumOf { position -> engine.foodsAt(position).count { it.isFaceDown } },
+            "補充後はホットゾーン4マスすべてに裏向きエサがある",
+        )
         assertTrue(engine.foodAt(source)?.isFaceDown == true, "逃走元の空いたホットゾーンは補充される")
         assertEquals(0, engine.foodDiscardCount)
     }

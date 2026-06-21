@@ -302,7 +302,7 @@ class GameEngine(
     /**
      * エサを補充する。
      *
-     * 表向きエサは捨て札へ送り、空いたホットゾーンを裏向きエサで埋める。
+     * 表向きエサは捨て札へ送り、裏向きエサがないホットゾーンへ裏向きエサを補充する。
      */
     fun replenishFood(preserveFaceUpHotZonePositions: Set<Position> = emptySet()) {
         sweepFaceUpHotZoneFood(preserveFaceUpHotZonePositions)
@@ -315,7 +315,8 @@ class GameEngine(
         }
 
         Board.HOT_ZONE_POSITIONS.forEach { position ->
-            if (_foodPositions[position].isNullOrEmpty() && foodStock.isNotEmpty()) {
+            val hasFaceDownFood = _foodPositions[position].orEmpty().any { it.isFaceDown }
+            if (!hasFaceDownFood && foodStock.isNotEmpty()) {
                 placeFoodAt(position, foodStock.removeFirst())
             }
         }
