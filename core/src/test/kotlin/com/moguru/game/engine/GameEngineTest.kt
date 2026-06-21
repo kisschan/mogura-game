@@ -387,6 +387,33 @@ class GameEngineTest {
     }
 
     @Test
+    fun `stacked food can be captured by index`() {
+        val captureEngine = GameEngine(
+            playerCount = 2,
+            diceRoller = FixedDiceRoller(listOf(1)),
+            shuffler = shuffler,
+        )
+        captureEngine.setupGame(defaultConfigs())
+
+        val foodPosition = Position(2, 2)
+        val escapeTo = Position(3, 2)
+        replaceFoodAt(captureEngine, foodPosition, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false))
+        captureEngine.placeFoodAt(
+            foodPosition,
+            FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT), isFaceDown = false),
+        )
+        captureEngine.removeFoodAt(escapeTo)
+        placeFaceUpTile(captureEngine, foodPosition, Direction.RIGHT)
+        placeFaceUpTile(captureEngine, escapeTo, Direction.LEFT)
+
+        val result = captureEngine.attemptCaptureAt(foodPosition, foodIndex = 1, roll = 1)
+
+        assertTrue(result is CaptureResult.Escaped)
+        assertEquals(listOf(FoodType.BEETLE_LARVA), captureEngine.foodsAt(foodPosition).map { it.type })
+        assertEquals(FoodType.EARTHWORM, captureEngine.foodAt(escapeTo)?.type)
+    }
+
+    @Test
     fun `同じマスに複数のエサを保持できる`() {
         setupDefaultGame()
         val position = Position(2, 2)

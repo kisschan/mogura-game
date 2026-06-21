@@ -151,6 +151,10 @@ class AndroidGameViewModel(
         runAction { controller.setPendingDigRotation(rotation) }
     }
 
+    fun selectCaptureTarget(index: Int) {
+        runAction { controller.selectCaptureTarget(index) }
+    }
+
     fun capture() {
         runAction { controller.captureCurrentPosition() }
     }

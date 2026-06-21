@@ -62,6 +62,7 @@ import com.moguru.game.model.Player
 import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
 import com.moguru.game.model.TileShape
+import com.moguru.game.presenter.CaptureTargetDisplay
 import com.moguru.game.presenter.DigCandidateDisplay
 import com.moguru.game.presenter.DigTileChoice
 
@@ -495,6 +496,12 @@ private fun ContextControls(
                 onRotation = viewModel::selectRotation,
             )
         }
+        if (state.playState.captureTargets.size > 1) {
+            CaptureTargetControls(
+                targets = state.playState.captureTargets,
+                onSelect = viewModel::selectCaptureTarget,
+            )
+        }
         if (state.visibleActions.isNotEmpty()) {
             ActionControls(state = state, viewModel = viewModel)
         } else if (!state.showDigControls) {
@@ -608,6 +615,71 @@ private fun DigCandidateCard(
 private fun digCandidateShortLabel(choice: DigTileChoice): String = when (choice) {
     DigTileChoice.REVEALED -> "めくり"
     DigTileChoice.DRAWN -> "山札"
+}
+
+@Composable
+private fun CaptureTargetControls(
+    targets: List<CaptureTargetDisplay>,
+    onSelect: (Int) -> Unit,
+) {
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFFFFF8E8))
+            .border(2.dp, Color(0xFFD0AD78), RoundedCornerShape(8.dp))
+            .padding(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        maxItemsInEachRow = 3,
+    ) {
+        targets.forEach { target ->
+            CaptureTargetCard(
+                target = target,
+                onSelect = onSelect,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CaptureTargetCard(
+    target: CaptureTargetDisplay,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val borderColor = if (target.selected) Color(0xFFE64B3F) else Color(0xFFD3AA72)
+    Surface(
+        modifier = modifier
+            .height(86.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = target.enabled) { onSelect(target.index) },
+        shape = RoundedCornerShape(8.dp),
+        color = if (target.selected) Color(0xFFFFEFEA) else Color(0xFFFFFCF4),
+        border = BorderStroke(2.dp, borderColor),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Image(
+                painter = painterResource(if (target.isFaceDown) R.drawable.food_card_back else foodRes(target.type)),
+                contentDescription = null,
+                modifier = Modifier.size(46.dp),
+                contentScale = ContentScale.Fit,
+            )
+            Text(
+                text = if (target.isFaceDown) "?" else target.type.boardLabel(),
+                color = Color(0xFF2E2115),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
 
 @Composable
