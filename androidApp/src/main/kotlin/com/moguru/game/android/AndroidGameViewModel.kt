@@ -44,7 +44,7 @@ data class AndroidBoardCellUiState(
     val position: Position,
     val cellType: CellType,
     val tile: AndroidTileUiState?,
-    val food: AndroidFoodUiState?,
+    val foods: List<AndroidFoodUiState>,
     val players: List<AndroidPlayerTokenUiState>,
     val highlight: AndroidHighlightTone?,
 )
@@ -149,6 +149,10 @@ class AndroidGameViewModel(
 
     fun selectRotation(rotation: Rotation) {
         runAction { controller.setPendingDigRotation(rotation) }
+    }
+
+    fun selectCaptureTarget(index: Int) {
+        runAction { controller.selectCaptureTarget(index) }
     }
 
     fun capture() {
@@ -284,7 +288,7 @@ class AndroidGameViewModel(
                             position = position,
                             cellType = cell.type,
                             tile = engine.boardState.getTile(position)?.toAndroidTileUiState(),
-                            food = engine.foodPositions[position]?.let {
+                            foods = engine.foodsAt(position).map {
                                 AndroidFoodUiState(it.type, it.isFaceDown)
                             },
                             players = playersByPosition[position].orEmpty().map { player ->

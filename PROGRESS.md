@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-最終更新: 2026-06-20
+最終更新: 2026-06-21
 
 ## 現在の状況
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
@@ -41,8 +41,13 @@
 - [x] Android版プレイ画面をVariant 2ベースで再調整し、HUD画像・盤面トークン・掘る候補カード・最新ログを拡大
 - [x] 表示用日本語ラベルと回転表記をテストで固定し、回転ラベルを `0° / 90° / 180° / 270°` に統一
 - [x] 内部テスト用AAB作成に向けて、Android release署名設定を `keystore.properties` から読み込む構成にし、keystore・パスワード・AAB/APKをGit管理外にする設定を追加
+- [x] Phase 1: 1マスに複数エサを保持できる盤面データへ変更し、逃走先に既存エサがあっても逃走できるよう修正
+- [x] Phase 1: エサの巣マス逃走を禁止し、巣へ逃げる場合は捕獲成功として扱うよう修正
 
 ## テスト結果
+- 最終実行日: 2026-06-21
+- 実行コマンド: `.\gradlew.bat :core:test :desktop:test :androidApp:testDebugUnitTest`
+- 結果: `BUILD SUCCESSFUL`（Phase 1 実装後）
 - 最終実行日: 2026-06-14
 - 実行コマンド: `.\gradlew.bat :core:test`
 - 結果: `BUILD SUCCESSFUL`
@@ -136,11 +141,11 @@
 
 ## 未実装解消ロードマップ
 ### Phase 1: 盤面ルールの土台を先に直す
-- [ ] [#17](https://github.com/kisschan/mogura-game/issues/17) 1マス複数エサを表現できる盤面データへ変更する。
+- [x] [#17](https://github.com/kisschan/mogura-game/issues/17) 1マス複数エサを表現できる盤面データへ変更する。
   - `foodPositions: Map<Position, FoodCard>` 前提を見直す。
   - coreの捕獲・補充・表示用DTOを同時に更新する。
   - 旧仕様テスト `逃走先に別のエサがある場合は捕獲成功` を新仕様へ置き換える。
-- [ ] [#18](https://github.com/kisschan/mogura-game/issues/18) 巣マスへのエサ逃走を禁止する。
+- [x] [#18](https://github.com/kisschan/mogura-game/issues/18) 巣マスへのエサ逃走を禁止する。
   - `CellType.NEST` を逃走不可条件に入れる。
   - 巣マスにエサが生成されないことをテストで固定する。
 
@@ -176,7 +181,7 @@
 - [ ] `PROGRESS.md` とコード内TODOを、解消した issue 番号に合わせて整理する。
 
 ## 次の作業
-- 未実装解消ロードマップの Phase 1 から着手する
+- 未実装解消ロードマップの Phase 2 から着手する
 - 未確定 / 要確認ルールの確定後に仮実装を調整する
 - 強奪フェーズは移動後自動発動の仮実装なので、[#21](https://github.com/kisschan/mogura-game/issues/21) で正式フローへ置き換える
 - 内部テスト前にローカルでupload keyを作成し、Git管理外の `keystore.properties` を設定して署名済みAABを作成する。生成AAB/APKはGitHubへ上げず、Play Consoleへ直接アップロードする

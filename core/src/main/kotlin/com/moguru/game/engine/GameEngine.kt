@@ -35,7 +35,11 @@ enum class GameState {
  */
 sealed class CaptureResult {
     data class Success(val diceRoll: Int? = null) : CaptureResult()
-    data class Escaped(val direction: EscapeDirection, val diceRoll: Int) : CaptureResult()
+    data class Escaped(
+        val direction: EscapeDirection,
+        val diceRoll: Int,
+        val to: Position? = null,
+    ) : CaptureResult()
 }
 
 /**
@@ -67,8 +71,9 @@ class GameEngine(
 
     val players = mutableListOf<Player>()
 
-    private val _foodPositions = mutableMapOf<Position, FoodCard>()
-    val foodPositions: Map<Position, FoodCard> get() = _foodPositions.toMap()
+    private val _foodPositions = mutableMapOf<Position, MutableList<FoodCard>>()
+    val foodPositions: Map<Position, List<FoodCard>>
+        get() = _foodPositions.mapValues { (_, foods) -> foods.toList() }
 
     private val foodStock = mutableListOf<FoodCard>()
     private val foodDiscard = mutableListOf<FoodCard>()
@@ -123,7 +128,7 @@ class GameEngine(
         val includeFrog = playerCount >= 4
         val foodDeck = shuffler.shuffle(FoodCard.createDeck(includeFrog))
         Board.HOT_ZONE_POSITIONS.forEachIndexed { index, position ->
-            _foodPositions[position] = foodDeck[index]
+            placeFoodAt(position, foodDeck[index])
         }
         foodStock.addAll(foodDeck.drop(4))
 
@@ -175,17 +180,23 @@ class GameEngine(
     /**
      * 盤面上のエサに対する捕獲判定。
      *
-     * 逃走先が盤外・無効マス・別エサで埋まっている場合は捕獲成功とする。
+     * 逃走先が盤外・無効マス・巣マス・道なしの場合は捕獲成功とする。
+     * 逃走先に別エサがいる場合は同じマスに重ねて配置する。
      */
     fun attemptCaptureAt(foodPosition: Position): CaptureResult {
-        val food = _foodPositions[foodPosition] ?: error("指定位置にエサがありません: $foodPosition")
+        return attemptCaptureAtFoodIndex(foodPosition, foodIndex = 0)
+    }
+
+    fun attemptCaptureAtFoodIndex(foodPosition: Position, foodIndex: Int): CaptureResult {
+        val food = foodAt(foodPosition, foodIndex)
+            ?: error("指定位置に捕獲対象のエサがありません: $foodPosition index=$foodIndex")
 
         if (food.escapeMap.isEmpty()) {
             lastCaptureSuccess = true
             return CaptureResult.Success()
         }
 
-        return attemptCaptureAt(foodPosition, diceRoller.roll())
+        return attemptCaptureAt(foodPosition, foodIndex = foodIndex, roll = diceRoller.roll())
     }
 
     /**
@@ -195,8 +206,13 @@ class GameEngine(
      * 解決したい場合に使う。判定ルールは [attemptCaptureAt] と同一。
      */
     fun attemptCaptureAt(foodPosition: Position, roll: Int): CaptureResult {
+        return attemptCaptureAt(foodPosition, foodIndex = 0, roll = roll)
+    }
+
+    fun attemptCaptureAt(foodPosition: Position, foodIndex: Int, roll: Int): CaptureResult {
         require(roll in 1..6) { "ダイス目は1〜6にしてください: $roll" }
-        val food = _foodPositions[foodPosition] ?: error("指定位置にエサがありません: $foodPosition")
+        val food = foodAt(foodPosition, foodIndex)
+            ?: error("指定位置に捕獲対象のエサがありません: $foodPosition index=$foodIndex")
 
         if (food.escapeMap.isEmpty()) {
             lastCaptureSuccess = true
@@ -214,17 +230,17 @@ class GameEngine(
         if (
             escapeCell == null ||
             escapeCell.type == CellType.INVALID ||
-            escapeTo in _foodPositions ||
+            escapeCell.type == CellType.NEST ||
             !hasValidEscapePath(foodPosition, escapeTo, escapeDirection)
         ) {
             lastCaptureSuccess = true
             return CaptureResult.Success(roll)
         }
 
-        _foodPositions.remove(foodPosition)
-        _foodPositions[escapeTo] = food.copy(isFaceDown = false)
+        removeFoodAt(foodPosition, foodIndex)
+        placeFoodAt(escapeTo, food.copy(isFaceDown = false))
         lastCaptureSuccess = false
-        return CaptureResult.Escaped(escapeDirection, roll)
+        return CaptureResult.Escaped(escapeDirection, roll, escapeTo)
     }
 
     /** 勝利条件を満たすプレイヤーがいれば返す。 */
@@ -243,24 +259,53 @@ class GameEngine(
         return gameState
     }
 
-    /** 指定位置のエサを取り除く。 */
-    fun removeFoodAt(position: Position): FoodCard? = _foodPositions.remove(position)
+    /** 指定位置で次に捕獲対象になるエサを返す。 */
+    fun foodAt(position: Position): FoodCard? = _foodPositions[position]?.firstOrNull()
+
+    fun foodAt(position: Position, foodIndex: Int): FoodCard? = _foodPositions[position]?.getOrNull(foodIndex)
+
+    /** 指定位置にあるエサスタックを返す。 */
+    fun foodsAt(position: Position): List<FoodCard> = _foodPositions[position]?.toList().orEmpty()
+
+    /** 指定位置のエサを1枚取り除く。 */
+    fun removeFoodAt(position: Position, food: FoodCard? = null): FoodCard? {
+        val stack = _foodPositions[position] ?: return null
+        val index = if (food == null) {
+            0
+        } else {
+            stack.indexOf(food).takeIf { it >= 0 } ?: return null
+        }
+        val removed = stack.removeAt(index)
+        if (stack.isEmpty()) {
+            _foodPositions.remove(position)
+        }
+        return removed
+    }
+
+    fun removeFoodAt(position: Position, foodIndex: Int): FoodCard? {
+        val stack = _foodPositions[position] ?: return null
+        if (foodIndex !in stack.indices) return null
+        val removed = stack.removeAt(foodIndex)
+        if (stack.isEmpty()) {
+            _foodPositions.remove(position)
+        }
+        return removed
+    }
 
     /** ホットゾーンに裏向きエサが残っていないか判定する。 */
     fun shouldReplenishFood(): Boolean {
         return Board.HOT_ZONE_POSITIONS.none { position ->
-            val food = _foodPositions[position]
-            food != null && food.isFaceDown
+            _foodPositions[position].orEmpty().any { it.isFaceDown }
         }
     }
 
     /**
      * エサを補充する。
      *
-     * 表向きエサは捨て札へ送り、空いたホットゾーンを裏向きエサで埋める。
+     * 表向きエサは捨て札へ送り、裏向きエサがないホットゾーンへ裏向きエサを補充する。
      */
-    fun replenishFood() {
-        sweepFaceUpHotZoneFood()
+    fun replenishFood(preserveFaceUpHotZonePositions: Set<Position> = emptySet()) {
+        sweepFaceUpHotZoneFood(preserveFaceUpHotZonePositions)
 
         if (foodStock.isEmpty() && foodDiscard.isEmpty()) return
 
@@ -270,18 +315,27 @@ class GameEngine(
         }
 
         Board.HOT_ZONE_POSITIONS.forEach { position ->
-            if (position !in _foodPositions && foodStock.isNotEmpty()) {
-                _foodPositions[position] = foodStock.removeFirst()
+            val hasFaceDownFood = _foodPositions[position].orEmpty().any { it.isFaceDown }
+            if (!hasFaceDownFood && foodStock.isNotEmpty()) {
+                placeFoodAt(position, foodStock.removeFirst())
             }
         }
     }
 
-    private fun sweepFaceUpHotZoneFood() {
+    private fun sweepFaceUpHotZoneFood(preserveFaceUpHotZonePositions: Set<Position>) {
         Board.HOT_ZONE_POSITIONS.forEach { position ->
-            val existing = _foodPositions[position]
-            if (existing != null && !existing.isFaceDown) {
+            if (position in preserveFaceUpHotZonePositions) return@forEach
+            val foods = _foodPositions[position] ?: return@forEach
+            val iterator = foods.iterator()
+            while (iterator.hasNext()) {
+                val existing = iterator.next()
+                if (!existing.isFaceDown) {
+                    iterator.remove()
+                    foodDiscard.add(existing.copy(isFaceDown = true))
+                }
+            }
+            if (foods.isEmpty()) {
                 _foodPositions.remove(position)
-                foodDiscard.add(existing.copy(isFaceDown = true))
             }
         }
     }
@@ -347,7 +401,12 @@ class GameEngine(
 
     /** 指定位置へエサを配置する。 */
     fun placeFoodAt(position: Position, food: FoodCard) {
-        _foodPositions[position] = food
+        val cell = board.getCell(position)
+            ?: throw IllegalArgumentException("Food cannot be placed outside the board: $position")
+        require(cell.type != CellType.INVALID) { "Food cannot be placed on an invalid cell: $position" }
+        require(cell.type != CellType.NEST) { "Food cannot be placed on a nest cell: $position" }
+
+        _foodPositions.getOrPut(position) { mutableListOf() }.add(food)
     }
 
     /** 次のプレイヤーへ移る。脱落プレイヤーは飛ばす。 */

@@ -120,7 +120,7 @@ class MoguraGameFrame(
         newGameButton.addActionListener { promptNewGame() }
         digGuideButton.addActionListener { showStatus(phaseHelp(controller.engine?.currentPhase)) }
         moveGuideButton.addActionListener { showStatus(phaseHelp(controller.engine?.currentPhase)) }
-        captureButton.addActionListener { runAction { controller.captureCurrentPositionImmediately() } }
+        captureButton.addActionListener { runAction { captureSelectedOrPromptImmediately() } }
         eatButton.addActionListener { runAction { controller.eatPendingFood() } }
         carryButton.addActionListener { runAction { controller.carryPendingFood() } }
         skipButton.addActionListener { runAction { controller.skipPhase() } }
@@ -400,7 +400,7 @@ class MoguraGameFrame(
             TurnPhase.CAPTURE -> {
                 val player = controller.currentPlayer
                 if (player?.position == position) {
-                    controller.captureCurrentPositionImmediately()
+                    captureSelectedOrPromptImmediately()
                 } else {
                     GameActionResult(false, "捕獲するには現在のプレイヤーがいるマスをクリックしてください。")
                 }
@@ -416,6 +416,31 @@ class MoguraGameFrame(
 
     private fun selectedRotation(): Rotation =
         rotationButtons.entries.firstOrNull { it.value.isSelected }?.key ?: Rotation.DEG_0
+
+    private fun captureSelectedOrPromptImmediately(): GameActionResult {
+        val targets = controller.playScreenUiState().captureTargets
+        if (targets.size > 1) {
+            val labels = targets.map { target ->
+                "${target.index + 1}: ${if (target.isFaceDown) "?" else target.type.displayName()}"
+            }.toTypedArray()
+            val defaultLabel = targets.firstOrNull { it.selected }
+                ?.let { labels.getOrNull(it.index) }
+                ?: labels.first()
+            val choice = JOptionPane.showInputDialog(
+                this,
+                "捕獲するエサを選んでください",
+                "捕獲対象",
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                labels,
+                defaultLabel,
+            ) as? String ?: return GameActionResult(false, "捕獲対象を選んでください。")
+            val selectedIndex = labels.indexOf(choice)
+            val selected = controller.selectCaptureTarget(selectedIndex)
+            if (!selected.success) return selected
+        }
+        return controller.captureCurrentPositionImmediately()
+    }
 
     private fun runAction(action: () -> GameActionResult) {
         handleActionResult(action())
@@ -968,13 +993,23 @@ class BoardPanel(
 
     private fun drawFoods(g: Graphics2D) {
         val current = controller.engine ?: return
-        current.foodPositions.forEach { (position, food) ->
+        current.foodPositions.forEach { (position, foods) ->
             val cellRect = cellRect(position) ?: return@forEach
-            drawFood(g, food, cellRect, foodCardScaleForPhase(current.currentPhase))
+            foods.asReversed().forEachIndexed { reversedIndex, food ->
+                val stackIndex = foods.lastIndex - reversedIndex
+                drawFood(g, food, cellRect, foodCardScaleForPhase(current.currentPhase), stackIndex, foods.size)
+            }
         }
     }
 
-    private fun drawFood(g: Graphics2D, food: FoodCard, cellRect: Rectangle, scale: Double) {
+    private fun drawFood(
+        g: Graphics2D,
+        food: FoodCard,
+        cellRect: Rectangle,
+        scale: Double,
+        stackIndex: Int,
+        stackSize: Int,
+    ) {
         val image = if (food.isFaceDown) {
             assets.load("assets/images/foods/food_card_back.png")
         } else {
@@ -986,6 +1021,8 @@ class BoardPanel(
             rect = cellRect,
             anchor = Anchor.BOTTOM_RIGHT,
             scale = scale,
+            stackIndex = stackIndex,
+            stackSize = stackSize,
         )
     }
 
@@ -995,9 +1032,11 @@ class BoardPanel(
         rect: Rectangle,
         anchor: Anchor,
         scale: Double,
+        stackIndex: Int = 0,
+        stackSize: Int = 1,
     ) {
         val smallRect = when (anchor) {
-            Anchor.BOTTOM_RIGHT -> foodCardRect(rect, scale)
+            Anchor.BOTTOM_RIGHT -> foodCardRect(rect, scale, stackIndex = stackIndex, stackSize = stackSize)
         }
         if (image != null) {
             g.drawImage(image, smallRect.x, smallRect.y, smallRect.width, smallRect.height, null)
@@ -1009,7 +1048,7 @@ class BoardPanel(
     private fun drawHoveredFoodPreview(g: Graphics2D) {
         val current = controller.engine ?: return
         val position = hoveredFoodPosition ?: return
-        val food = current.foodPositions[position] ?: return
+        val food = current.foodAt(position) ?: return
         val cellRect = cellRect(position) ?: return
         val image = if (food.isFaceDown) {
             assets.load("assets/images/foods/food_card_back.png")
@@ -1125,9 +1164,17 @@ class BoardPanel(
             null
         } else {
             current.foodPositions.keys.firstOrNull { position ->
+                val foods = current.foodsAt(position)
                 val cellRect = cellRect(position) ?: return@firstOrNull false
-                val cardRect = foodCardRect(cellRect, foodCardScaleForPhase(current.currentPhase))
-                cardRect.contains(point)
+                foods.indices.any { index ->
+                    val cardRect = foodCardRect(
+                        cellRect = cellRect,
+                        scale = foodCardScaleForPhase(current.currentPhase),
+                        stackIndex = index,
+                        stackSize = foods.size,
+                    )
+                    cardRect.contains(point)
+                }
             }
         }
         if (hoveredFoodPosition != next) {

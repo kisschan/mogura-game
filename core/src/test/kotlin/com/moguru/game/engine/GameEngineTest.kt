@@ -350,7 +350,7 @@ class GameEngineTest {
         val foodPos = Position(3, 2)
         val escapeTo = Position(4, 2)
         val food = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT))
-        escapeEngine.placeFoodAt(foodPos, food)
+        replaceFoodAt(escapeEngine, foodPos, food)
         placeFaceUpTile(escapeEngine, foodPos, Direction.RIGHT)
         placeFaceUpTile(escapeEngine, escapeTo, Direction.LEFT)
 
@@ -359,7 +359,7 @@ class GameEngineTest {
     }
 
     @Test
-    fun `逃走先に別のエサがある場合は捕獲成功`() {
+    fun `逃走先に別のエサがある場合も逃走成功しエサが重なる`() {
         val occupiedEngine = GameEngine(
             playerCount = 2,
             diceRoller = FixedDiceRoller(listOf(1)),
@@ -369,15 +369,65 @@ class GameEngineTest {
 
         val targetFood = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT), isFaceDown = false)
         val blockingFood = FoodCard(FoodType.MOLE_CRICKET, emptyMap(), isFaceDown = false)
-        occupiedEngine.placeFoodAt(Position(2, 2), targetFood)
-        occupiedEngine.placeFoodAt(Position(3, 2), blockingFood)
+        replaceFoodAt(occupiedEngine, Position(2, 2), targetFood)
+        replaceFoodAt(occupiedEngine, Position(3, 2), blockingFood)
+        placeFaceUpTile(occupiedEngine, Position(2, 2), Direction.RIGHT)
+        placeFaceUpTile(occupiedEngine, Position(3, 2), Direction.LEFT)
 
         val result = occupiedEngine.attemptCaptureAt(Position(2, 2))
-        assertTrue(result is CaptureResult.Success, "逃走先にエサがある場合は捕獲成功になるべき")
+        assertTrue(result is CaptureResult.Escaped, "逃走先にエサがある場合も逃走できるべき")
 
-        val remaining = occupiedEngine.foodPositions[Position(3, 2)]
-        assertNotNull(remaining, "逃走先の既存エサが消えてはならない")
-        assertEquals(FoodType.MOLE_CRICKET, remaining!!.type, "逃走先の既存エサが上書きされてはならない")
+        assertNull(occupiedEngine.foodPositions[Position(2, 2)], "逃走したエサは元の位置から消えるべき")
+        val stack = occupiedEngine.foodsAt(Position(3, 2))
+        assertEquals(
+            listOf(FoodType.MOLE_CRICKET, FoodType.EARTHWORM),
+            stack.map { it.type },
+            "逃走先の既存エサを残したまま逃走エサが追加されるべき",
+        )
+    }
+
+    @Test
+    fun `stacked food can be captured by index`() {
+        val captureEngine = GameEngine(
+            playerCount = 2,
+            diceRoller = FixedDiceRoller(listOf(1)),
+            shuffler = shuffler,
+        )
+        captureEngine.setupGame(defaultConfigs())
+
+        val foodPosition = Position(2, 2)
+        val escapeTo = Position(3, 2)
+        replaceFoodAt(captureEngine, foodPosition, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false))
+        captureEngine.placeFoodAt(
+            foodPosition,
+            FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT), isFaceDown = false),
+        )
+        captureEngine.removeFoodAt(escapeTo)
+        placeFaceUpTile(captureEngine, foodPosition, Direction.RIGHT)
+        placeFaceUpTile(captureEngine, escapeTo, Direction.LEFT)
+
+        val result = captureEngine.attemptCaptureAt(foodPosition, foodIndex = 1, roll = 1)
+
+        assertTrue(result is CaptureResult.Escaped)
+        assertEquals(listOf(FoodType.BEETLE_LARVA), captureEngine.foodsAt(foodPosition).map { it.type })
+        assertEquals(FoodType.EARTHWORM, captureEngine.foodAt(escapeTo)?.type)
+    }
+
+    @Test
+    fun `同じマスに複数のエサを保持できる`() {
+        setupDefaultGame()
+        val position = Position(2, 2)
+        while (engine.removeFoodAt(position) != null) {
+            // Start with an empty stack for this cell.
+        }
+
+        engine.placeFoodAt(position, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false))
+        engine.placeFoodAt(position, FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = false))
+
+        assertEquals(
+            listOf(FoodType.BEETLE_LARVA, FoodType.EARTHWORM),
+            engine.foodsAt(position).map { it.type },
+        )
     }
 
     @Test
@@ -390,7 +440,7 @@ class GameEngineTest {
         escapeEngine.setupGame(defaultConfigs())
 
         val food = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT), isFaceDown = false)
-        escapeEngine.placeFoodAt(Position(2, 2), food)
+        replaceFoodAt(escapeEngine, Position(2, 2), food)
         escapeEngine.removeFoodAt(Position(3, 2))
         placeFaceUpTile(escapeEngine, Position(2, 2), Direction.RIGHT)
         placeFaceUpTile(escapeEngine, Position(3, 2), Direction.LEFT)
@@ -411,7 +461,7 @@ class GameEngineTest {
         escapeEngine.setupGame(defaultConfigs())
 
         val food = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT), isFaceDown = false)
-        escapeEngine.placeFoodAt(Position(2, 2), food)
+        replaceFoodAt(escapeEngine, Position(2, 2), food)
         escapeEngine.removeFoodAt(Position(3, 2))
         placeFaceUpTile(escapeEngine, Position(2, 2), Direction.RIGHT)
         placeFaceUpTile(escapeEngine, Position(3, 2), Direction.LEFT)
@@ -433,7 +483,7 @@ class GameEngineTest {
         captureEngine.setupGame(defaultConfigs())
 
         val food = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT), isFaceDown = false)
-        captureEngine.placeFoodAt(Position(2, 2), food)
+        replaceFoodAt(captureEngine, Position(2, 2), food)
 
         val result = captureEngine.attemptCaptureAt(Position(2, 2), roll = 6)
         assertTrue(result is CaptureResult.Success, "指定した出目6は逃走目ではないので捕獲成功")
@@ -444,7 +494,7 @@ class GameEngineTest {
     fun `出目を指定しても逃走しないエサは確定捕獲`() {
         setupDefaultGame()
         val food = FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false)
-        engine.placeFoodAt(Position(2, 2), food)
+        replaceFoodAt(engine, Position(2, 2), food)
 
         val result = engine.attemptCaptureAt(Position(2, 2), roll = 3)
         assertTrue(result is CaptureResult.Success)
@@ -454,7 +504,7 @@ class GameEngineTest {
     fun `出目は1から6の範囲外なら例外`() {
         setupDefaultGame()
         val food = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT), isFaceDown = false)
-        engine.placeFoodAt(Position(2, 2), food)
+        replaceFoodAt(engine, Position(2, 2), food)
 
         assertThrows(IllegalArgumentException::class.java) {
             engine.attemptCaptureAt(Position(2, 2), roll = 0)
@@ -478,7 +528,7 @@ class GameEngineTest {
 
         engine.replenishFood()
         Board.HOT_ZONE_POSITIONS.forEach { position ->
-            val food = engine.foodPositions[position]
+            val food = engine.foodAt(position)
             assertNotNull(food, "補充後のホットゾーン $position にエサがない")
             assertTrue(food!!.isFaceDown, "補充されたエサは裏向きであるべき")
         }
@@ -497,6 +547,36 @@ class GameEngineTest {
     }
 
     @Test
+    fun `placeFoodAt rejects food on nest cells`() {
+        setupDefaultGame()
+        val nest = Position(0, 1)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            engine.placeFoodAt(nest, FoodCard(FoodType.BEETLE_LARVA, emptyMap()))
+        }
+
+        assertNull(engine.foodPositions[nest])
+    }
+
+    @Test
+    fun `placeFoodAt rejects invalid and off-board cells`() {
+        setupDefaultGame()
+        val invalid = Position(0, 2)
+        val offBoard = Position(-1, 0)
+        val food = FoodCard(FoodType.BEETLE_LARVA, emptyMap())
+
+        assertThrows(IllegalArgumentException::class.java) {
+            engine.placeFoodAt(invalid, food)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            engine.placeFoodAt(offBoard, food)
+        }
+
+        assertNull(engine.foodPositions[invalid])
+        assertNull(engine.foodPositions[offBoard])
+    }
+
+    @Test
     fun `escape into ground cell without tile path is captured`() {
         val escapeEngine = GameEngine(
             playerCount = 2,
@@ -509,7 +589,7 @@ class GameEngineTest {
         val escapeTo = Position(1, 0)
         val food = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.TOP), isFaceDown = false)
         placeFaceUpTile(escapeEngine, foodPosition, Direction.TOP)
-        escapeEngine.placeFoodAt(foodPosition, food)
+        replaceFoodAt(escapeEngine, foodPosition, food)
 
         val result = escapeEngine.attemptCaptureAt(foodPosition)
 
@@ -533,13 +613,34 @@ class GameEngineTest {
         escapeEngine.removeFoodAt(escapeTo)
         placeFaceUpTile(escapeEngine, foodPosition, Direction.RIGHT)
         placeFaceUpTile(escapeEngine, escapeTo, Direction.RIGHT)
-        escapeEngine.placeFoodAt(foodPosition, food)
+        replaceFoodAt(escapeEngine, foodPosition, food)
 
         val result = escapeEngine.attemptCaptureAt(foodPosition)
 
         assertTrue(result is CaptureResult.Success, "escape without connected tile openings should be captured")
         assertNotNull(escapeEngine.foodPositions[foodPosition], "food should remain at the capture source")
         assertNull(escapeEngine.foodPositions[escapeTo], "food should not move into an unreachable tile")
+    }
+
+    @Test
+    fun `escape into a nest is captured and does not place food on the nest`() {
+        val escapeEngine = GameEngine(
+            playerCount = 2,
+            diceRoller = FixedDiceRoller(listOf(1)),
+            shuffler = shuffler,
+        )
+        escapeEngine.setupGame(defaultConfigs())
+
+        val foodPosition = Position(1, 1)
+        val nestPosition = Position(0, 1)
+        val food = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.LEFT), isFaceDown = false)
+        replaceFoodAt(escapeEngine, foodPosition, food)
+
+        val result = escapeEngine.attemptCaptureAt(foodPosition)
+
+        assertTrue(result is CaptureResult.Success, "food cannot escape into a nest")
+        assertNotNull(escapeEngine.foodPositions[foodPosition], "food should remain at the capture source")
+        assertNull(escapeEngine.foodPositions[nestPosition], "nest cells must not receive escaped food")
     }
 
     @Test
@@ -565,7 +666,8 @@ class GameEngineTest {
             )
             escapeEngine.setupGame(defaultConfigs())
             escapeEngine.removeFoodAt(case.to)
-            escapeEngine.placeFoodAt(
+            replaceFoodAt(
+                escapeEngine,
                 case.from,
                 FoodCard(case.type, mapOf(case.roll to case.direction), isFaceDown = false),
             )
@@ -603,7 +705,7 @@ class GameEngineTest {
         engine.replenishFood()
 
         Board.HOT_ZONE_POSITIONS.forEach { position ->
-            val food = engine.foodPositions[position]
+            val food = engine.foodAt(position)
             assertNotNull(food, "hot-zone food should be recycled back into $position")
             assertTrue(food!!.isFaceDown, "recycled hot-zone food should be face down")
         }
@@ -618,6 +720,13 @@ class GameEngineTest {
             position,
             HoleTile(TileShape.CROSS, openSides.toSet(), isFaceDown = false),
         )
+    }
+
+    private fun replaceFoodAt(engine: GameEngine, position: Position, food: FoodCard) {
+        while (engine.removeFoodAt(position) != null) {
+            // Remove the previous stack so this test controls the capture target.
+        }
+        engine.placeFoodAt(position, food)
     }
 
     private fun defaultConfigs(): List<PlayerConfig> = listOf(
