@@ -301,7 +301,6 @@ class GameEngineTest {
 
     @Test
     fun `自分の巣にいる場合は巣が防衛される`() {
-        // TODO: 【要確認】3-4 巣防衛の詳細は仮実装。
         setupDefaultGame()
         val owner = engine.players[0]
         assertTrue(engine.isNestDefended(owner.nestPosition))
@@ -319,6 +318,56 @@ class GameEngineTest {
         val evicted = engine.evictFromNest(owner)
         assertTrue(evicted)
         assertNotEquals(owner.nestPosition, intruder.position)
+    }
+
+    @Test
+    fun `巣ごとの固定追い出し先へ侵入者を追い出す`() {
+        Board.NEST_EVICTION_DESTINATIONS.forEach { (nest, destination) ->
+            val caseEngine = GameEngine(
+                playerCount = 4,
+                diceRoller = diceRoller,
+                shuffler = shuffler,
+            )
+            caseEngine.setupGame(allNestConfigs())
+            val owner = caseEngine.players.first { it.nestPosition == nest }
+            val intruder = caseEngine.players.first { it != owner }
+
+            owner.moveTo(destination)
+            intruder.moveTo(nest)
+
+            assertTrue(caseEngine.evictFromNest(owner), "$nest should evict an intruder")
+            assertEquals(destination, intruder.position, "$nest should evict to $destination")
+        }
+    }
+
+    @Test
+    fun `固定追い出し先に別モグラやエサがあっても固定先へ強制移動する`() {
+        val occupiedEngine = GameEngine(
+            playerCount = 3,
+            diceRoller = diceRoller,
+            shuffler = shuffler,
+        )
+        occupiedEngine.setupGame(allNestConfigs().take(3))
+        val owner = occupiedEngine.players[0]
+        val intruder = occupiedEngine.players[1]
+        val blocker = occupiedEngine.players[2]
+        val destination = Board.NEST_EVICTION_DESTINATIONS.getValue(owner.nestPosition)
+        val tileBefore = occupiedEngine.boardState.getTile(destination)
+        val food = FoodCard(FoodType.BEETLE_LARVA, emptyMap())
+        assertNotNull(tileBefore)
+
+        owner.moveTo(Position(2, 1))
+        intruder.moveTo(owner.nestPosition)
+        blocker.moveTo(destination)
+        occupiedEngine.placeFoodAt(destination, food)
+
+        val evicted = occupiedEngine.evictFromNest(owner)
+
+        assertTrue(evicted)
+        assertEquals(destination, intruder.position)
+        assertEquals(destination, blocker.position)
+        assertEquals(food, occupiedEngine.foodAt(destination))
+        assertEquals(tileBefore, occupiedEngine.boardState.getTile(destination))
     }
 
     @Test
@@ -732,5 +781,12 @@ class GameEngineTest {
     private fun defaultConfigs(): List<PlayerConfig> = listOf(
         PlayerConfig("モグオ", Position(0, 1)),
         PlayerConfig("モグタ", Position(5, 1)),
+    )
+
+    private fun allNestConfigs(): List<PlayerConfig> = listOf(
+        PlayerConfig("モグオ", Position(0, 1)),
+        PlayerConfig("モグタ", Position(5, 1)),
+        PlayerConfig("モグミ", Position(0, 4)),
+        PlayerConfig("モグヨ", Position(5, 4)),
     )
 }

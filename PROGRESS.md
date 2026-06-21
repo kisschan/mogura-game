@@ -43,8 +43,13 @@
 - [x] 内部テスト用AAB作成に向けて、Android release署名設定を `keystore.properties` から読み込む構成にし、keystore・パスワード・AAB/APKをGit管理外にする設定を追加
 - [x] Phase 1: 1マスに複数エサを保持できる盤面データへ変更し、逃走先に既存エサがあっても逃走できるよう修正
 - [x] Phase 1: エサの巣マス逃走を禁止し、巣へ逃げる場合は捕獲成功として扱うよう修正
+- [x] Phase 2: 巣マスを通過不可にし、防衛中の巣を移動先・中継先から除外
+- [x] Phase 2: 巣ごとの固定追い出し先を定義し、追い出し処理で固定先へ移動するよう修正
 
 ## テスト結果
+- 最終試行日: 2026-06-21
+- 実行コマンド: `.\gradlew.bat :core:test`
+- 結果: 未完了（Gradle wrapper が `gradle-9.4.1-bin.zip` 取得時に `SSLHandshakeException: certificate_unknown` で失敗。`JAVA_OPTS` にチェックイン済みtruststoreを指定しても同じ）
 - 最終実行日: 2026-06-21
 - 実行コマンド: `.\gradlew.bat :core:test :desktop:test :androidApp:testDebugUnitTest`
 - 結果: `BUILD SUCCESSFUL`（Phase 1 実装後）
@@ -123,9 +128,7 @@
 - `TilePlacementEngine.kt`: `// TODO: 【要確認】3-1` 隣接に裏向きタイルがない場合の山札タイル新規配置ルール（GUIでは「移動へ進む」で暫定対応済み）
 - `TilePlacementEngine.kt`: `// TODO: 【要確認】3-2` 穴タイル配置先の選択ルール（めくったタイル / 山札タイルの選択はGUIで実装済み）
 - `GameEngine.kt`: `// TODO: 【要確認】3-3` 強奪を行うフェーズ
-- `MovementEngine.kt`: `// TODO: 【要確認】3-4` 巣防衛の接続ルール
-- `GameEngine.kt`: `// TODO: 【要確認】3-4` 巣防衛の詳細
-- `GameEngine.kt`: `// TODO: 【要確認】3-5` 追い出し先の選択権
+- `GameEngine.kt`: `// TODO: 【要確認】13-5` 追い出し先に他モグラ・エサ・穴タイルがある場合の正式ルール（Phase 2では固定先への強制移動として仮実装）
 - `moguru_requirements_v2(3).txt`: `12-2` 未開示の追加ルール
 - `moguru_requirements_v2(3).txt`: `13-6` 地上と地下の接続条件
 
@@ -150,12 +153,12 @@
   - 巣マスにエサが生成されないことをテストで固定する。
 
 ### Phase 2: 巣と移動の不変条件を確定する
-- [ ] [#19](https://github.com/kisschan/mogura-game/issues/19) 巣マスを通過不可にする。
+- [x] [#19](https://github.com/kisschan/mogura-game/issues/19) 巣マスを通過不可にする。
   - BFSで巣マス到達後に探索を継続しない。
   - 防衛中の巣は停止先にも中継先にも含めない。
-- [ ] [#20](https://github.com/kisschan/mogura-game/issues/20) 巣ごとの固定追い出し先を実装する。
+- [x] [#20](https://github.com/kisschan/mogura-game/issues/20) 巣ごとの固定追い出し先を実装する。
   - 4つの巣に対する固定追い出し先座標を定義する。
-  - 追い出し先に駒やエサがある場合の扱いを要件定義書と同期する。
+  - 追い出し先に駒やエサがある場合は、`13-5` の正式確定まで固定先へ強制移動する仮仕様として扱う。
 
 ### Phase 3: 強奪を正式フローへ置き換える
 - [ ] [#21](https://github.com/kisschan/mogura-game/issues/21) 強奪を移動時自動発動から④選択式へ変更する。
