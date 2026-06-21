@@ -35,7 +35,11 @@ enum class GameState {
  */
 sealed class CaptureResult {
     data class Success(val diceRoll: Int? = null) : CaptureResult()
-    data class Escaped(val direction: EscapeDirection, val diceRoll: Int) : CaptureResult()
+    data class Escaped(
+        val direction: EscapeDirection,
+        val diceRoll: Int,
+        val to: Position? = null,
+    ) : CaptureResult()
 }
 
 /**
@@ -236,7 +240,7 @@ class GameEngine(
         removeFoodAt(foodPosition, foodIndex)
         placeFoodAt(escapeTo, food.copy(isFaceDown = false))
         lastCaptureSuccess = false
-        return CaptureResult.Escaped(escapeDirection, roll)
+        return CaptureResult.Escaped(escapeDirection, roll, escapeTo)
     }
 
     /** 勝利条件を満たすプレイヤーがいれば返す。 */
@@ -300,8 +304,8 @@ class GameEngine(
      *
      * 表向きエサは捨て札へ送り、空いたホットゾーンを裏向きエサで埋める。
      */
-    fun replenishFood() {
-        sweepFaceUpHotZoneFood()
+    fun replenishFood(preserveFaceUpHotZonePositions: Set<Position> = emptySet()) {
+        sweepFaceUpHotZoneFood(preserveFaceUpHotZonePositions)
 
         if (foodStock.isEmpty() && foodDiscard.isEmpty()) return
 
@@ -317,8 +321,9 @@ class GameEngine(
         }
     }
 
-    private fun sweepFaceUpHotZoneFood() {
+    private fun sweepFaceUpHotZoneFood(preserveFaceUpHotZonePositions: Set<Position>) {
         Board.HOT_ZONE_POSITIONS.forEach { position ->
+            if (position in preserveFaceUpHotZonePositions) return@forEach
             val foods = _foodPositions[position] ?: return@forEach
             val iterator = foods.iterator()
             while (iterator.hasNext()) {

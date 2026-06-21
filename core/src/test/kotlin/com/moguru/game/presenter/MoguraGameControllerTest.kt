@@ -386,6 +386,42 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `escaped hot zone food remains when immediate replenish runs`() {
+        val controller = MoguraGameController(
+            diceRoller = FixedDiceRoller(listOf(1)),
+            shuffler = FixedShuffler(),
+        )
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val source = Position(2, 2)
+        val escapeTo = Position(3, 2)
+        Board.HOT_ZONE_POSITIONS.forEach { position ->
+            while (engine.removeFoodAt(position) != null) {
+                // Remove setup food so this test controls the last face-down hot-zone food.
+            }
+        }
+        player.moveTo(source)
+        engine.placeFoodAt(source, FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.RIGHT), isFaceDown = true))
+        engine.placeFoodAt(escapeTo, FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false))
+        engine.boardState.placeTile(source, HoleTile(TileShape.CROSS, setOf(Direction.RIGHT), isFaceDown = false))
+        engine.boardState.placeTile(escapeTo, HoleTile(TileShape.CROSS, setOf(Direction.LEFT), isFaceDown = false))
+        engine.advancePhase()
+        engine.advancePhase()
+
+        val result = controller.captureCurrentPositionImmediately()
+
+        assertTrue(result.success)
+        assertEquals(
+            listOf(FoodType.BEETLE_LARVA, FoodType.EARTHWORM),
+            engine.foodsAt(escapeTo).map { it.type },
+        )
+        assertTrue(engine.foodsAt(escapeTo).none { it.isFaceDown }, "逃走先の表向きスタックは補充で捨てない")
+        assertTrue(engine.foodAt(source)?.isFaceDown == true, "逃走元の空いたホットゾーンは補充される")
+        assertEquals(0, engine.foodDiscardCount)
+    }
+
+    @Test
     fun `capture is rejected while roulette pending`() {
         val controller = testController()
         controller.startNewGame(2)
