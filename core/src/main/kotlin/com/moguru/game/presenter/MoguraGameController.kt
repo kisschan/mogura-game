@@ -517,7 +517,11 @@ class MoguraGameController(
             }
         }
 
-        replenishFoodIfNeeded()
+        val preserveFaceUpHotZonePositions = when (result) {
+            is CaptureResult.Escaped -> result.to?.let(::setOf).orEmpty()
+            is CaptureResult.Success -> emptySet()
+        }
+        replenishFoodIfNeeded(preserveFaceUpHotZonePositions)
         if (result is CaptureResult.Success) {
             selectedCaptureFoodIndex = null
         }
@@ -722,10 +726,10 @@ class MoguraGameController(
         }
     }
 
-    private fun replenishFoodIfNeeded() {
+    private fun replenishFoodIfNeeded(preserveFaceUpHotZonePositions: Set<Position> = emptySet()) {
         val current = engine ?: return
         if (current.shouldReplenishFood()) {
-            current.replenishFood()
+            current.replenishFood(preserveFaceUpHotZonePositions)
             addLog("ホットゾーンにエサを補充しました。")
         }
     }
