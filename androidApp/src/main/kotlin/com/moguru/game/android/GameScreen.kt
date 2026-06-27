@@ -65,6 +65,7 @@ import com.moguru.game.model.TileShape
 import com.moguru.game.presenter.CaptureTargetDisplay
 import com.moguru.game.presenter.DigCandidateDisplay
 import com.moguru.game.presenter.DigTileChoice
+import com.moguru.game.presenter.RobberyTargetDisplay
 
 internal const val BOARD_HIGHLIGHT_Z = 15f
 internal const val BOARD_TILE_Z = 20f
@@ -502,6 +503,12 @@ private fun ContextControls(
                 onSelect = viewModel::selectCaptureTarget,
             )
         }
+        if (state.playState.robberyTargets.size > 1) {
+            RobberyTargetControls(
+                targets = state.playState.robberyTargets,
+                onSelect = viewModel::selectRobberyTarget,
+            )
+        }
         if (state.visibleActions.isNotEmpty()) {
             ActionControls(state = state, viewModel = viewModel)
         } else if (!state.showDigControls) {
@@ -683,6 +690,71 @@ private fun CaptureTargetCard(
 }
 
 @Composable
+private fun RobberyTargetControls(
+    targets: List<RobberyTargetDisplay>,
+    onSelect: (Int) -> Unit,
+) {
+    FlowRow(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFFFFF8E8))
+            .border(2.dp, Color(0xFFD0AD78), RoundedCornerShape(8.dp))
+            .padding(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+        maxItemsInEachRow = 3,
+    ) {
+        targets.forEach { target ->
+            RobberyTargetCard(
+                target = target,
+                onSelect = onSelect,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun RobberyTargetCard(
+    target: RobberyTargetDisplay,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val borderColor = if (target.selected) Color(0xFF8A4BD8) else Color(0xFFD3AA72)
+    Surface(
+        modifier = modifier
+            .height(86.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = target.enabled) { onSelect(target.index) },
+        shape = RoundedCornerShape(8.dp),
+        color = if (target.selected) Color(0xFFF3ECFF) else Color(0xFFFFFCF4),
+        border = BorderStroke(2.dp, borderColor),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 6.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Image(
+                painter = painterResource(foodRes(target.type)),
+                contentDescription = null,
+                modifier = Modifier.size(46.dp),
+                contentScale = ContentScale.Fit,
+            )
+            Text(
+                text = target.type.boardLabel(),
+                color = Color(0xFF2E2115),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
 private fun ActionControls(
     state: AndroidGameUiState,
     viewModel: AndroidGameViewModel,
@@ -700,6 +772,7 @@ private fun ActionControls(
                 onClick = {
                     when (action) {
                         AndroidVisibleAction.CAPTURE -> viewModel.capture()
+                        AndroidVisibleAction.ROB -> viewModel.rob()
                         AndroidVisibleAction.EAT -> viewModel.eat()
                         AndroidVisibleAction.CARRY -> viewModel.carry()
                         AndroidVisibleAction.SKIP -> viewModel.skip()
@@ -756,6 +829,7 @@ private fun MessageLine(state: AndroidGameUiState) {
 
 private fun AndroidVisibleAction.label(): String = when (this) {
     AndroidVisibleAction.CAPTURE -> "捕獲"
+    AndroidVisibleAction.ROB -> "強奪"
     AndroidVisibleAction.EAT -> "タベる"
     AndroidVisibleAction.CARRY -> "レンコウ"
     AndroidVisibleAction.SKIP -> "スキップ"
@@ -766,7 +840,7 @@ private fun phaseInstruction(phase: TurnPhase?): String = when (phase) {
     TurnPhase.DIG -> "黄色のマスをタップして掘る"
     TurnPhase.MOVE -> "緑のマスをタップして移動"
     TurnPhase.CAPTURE -> "捕獲できる場合だけボタンが出ます"
-    TurnPhase.DECIDE -> "タベるかレンコウを選択"
+    TurnPhase.DECIDE -> "タベる/レンコウ/強奪を選択"
     TurnPhase.END -> "ターン終了を押してください"
     null -> ""
 }
