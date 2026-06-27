@@ -48,10 +48,20 @@ data class CaptureTargetDisplay(
     val enabled: Boolean,
 )
 
+data class RobberyTargetDisplay(
+    val index: Int,
+    val ownerPlayerId: Int,
+    val ownerName: String,
+    val type: FoodType,
+    val selected: Boolean,
+    val enabled: Boolean,
+)
+
 data class ActionAvailability(
     val canCapture: Boolean,
     val canEat: Boolean,
     val canCarry: Boolean,
+    val canRob: Boolean,
     val canSkip: Boolean,
     val canEndTurn: Boolean,
     val activePhase: TurnPhase?,
@@ -68,6 +78,8 @@ data class PlayScreenUiState(
     val diceRouletteFood: FoodType?,
     val diceRouletteEscapeRolls: List<Int>,
     val captureTargets: List<CaptureTargetDisplay>,
+    val robberyTargets: List<RobberyTargetDisplay>,
+    val pendingDecisionSource: FoodDecisionSource?,
     val actionAvailability: ActionAvailability,
 )
 
@@ -94,6 +106,37 @@ data class PendingCaptureRoll(
     val roll: Int? = null,
 )
 
+enum class FoodDecisionSource {
+    CAPTURE,
+    ROBBERY,
+}
+
+private sealed class PendingFoodDecision {
+    abstract val food: FoodCard
+    abstract val source: FoodDecisionSource
+
+    data class Captured(override val food: FoodCard) : PendingFoodDecision() {
+        override val source: FoodDecisionSource = FoodDecisionSource.CAPTURE
+    }
+
+    data class Stolen(
+        override val food: FoodCard,
+        val victimPlayerId: Int,
+    ) : PendingFoodDecision() {
+        override val source: FoodDecisionSource = FoodDecisionSource.ROBBERY
+    }
+}
+
+private data class RobberyVisit(
+    val nestPosition: Position,
+    val eligible: Boolean,
+)
+
+private data class RobberyCandidate(
+    val victim: Player,
+    val foods: List<FoodCard>,
+)
+
 class MoguraGameController(
     private val diceRoller: DiceRoller = RandomDiceRoller(),
     private val shuffler: Shuffler = RandomShuffler(),
@@ -107,8 +150,13 @@ class MoguraGameController(
     var lastDiceRoll: Int? = null
         private set
 
-    var pendingFoodDecision: FoodCard? = null
-        private set
+    private var pendingDecision: PendingFoodDecision? = null
+
+    val pendingFoodDecision: FoodCard?
+        get() = pendingDecision?.food
+
+    val pendingFoodDecisionSource: FoodDecisionSource?
+        get() = pendingDecision?.source
 
     var pendingCaptureRoll: PendingCaptureRoll? = null
         private set
@@ -124,6 +172,11 @@ class MoguraGameController(
 
     var selectedCaptureFoodIndex: Int? = null
         private set
+
+    var selectedRobberyFoodIndex: Int? = null
+        private set
+
+    private val robberyVisits = mutableMapOf<Int, RobberyVisit>()
 
     private val messages = ArrayDeque<String>()
     val logs: List<String> get() = messages.toList()
@@ -149,7 +202,10 @@ class MoguraGameController(
         val current = engine
         val phase = current?.currentPhase
         val isPlaying = current?.gameState == GameState.PLAYING
-        val hasPendingDecision = phase == TurnPhase.DECIDE && pendingFoodDecision != null
+        val hasPendingDecision = phase == TurnPhase.DECIDE && pendingDecision != null
+        val hasPendingRobberyChoice = isPlaying && phase == TurnPhase.DECIDE && canRobbery()
+        val hasUpcomingRobberyChoice = isPlaying && (phase == TurnPhase.MOVE || phase == TurnPhase.CAPTURE) &&
+            hasRobberyOpportunityForCurrentPlayer()
         val hasPendingDig = phase == TurnPhase.DIG && pendingDigPlacement != null
         val canAdvanceFromDig = canAdvanceFromDigWithoutTargets()
 
@@ -164,14 +220,17 @@ class MoguraGameController(
             diceRouletteFood = pendingCaptureRoll?.food?.type,
             diceRouletteEscapeRolls = pendingCaptureRoll?.food?.escapeMap?.keys?.sorted().orEmpty(),
             captureTargets = captureTargetDisplays(),
+            robberyTargets = robberyTargetDisplays(),
+            pendingDecisionSource = pendingFoodDecisionSource,
             actionAvailability = ActionAvailability(
                 canCapture = isPlaying && canCapture() && pendingCaptureRoll == null,
                 canEat = isPlaying && hasPendingDecision,
                 canCarry = isPlaying && hasPendingDecision,
-                canSkip = isPlaying && !hasPendingDecision && pendingCaptureRoll == null &&
+                canRob = hasPendingRobberyChoice,
+                canSkip = isPlaying && !hasPendingDecision && !hasPendingRobberyChoice && pendingCaptureRoll == null &&
                     (phase != TurnPhase.DIG || canAdvanceFromDig),
                 canEndTurn = isPlaying && phase != TurnPhase.DIG && !hasPendingDecision &&
-                    pendingCaptureRoll == null,
+                    !hasPendingRobberyChoice && !hasUpcomingRobberyChoice && pendingCaptureRoll == null,
                 activePhase = phase,
             ),
         )
@@ -190,12 +249,14 @@ class MoguraGameController(
         engine = nextEngine
         lastCaptureResult = null
         lastDiceRoll = null
-        pendingFoodDecision = null
+        pendingDecision = null
         pendingCaptureRoll = null
         pendingDigPlacement = null
         pendingDigRotation = null
         pendingDigTileChoice = null
         selectedCaptureFoodIndex = null
+        selectedRobberyFoodIndex = null
+        robberyVisits.clear()
         messages.clear()
         addLog("${playerCount}人プレイで開始しました。")
         addLog("${currentPlayer?.name} の番です。隣の穴タイルを掘ってください。")
@@ -378,14 +439,14 @@ class MoguraGameController(
 
         player.moveTo(position)
         selectedCaptureFoodIndex = null
+        selectedRobberyFoodIndex = null
+        updateRobberyVisitAfterMove(player)
         addLog("${player.name} が ${position.label()} に移動しました。")
-        val needsDecision = resolveCurrentPlayerPositionEffects()
-        if (needsDecision) {
-            // TODO: 【要確認】13-3 強奪は移動で止まった時点で自動発動する仮実装。
-            current.enterDecisionPhase()
-        } else {
-            current.advancePhase()
+        resolveCurrentPlayerPositionEffects()
+        foreignNestOwnerFor(player)?.let { owner ->
+            addLog("${owner.name} の巣に入りました。強奪は次の自分の手番以降に選べます。")
         }
+        current.advancePhase()
         return GameActionResult(true, "移動しました。")
     }
 
@@ -409,6 +470,45 @@ class MoguraGameController(
 
         selectedCaptureFoodIndex = index
         return GameActionResult(true, "${foods[index].type.displayName()} を捕獲対象にしました。")
+    }
+
+    fun canRobbery(): Boolean {
+        val current = engine ?: return false
+        return current.currentPhase == TurnPhase.DECIDE &&
+            pendingDecision == null &&
+            pendingCaptureRoll == null &&
+            robberyCandidateForCurrentPlayer() != null
+    }
+
+    fun selectRobberyTarget(index: Int): GameActionResult {
+        val candidate = robberyCandidateForCurrentPlayer()
+            ?: return GameActionResult(false, "強奪できるエサがありません。")
+        if (index !in candidate.foods.indices) {
+            return GameActionResult(false, "その強奪対象は選べません。")
+        }
+
+        selectedRobberyFoodIndex = index
+        return GameActionResult(true, "${candidate.foods[index].type.displayName()} を強奪対象にしました。")
+    }
+
+    fun robSelectedFood(): GameActionResult {
+        val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
+        val player = currentPlayer ?: return GameActionResult(false, "現在のプレイヤーがいません。")
+        if (!canRobbery()) {
+            return GameActionResult(false, "今は強奪できません。")
+        }
+
+        val candidate = robberyCandidateForCurrentPlayer()
+            ?: return GameActionResult(false, "強奪できるエサがありません。")
+        val targetIndex = selectedRobberyFoodIndex?.takeIf { it in candidate.foods.indices } ?: 0
+        val stolen = current.attemptRobbery(player, candidate.victim, targetIndex)
+            ?: return GameActionResult(false, "強奪できるエサがありません。")
+
+        pendingDecision = PendingFoodDecision.Stolen(stolen, candidate.victim.id)
+        selectedRobberyFoodIndex = null
+        addLog("${player.name} が ${candidate.victim.name} の巣から ${stolen.type.displayName()} を強奪しました。")
+        addLog("強奪したエサをタベるかレンコウしてください。")
+        return GameActionResult(true, "エサを強奪しました。")
     }
 
     fun captureCurrentPosition(): GameActionResult {
@@ -508,12 +608,12 @@ class MoguraGameController(
         when (result) {
             is CaptureResult.Success -> {
                 val captured = current.removeFoodAt(position, foodIndex) ?: food
-                pendingFoodDecision = captured.copy(isFaceDown = false)
+                pendingDecision = PendingFoodDecision.Captured(captured.copy(isFaceDown = false))
                 addLog("${player.name} が ${captured.type.displayName()} を捕獲しました。タベるかレンコウを選んでください。")
             }
 
             is CaptureResult.Escaped -> {
-                pendingFoodDecision = null
+                pendingDecision = null
                 selectedCaptureFoodIndex = null
                 addLog(
                     "${food.type.displayName()} はダイス ${result.diceRoll} で " +
@@ -537,36 +637,48 @@ class MoguraGameController(
     fun eatPendingFood(): GameActionResult {
         val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
         val player = currentPlayer ?: return GameActionResult(false, "現在のプレイヤーがいません。")
-        val food = pendingFoodDecision
+        val decision = pendingDecision
             ?: return GameActionResult(false, "タベるエサがありません。")
+        val food = decision.food
         if (current.currentPhase != TurnPhase.DECIDE) {
-            return GameActionResult(false, "タベるのは捕獲成功後だけです。")
+            return GameActionResult(false, "タベるのは捕獲または強奪後だけです。")
         }
 
         player.heal(food.type.recovery)
         current.discardFood(food)
-        pendingFoodDecision = null
+        pendingDecision = null
         current.advancePhase()
-        addLog("${player.name} が ${food.type.displayName()} をタベました。体力を ${food.type.recovery} 回復しました。")
+        val prefix = if (decision.source == FoodDecisionSource.ROBBERY) "強奪した " else ""
+        addLog("${player.name} が $prefix${food.type.displayName()} をタベました。体力を ${food.type.recovery} 回復しました。")
         return GameActionResult(true, "エサをタベました。")
     }
 
     fun carryPendingFood(): GameActionResult {
         val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
         val player = currentPlayer ?: return GameActionResult(false, "現在のプレイヤーがいません。")
-        val food = pendingFoodDecision
+        val decision = pendingDecision
             ?: return GameActionResult(false, "レンコウするエサがありません。")
+        val food = decision.food
         if (current.currentPhase != TurnPhase.DECIDE) {
-            return GameActionResult(false, "レンコウは捕獲成功後だけです。")
+            return GameActionResult(false, "レンコウは捕獲または強奪後だけです。")
         }
         if (player.isCarrying) {
             return GameActionResult(false, "すでにエサをレンコウ中です。")
         }
 
-        player.carryFood(food)
-        pendingFoodDecision = null
+        when (decision) {
+            is PendingFoodDecision.Captured -> {
+                player.carryFood(food)
+                addLog("${player.name} が ${food.type.displayName()} をレンコウします。巣まで持ち帰ってください。")
+            }
+            is PendingFoodDecision.Stolen -> {
+                player.carryFood(food)
+                player.storeFood()
+                addLog("${player.name} が強奪した ${food.type.displayName()} を自分の巣へ移しました（${food.type.points}点）。")
+            }
+        }
+        pendingDecision = null
         current.advancePhase()
-        addLog("${player.name} が ${food.type.displayName()} をレンコウします。巣まで持ち帰ってください。")
         return GameActionResult(true, "エサをレンコウします。")
     }
 
@@ -586,8 +698,17 @@ class MoguraGameController(
             }
             return GameActionResult(false, "掘るフェーズはスキップできません。")
         }
-        if (current.currentPhase == TurnPhase.DECIDE && pendingFoodDecision != null) {
+        if (current.currentPhase == TurnPhase.CAPTURE && hasRobberyOpportunityForCurrentPlayer()) {
+            selectedCaptureFoodIndex = null
+            current.enterDecisionPhase()
+            addLog("${currentPlayer?.name} は強奪を選べます。")
+            return GameActionResult(true, "強奪を選べます。")
+        }
+        if (current.currentPhase == TurnPhase.DECIDE && pendingDecision != null) {
             return GameActionResult(false, "タベるかレンコウを選んでください。")
+        }
+        if (current.currentPhase == TurnPhase.DECIDE && canRobbery()) {
+            return GameActionResult(false, "強奪するエサを選んでください。")
         }
 
         return if (current.currentPhase == TurnPhase.END) {
@@ -631,7 +752,7 @@ class MoguraGameController(
             TurnPhase.DIG -> pendingDigPlacement != null || digTargets().isNotEmpty()
             TurnPhase.MOVE -> moveTargets().isNotEmpty()
             TurnPhase.CAPTURE -> canCapture() || pendingCaptureRoll != null
-            TurnPhase.DECIDE -> pendingFoodDecision != null
+            TurnPhase.DECIDE -> pendingDecision != null || canRobbery()
             TurnPhase.END -> false
         }
     }
@@ -648,8 +769,11 @@ class MoguraGameController(
         if (current.currentPhase == TurnPhase.DIG) {
             return GameActionResult(false, "掘るフェーズを終えるまでターン終了できません。")
         }
-        if (current.currentPhase == TurnPhase.DECIDE && pendingFoodDecision != null) {
+        if (current.currentPhase == TurnPhase.DECIDE && pendingDecision != null) {
             return GameActionResult(false, "タベるかレンコウを選んでください。")
+        }
+        if (canRobbery() || hasRobberyOpportunityForCurrentPlayer()) {
+            return GameActionResult(false, "強奪を選べるため、先にフェーズを進めてください。")
         }
 
         moveToEndPhase()
@@ -673,33 +797,82 @@ class MoguraGameController(
         }
 
         current.advancePhase()
+        clearStaleRobberyVisits()
+        markRobberyEligibilityForCurrentPlayer()
         val nextPlayer = currentPlayer
         addLog("${nextPlayer?.name} の番です。隣の穴タイルを掘ってください。")
         return GameActionResult(true, "ターンを終了しました。")
     }
 
     fun resolveCurrentPlayerPositionEffects(): Boolean {
-        val current = engine ?: return false
+        engine ?: return false
         val player = currentPlayer ?: return false
 
         resolveHomecoming(player)
+        clearStaleRobberyVisits()
+        return false
+    }
 
-        if (!player.isCarrying && pendingFoodDecision == null) {
-            val robbery = current.players
-                .filter { it != player && !it.isEliminated }
-                .firstNotNullOfOrNull { victim ->
-                    current.attemptRobbery(player, victim)?.let { stolen -> victim to stolen }
-                }
-            if (robbery != null) {
-                val (victim, stolen) = robbery
-                pendingFoodDecision = stolen
-                addLog("${player.name} が ${victim.name} の巣から ${stolen.type.displayName()} を奪いました。")
-                addLog("タベるかレンコウを選んでください。")
-                return true
+    private fun hasRobberyOpportunityForCurrentPlayer(): Boolean =
+        pendingDecision == null &&
+            pendingCaptureRoll == null &&
+            robberyCandidateForCurrentPlayer() != null
+
+    private fun robberyCandidateForCurrentPlayer(): RobberyCandidate? {
+        clearStaleRobberyVisits()
+        val current = engine ?: return null
+        val player = currentPlayer ?: return null
+        if (player.isCarrying) return null
+
+        val visit = robberyVisits[player.id] ?: return null
+        if (!visit.eligible || visit.nestPosition != player.position) return null
+
+        val victim = foreignNestOwnerFor(player) ?: return null
+        if (!current.canAttemptRobbery(player, victim)) return null
+
+        return RobberyCandidate(victim, victim.storedFoods)
+    }
+
+    private fun updateRobberyVisitAfterMove(player: Player) {
+        val owner = foreignNestOwnerFor(player)
+        if (owner == null) {
+            robberyVisits.remove(player.id)
+        } else {
+            robberyVisits[player.id] = RobberyVisit(owner.nestPosition, eligible = false)
+        }
+    }
+
+    private fun markRobberyEligibilityForCurrentPlayer() {
+        clearStaleRobberyVisits()
+        val player = currentPlayer ?: return
+        val visit = robberyVisits[player.id] ?: return
+        val owner = foreignNestOwnerFor(player) ?: return
+        if (visit.nestPosition == owner.nestPosition && player.position == visit.nestPosition) {
+            robberyVisits[player.id] = visit.copy(eligible = true)
+        }
+    }
+
+    private fun clearStaleRobberyVisits() {
+        val current = engine ?: return
+        val playersById = current.players.associateBy { it.id }
+        val iterator = robberyVisits.iterator()
+        while (iterator.hasNext()) {
+            val (playerId, visit) = iterator.next()
+            val player = playersById[playerId]
+            val ownerExists = current.players.any { it != player && !it.isEliminated && it.nestPosition == visit.nestPosition }
+            if (player == null || !ownerExists || player.position != visit.nestPosition) {
+                iterator.remove()
             }
         }
+    }
 
-        return false
+    private fun foreignNestOwnerFor(player: Player): Player? {
+        val current = engine ?: return null
+        return current.players.firstOrNull { owner ->
+            owner != player &&
+                !owner.isEliminated &&
+                owner.nestPosition == player.position
+        }
     }
 
     private fun moveToEndPhase() {
@@ -795,6 +968,31 @@ class MoguraGameController(
                 index = index,
                 type = food.type,
                 isFaceDown = food.isFaceDown,
+                selected = index == selectedIndex,
+                enabled = true,
+            )
+        }
+    }
+
+    private fun selectedRobberyIndex(candidate: RobberyCandidate): Int? {
+        if (candidate.foods.isEmpty()) return null
+        return selectedRobberyFoodIndex?.takeIf { it in candidate.foods.indices } ?: 0
+    }
+
+    private fun robberyTargetDisplays(): List<RobberyTargetDisplay> {
+        val current = engine ?: return emptyList()
+        if (current.currentPhase != TurnPhase.DECIDE || pendingDecision != null) {
+            return emptyList()
+        }
+
+        val candidate = robberyCandidateForCurrentPlayer() ?: return emptyList()
+        val selectedIndex = selectedRobberyIndex(candidate)
+        return candidate.foods.mapIndexed { index, food ->
+            RobberyTargetDisplay(
+                index = index,
+                ownerPlayerId = candidate.victim.id,
+                ownerName = candidate.victim.name,
+                type = food.type,
                 selected = index == selectedIndex,
                 enabled = true,
             )

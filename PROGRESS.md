@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-最終更新: 2026-06-21
+最終更新: 2026-06-27
 
 ## 現在の状況
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
@@ -45,8 +45,13 @@
 - [x] Phase 1: エサの巣マス逃走を禁止し、巣へ逃げる場合は捕獲成功として扱うよう修正
 - [x] Phase 2: 巣マスを通過不可にし、防衛中の巣を移動先・中継先から除外
 - [x] Phase 2: 巣ごとの固定追い出し先を定義し、追い出し処理で固定先へ移動するよう修正
+- [x] Phase 3: 強奪を移動時自動発動から、次の自分の手番以降の④選択式へ変更
+- [x] Phase 3: 強奪対象選択、強奪後のタベる/レンコウ結果処理、Android/Swingの強奪表示を追加
 
 ## テスト結果
+- 最終実行日: 2026-06-27
+- 実行コマンド: `$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat :core:test :androidApp:testDebugUnitTest :desktop:test`
+- 結果: `BUILD SUCCESSFUL`（Phase 3 実装後。JDK 21 daemon toolchain は Android Studio JBR を使用）
 - 最終試行日: 2026-06-21
 - 実行コマンド: `.\gradlew.bat :core:test`
 - 結果: 未完了（Gradle wrapper が `gradle-9.4.1-bin.zip` 取得時に `SSLHandshakeException: certificate_unknown` で失敗。`JAVA_OPTS` にチェックイン済みtruststoreを指定しても同じ）
@@ -127,7 +132,7 @@
 - `Food.kt`: `// TODO: 【要確認】12-1` ケラは要件では3面逃走だが画像では3/4の2面のみ読めるため画像優先で仮実装
 - `TilePlacementEngine.kt`: `// TODO: 【要確認】3-1` 隣接に裏向きタイルがない場合の山札タイル新規配置ルール（GUIでは「移動へ進む」で暫定対応済み）
 - `TilePlacementEngine.kt`: `// TODO: 【要確認】3-2` 穴タイル配置先の選択ルール（めくったタイル / 山札タイルの選択はGUIで実装済み）
-- `GameEngine.kt`: `// TODO: 【要確認】3-3` 強奪を行うフェーズ
+- `moguru_requirements_v2(3).txt`: `13-3` 次の自分の手番までに相手の巣から出た場合の強奪権消滅ルール（Phase 3では「同じ相手巣に残っている場合のみ強奪可」として実装）
 - `GameEngine.kt`: `// TODO: 【要確認】13-5` 追い出し先に他モグラ・エサ・穴タイルがある場合の正式ルール（Phase 2では固定先への強制移動として仮実装）
 - `moguru_requirements_v2(3).txt`: `12-2` 未開示の追加ルール
 - `moguru_requirements_v2(3).txt`: `13-6` 地上と地下の接続条件
@@ -161,10 +166,10 @@
   - 追い出し先に駒やエサがある場合は、`13-5` の正式確定まで固定先へ強制移動する仮仕様として扱う。
 
 ### Phase 3: 強奪を正式フローへ置き換える
-- [ ] [#21](https://github.com/kisschan/mogura-game/issues/21) 強奪を移動時自動発動から④選択式へ変更する。
+- [x] [#21](https://github.com/kisschan/mogura-game/issues/21) 強奪を移動時自動発動から④選択式へ変更する。
   - 他人の巣に入った手番では強奪不可。
   - 次の自分の手番以降に強奪可能になる状態を保持する。
-- [ ] [#22](https://github.com/kisschan/mogura-game/issues/22) 強奪専用UIと強奪後の結果処理を実装する。
+- [x] [#22](https://github.com/kisschan/mogura-game/issues/22) 強奪専用UIと強奪後の結果処理を実装する。
   - 通常捕獲由来と強奪由来の pending decision を型で分ける。
   - 強奪後の「食べる」は回復、「レンコウ」は自分の巣へ移して得点化する。
   - Android/Swing で「強奪」表示を追加する。
@@ -178,13 +183,13 @@
   - 13枚それぞれの逃走目・方向をテストで固定する。
 
 ### Phase 5: 回帰確認
-- [ ] `:core:test` で盤面ルール、捕獲、強奪、巣防衛の回帰を確認する。
-- [ ] `:androidApp:testDebugUnitTest` でAndroid表示状態と操作可否を確認する。
-- [ ] `:desktop:test` でSwing表示ロジックと共通presenter利用箇所を確認する。
-- [ ] `PROGRESS.md` とコード内TODOを、解消した issue 番号に合わせて整理する。
+- [x] `:core:test` で盤面ルール、捕獲、強奪、巣防衛の回帰を確認する。
+- [x] `:androidApp:testDebugUnitTest` でAndroid表示状態と操作可否を確認する。
+- [x] `:desktop:test` でSwing表示ロジックと共通presenter利用箇所を確認する。
+- [x] `PROGRESS.md` とコード内TODOを、解消した issue 番号に合わせて整理する。
 
 ## 次の作業
-- 未実装解消ロードマップの Phase 2 から着手する
+- 未実装解消ロードマップの Phase 4 から着手する
 - 未確定 / 要確認ルールの確定後に仮実装を調整する
-- 強奪フェーズは移動後自動発動の仮実装なので、[#21](https://github.com/kisschan/mogura-game/issues/21) で正式フローへ置き換える
+- セットアップ自由選択は [#16](https://github.com/kisschan/mogura-game/issues/16)、エサカード個別データは [#23](https://github.com/kisschan/mogura-game/issues/23) で対応する
 - 内部テスト前にローカルでupload keyを作成し、Git管理外の `keystore.properties` を設定して署名済みAABを作成する。生成AAB/APKはGitHubへ上げず、Play Consoleへ直接アップロードする

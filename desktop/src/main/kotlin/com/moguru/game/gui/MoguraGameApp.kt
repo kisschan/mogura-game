@@ -74,6 +74,7 @@ class MoguraGameFrame(
     private val digGuideButton = JButton("掘る")
     private val moveGuideButton = JButton("移動")
     private val captureButton = JButton("捕獲")
+    private val robButton = JButton("強奪")
     private val eatButton = JButton("タベる")
     private val carryButton = JButton("レンコウ")
     private val skipButton = JButton("スキップ")
@@ -121,6 +122,7 @@ class MoguraGameFrame(
         digGuideButton.addActionListener { showStatus(phaseHelp(controller.engine?.currentPhase)) }
         moveGuideButton.addActionListener { showStatus(phaseHelp(controller.engine?.currentPhase)) }
         captureButton.addActionListener { runAction { captureSelectedOrPromptImmediately() } }
+        robButton.addActionListener { runAction { robSelectedOrPrompt() } }
         eatButton.addActionListener { runAction { controller.eatPendingFood() } }
         carryButton.addActionListener { runAction { controller.carryPendingFood() } }
         skipButton.addActionListener { runAction { controller.skipPhase() } }
@@ -288,6 +290,7 @@ class MoguraGameFrame(
         styleActionButton(digGuideButton, "ハイライトされた穴タイルをクリック")
         styleActionButton(moveGuideButton, "ハイライトされた移動先マスをクリック")
         styleActionButton(captureButton, "現在地のエサを捕獲")
+        styleActionButton(robButton, "相手の巣からエサを強奪")
         styleActionButton(eatButton, "保留中のエサを食べる")
         styleActionButton(carryButton, "保留中のエサを持つ")
         styleActionButton(skipButton, "可能なフェーズをスキップ")
@@ -296,6 +299,7 @@ class MoguraGameFrame(
         actionPanel.add(digGuideButton)
         actionPanel.add(moveGuideButton)
         actionPanel.add(captureButton)
+        actionPanel.add(robButton)
         actionPanel.add(eatButton)
         actionPanel.add(carryButton)
         actionPanel.add(skipButton)
@@ -442,6 +446,31 @@ class MoguraGameFrame(
         return controller.captureCurrentPositionImmediately()
     }
 
+    private fun robSelectedOrPrompt(): GameActionResult {
+        val targets = controller.playScreenUiState().robberyTargets
+        if (targets.size > 1) {
+            val labels = targets.map { target ->
+                "${target.index + 1}: ${target.ownerName} の ${target.type.displayName()}"
+            }.toTypedArray()
+            val defaultLabel = targets.firstOrNull { it.selected }
+                ?.let { labels.getOrNull(it.index) }
+                ?: labels.first()
+            val choice = JOptionPane.showInputDialog(
+                this,
+                "強奪するエサを選んでください",
+                "強奪対象",
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                labels,
+                defaultLabel,
+            ) as? String ?: return GameActionResult(false, "強奪対象を選んでください。")
+            val selectedIndex = labels.indexOf(choice)
+            val selected = controller.selectRobberyTarget(selectedIndex)
+            if (!selected.success) return selected
+        }
+        return controller.robSelectedFood()
+    }
+
     private fun runAction(action: () -> GameActionResult) {
         handleActionResult(action())
     }
@@ -464,19 +493,24 @@ class MoguraGameFrame(
 
         currentPlayerPanel.render(uiState.currentPlayer)
         val statusText = controller.pendingFoodDecision?.let { food ->
-            "${food.type.displayName()} をタベるかレンコウしてください。"
-        } ?: controller.pendingDigPlacement?.let { pending ->
+            val prefix = if (uiState.pendingDecisionSource == FoodDecisionSource.ROBBERY) "強奪した " else ""
+            "${prefix}${food.type.displayName()} をタベるかレンコウしてください。"
+        } ?: if (canAdvanceFromDig) {
+            "掘れる穴タイルがありません。移動へ進んでください。"
+        } else if (actions.canRob) {
+            "強奪するエサを選んでください。"
+        } else if (controller.pendingDigPlacement != null) {
+            val pending = controller.pendingDigPlacement!!
             val selected = controller.pendingDigTileChoice?.label() ?: DigTileChoice.REVEALED.label()
             val drawn = pending.drawnTile?.shape?.displayName() ?: "なし"
             "${selected}を選択中。山札: ${drawn}。回転を選び、同じマスをもう一度クリックしてください。"
-        } ?: if (canAdvanceFromDig) {
-            "掘れる穴タイルがありません。移動へ進んでください。"
         } else {
             phaseHelp(current?.currentPhase)
         }
         showStatus(statusText)
 
         captureButton.isEnabled = actions.canCapture
+        robButton.isEnabled = actions.canRob
         eatButton.isEnabled = actions.canEat
         carryButton.isEnabled = actions.canCarry
         skipButton.isEnabled = actions.canSkip
@@ -523,6 +557,7 @@ class MoguraGameFrame(
         updateActionButtonStyle(digGuideButton, phase == TurnPhase.DIG)
         updateActionButtonStyle(moveGuideButton, phase == TurnPhase.MOVE)
         updateActionButtonStyle(captureButton, phase == TurnPhase.CAPTURE, Color(0xEB5757))
+        updateActionButtonStyle(robButton, actions.canRob, Color(0xBB6BD9))
         updateActionButtonStyle(eatButton, actions.canEat, Color(0x6FCF97))
         updateActionButtonStyle(carryButton, actions.canCarry, Color(0x56CCF2))
         updateActionButtonStyle(skipButton, false)
@@ -550,7 +585,7 @@ class MoguraGameFrame(
         TurnPhase.DIG -> "ハイライトされた穴タイルをクリックしてください。"
         TurnPhase.MOVE -> "ハイライトされた移動可能マスをクリックしてください。"
         TurnPhase.CAPTURE -> "プレイヤーの足元にエサがあれば捕獲できます。"
-        TurnPhase.DECIDE -> "タベるかレンコウを選んでください。"
+        TurnPhase.DECIDE -> "タベる、レンコウ、または強奪を選んでください。"
         TurnPhase.END -> "ターンを終了してください。"
         null -> "新しいゲームを開始してください。"
     }

@@ -74,6 +74,7 @@ enum class AndroidHighlightTone {
 
 enum class AndroidVisibleAction {
     CAPTURE,
+    ROB,
     EAT,
     CARRY,
     SKIP,
@@ -155,8 +156,16 @@ class AndroidGameViewModel(
         runAction { controller.selectCaptureTarget(index) }
     }
 
+    fun selectRobberyTarget(index: Int) {
+        runAction { controller.selectRobberyTarget(index) }
+    }
+
     fun capture() {
         runAction { controller.captureCurrentPosition() }
+    }
+
+    fun rob() {
+        runAction { controller.robSelectedFood() }
     }
 
     /**
@@ -246,6 +255,7 @@ class AndroidGameViewModel(
         val actions = playState.actionAvailability
         return buildList {
             if (actions.canCapture) add(AndroidVisibleAction.CAPTURE)
+            if (actions.canRob) add(AndroidVisibleAction.ROB)
             if (actions.canEat) add(AndroidVisibleAction.EAT)
             if (actions.canCarry) add(AndroidVisibleAction.CARRY)
             if (actions.canSkip) add(AndroidVisibleAction.SKIP)
