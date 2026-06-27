@@ -48,6 +48,13 @@ class Board {
             Position(5, 4),
         )
 
+        val NEST_EVICTION_DESTINATIONS = mapOf(
+            Position(0, 1) to Position(1, 1),
+            Position(5, 1) to Position(4, 1),
+            Position(0, 4) to Position(1, 4),
+            Position(5, 4) to Position(4, 4),
+        )
+
         val HOT_ZONE_POSITIONS = setOf(
             Position(2, 2),
             Position(3, 2),

@@ -39,6 +39,7 @@ class MovementEngine(private val board: Board) {
         start: Position,
         boardState: BoardState,
         occupiedPositions: Set<Position>,
+        blockedPositions: Set<Position> = emptySet(),
     ): Set<Position> {
         val reachable = mutableSetOf<Position>()
         val visited = mutableSetOf(start)
@@ -47,8 +48,11 @@ class MovementEngine(private val board: Board) {
 
         while (queue.isNotEmpty()) {
             val current = queue.removeFirst()
+            if (current != start && board.getCell(current)?.type == CellType.NEST) continue
+
             for (neighbor in board.getValidNeighbors(current)) {
                 if (neighbor in visited) continue
+                if (neighbor in blockedPositions) continue
                 if (!isConnected(current, neighbor, boardState)) continue
 
                 visited.add(neighbor)
@@ -81,7 +85,6 @@ class MovementEngine(private val board: Board) {
         }
 
         val fromHasPath = when (fromCell.type) {
-            // TODO: 【要確認】3-4 巣マスは全方向接続として仮実装。
             CellType.NEST -> true
             else -> boardState.getTile(from)?.let { tile ->
                 !tile.isFaceDown && tile.hasOpenSide(directionFromTo)

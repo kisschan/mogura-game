@@ -373,8 +373,6 @@ class GameEngine(
 
     /**
      * 巣が防衛されているか判定する。
-     *
-     * TODO: 【要確認】3-4 巣防衛の詳細は仮実装。
      */
     fun isNestDefended(nestPosition: Position): Boolean {
         return players.any { it.nestPosition == nestPosition && it.position == nestPosition }
@@ -383,18 +381,16 @@ class GameEngine(
     /**
      * 巣に戻った際に侵入者を追い出す。
      *
-     * TODO: 【要確認】3-5 追い出し先の選択権は仮実装。
+     * TODO: 【要確認】13-5 追い出し先の占有時は固定先への強制移動として仮実装。
      */
     fun evictFromNest(owner: Player): Boolean {
         owner.moveTo(owner.nestPosition)
         val intruders = players.filter { it != owner && it.position == owner.nestPosition }
         if (intruders.isEmpty()) return false
 
+        val evictTo = Board.NEST_EVICTION_DESTINATIONS[owner.nestPosition] ?: return false
         intruders.forEach { intruder ->
-            val evictTo = board.getValidNeighbors(owner.nestPosition).firstOrNull()
-            if (evictTo != null) {
-                intruder.moveTo(evictTo)
-            }
+            intruder.moveTo(evictTo)
         }
         return true
     }

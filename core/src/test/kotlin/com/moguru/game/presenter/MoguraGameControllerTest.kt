@@ -1090,6 +1090,42 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `defended opponent nest is not included in move targets`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        for (col in 1..4) {
+            engine.boardState.placeTile(
+                Position(col, 1),
+                HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+            )
+        }
+        engine.advancePhase()
+
+        val targets = controller.moveTargets()
+
+        assertTrue(Position(4, 1) in targets)
+        assertFalse(Position(5, 1) in targets)
+    }
+
+    @Test
+    fun `unoccupied opponent nest remains a move target`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        engine.players[1].moveTo(Position(2, 2))
+        for (col in 1..4) {
+            engine.boardState.placeTile(
+                Position(col, 1),
+                HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+            )
+        }
+        engine.advancePhase()
+
+        assertTrue(Position(5, 1) in controller.moveTargets())
+    }
+
+    @Test
     fun `digging 90 degree straight tile next to right nest makes it reachable in move phase`() {
         val controller = testController()
         controller.startNewGame(2)

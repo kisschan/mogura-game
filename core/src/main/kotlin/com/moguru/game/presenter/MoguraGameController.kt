@@ -239,11 +239,16 @@ class MoguraGameController(
             .filter { it != player && !it.isEliminated }
             .map { it.position }
             .toSet()
+        val defendedNests = current.players
+            .filter { it != player && !it.isEliminated && it.position == it.nestPosition }
+            .map { it.nestPosition }
+            .toSet()
 
         return current.movementEngine.findReachablePositions(
             start = player.position,
             boardState = current.boardState,
             occupiedPositions = occupied,
+            blockedPositions = defendedNests,
         )
     }
 
