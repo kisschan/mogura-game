@@ -130,8 +130,38 @@ class MovementEngineTest {
     }
 
     @Test
+    fun `ブロックされたマスは停止も通過もできない`() {
+        val state = BoardState(board)
+        for (col in 1..4) {
+            placeTile(state, Position(col, 1), TileShape.STRAIGHT, Rotation.DEG_90)
+        }
+
+        val reachable = engine.findReachablePositions(
+            Position(1, 1),
+            state,
+            occupiedPositions = emptySet(),
+            blockedPositions = setOf(Position(3, 1)),
+        )
+
+        assertTrue(Position(2, 1) in reachable)
+        assertFalse(Position(3, 1) in reachable)
+        assertFalse(Position(4, 1) in reachable)
+    }
+
+    @Test
+    fun `巣マスに入った場合はその巣を経由して探索を継続しない`() {
+        val state = BoardState(board)
+        placeTile(state, Position(1, 1), TileShape.STRAIGHT, Rotation.DEG_90)
+        placeTile(state, Position(0, 0), TileShape.STRAIGHT)
+
+        val reachable = engine.findReachablePositions(Position(1, 1), state, emptySet())
+
+        assertTrue(Position(0, 1) in reachable)
+        assertFalse(Position(0, 0) in reachable)
+    }
+
+    @Test
     fun `巣マスは全方向接続として扱う`() {
-        // TODO: 【要確認】3-4 巣マスの接続ルールは仮実装。
         val state = BoardState(board)
         placeTile(state, Position(1, 1), TileShape.STRAIGHT, Rotation.DEG_90)
 
