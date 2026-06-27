@@ -505,6 +505,7 @@ class MoguraGameController(
             ?: return GameActionResult(false, "強奪できるエサがありません。")
 
         pendingDecision = PendingFoodDecision.Stolen(stolen, candidate.victim.id)
+        robberyVisits[player.id] = RobberyVisit(candidate.victim.nestPosition, eligible = false)
         selectedRobberyFoodIndex = null
         addLog("${player.name} が ${candidate.victim.name} の巣から ${stolen.type.displayName()} を強奪しました。")
         addLog("強奪したエサをタベるかレンコウしてください。")

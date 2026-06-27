@@ -1293,6 +1293,26 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `robbery is consumed for the current turn after eating stolen food`() {
+        val controller = testController()
+        val (_, victim) = advanceToRobberyDecision(
+            controller,
+            storedFoods = listOf(
+                FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false),
+                FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = false),
+            ),
+        )
+        controller.robSelectedFood()
+
+        val eat = controller.eatPendingFood()
+        val finish = controller.finishTurn()
+
+        assertTrue(eat.success)
+        assertTrue(finish.success)
+        assertEquals(listOf(FoodType.EARTHWORM), victim.storedFoods.map { it.type })
+    }
+
+    @Test
     fun `finish turn advances to next active player`() {
         val controller = testController()
         controller.startNewGame(2)
