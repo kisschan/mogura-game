@@ -673,8 +673,7 @@ class MoguraGameController(
             }
             is PendingFoodDecision.Stolen -> {
                 player.carryFood(food)
-                player.storeFood()
-                addLog("${player.name} が強奪した ${food.type.displayName()} を自分の巣へ移しました（${food.type.points}点）。")
+                addLog("${player.name} が強奪した ${food.type.displayName()} をレンコウします。巣まで持ち帰ってください。")
             }
         }
         pendingDecision = null

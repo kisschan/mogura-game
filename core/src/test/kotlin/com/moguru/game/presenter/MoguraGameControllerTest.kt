@@ -1247,7 +1247,7 @@ class MoguraGameControllerTest {
     }
 
     @Test
-    fun `carrying robbed food moves it to own nest and scores immediately`() {
+    fun `carrying robbed food scores only after returning to own nest`() {
         val controller = testController()
         val (thief, _) = advanceToRobberyDecision(controller)
         controller.robSelectedFood()
@@ -1255,10 +1255,18 @@ class MoguraGameControllerTest {
         val carry = controller.carryPendingFood()
 
         assertTrue(carry.success)
+        assertTrue(thief.isCarrying)
+        assertTrue(thief.storedFoods.isEmpty())
+        assertEquals(0, thief.score)
+        assertEquals(TurnPhase.END, controller.engine!!.currentPhase)
+
+        thief.moveTo(thief.nestPosition)
+        val finish = controller.finishTurn()
+
+        assertTrue(finish.success)
         assertFalse(thief.isCarrying)
         assertEquals(FoodType.EARTHWORM, thief.storedFoods.single().type)
         assertEquals(2, thief.score)
-        assertEquals(TurnPhase.END, controller.engine!!.currentPhase)
     }
 
     @Test
