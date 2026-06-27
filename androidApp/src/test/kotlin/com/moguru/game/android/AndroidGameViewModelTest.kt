@@ -117,7 +117,8 @@ class AndroidGameViewModelTest {
 
         viewModel.carry()
 
-        assertEquals(2, thief.score)
+        assertTrue(thief.isCarrying)
+        assertEquals(0, thief.score)
         assertTrue(victim.storedFoods.isEmpty())
     }
 
