@@ -32,6 +32,11 @@ data class PublicDeckSummary(
     val foodDiscardCount: Int,
 )
 
+data class MoleOption(
+    val playerId: Int,
+    val name: String,
+)
+
 data class DigCandidateDisplay(
     val choice: DigTileChoice,
     val label: String,
@@ -239,12 +244,18 @@ class MoguraGameController(
     fun startNewGame(playerCount: Int): GameActionResult {
         require(playerCount in 2..4) { "プレイヤー人数は2〜4人にしてください。" }
 
+        return startNewGame(defaultConfigs(playerCount), startPlayerIndex = 0)
+    }
+
+    fun startNewGame(configs: List<PlayerConfig>, startPlayerIndex: Int = 0): GameActionResult {
+        require(configs.size in 2..4) { "プレイヤー人数は2〜4人にしてください。" }
+
         val nextEngine = GameEngine(
-            playerCount = playerCount,
+            playerCount = configs.size,
             diceRoller = diceRoller,
             shuffler = shuffler,
         )
-        nextEngine.setupGame(defaultConfigs(playerCount))
+        nextEngine.setupGame(configs, startPlayerIndex)
 
         engine = nextEngine
         lastCaptureResult = null
@@ -258,7 +269,7 @@ class MoguraGameController(
         selectedRobberyFoodIndex = null
         robberyVisits.clear()
         messages.clear()
-        addLog("${playerCount}人プレイで開始しました。")
+        addLog("${configs.size}人プレイで開始しました。")
         addLog("${currentPlayer?.name} の番です。隣の穴タイルを掘ってください。")
         return GameActionResult(true, "新しいゲームを開始しました。")
     }
@@ -1002,14 +1013,30 @@ class MoguraGameController(
     companion object {
         private const val MAX_LOG_LINES = 80
 
+        val moleOptions = listOf(
+            MoleOption(0, "モグオ"),
+            MoleOption(1, "モグタ"),
+            MoleOption(2, "モグミ"),
+            MoleOption(3, "モグカ"),
+        )
+
+        val nestPositions = listOf(
+            Position(0, 1),
+            Position(5, 1),
+            Position(0, 4),
+            Position(5, 4),
+        )
+
+        fun playerNameForId(playerId: Int): String =
+            moleOptions.firstOrNull { it.playerId == playerId }?.name
+                ?: "モグラ${playerId + 1}"
+
         fun defaultConfigs(playerCount: Int): List<PlayerConfig> {
-            val configs = listOf(
-                PlayerConfig("モグオ", Position(0, 1)),
-                PlayerConfig("モグタ", Position(5, 1)),
-                PlayerConfig("モグミ", Position(0, 4)),
-                PlayerConfig("モグカ", Position(5, 4)),
-            )
-            return configs.take(playerCount)
+            return moleOptions.zip(nestPositions)
+                .take(playerCount)
+                .map { (mole, nest) ->
+                    PlayerConfig(mole.name, nest, playerId = mole.playerId)
+                }
         }
     }
 }

@@ -2,6 +2,7 @@ package com.moguru.game.presenter
 
 import com.moguru.game.engine.GameEngine
 import com.moguru.game.engine.GameState
+import com.moguru.game.engine.PlayerConfig
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Board
 import com.moguru.game.model.Direction
@@ -34,6 +35,25 @@ class MoguraGameControllerTest {
         assertEquals(3, engine.players.size)
         assertEquals(listOf("モグオ", "モグタ", "モグミ"), engine.players.map { it.name })
         assertEquals(TurnPhase.DIG, engine.currentPhase)
+    }
+
+    @Test
+    fun `new game accepts custom mole nest and start player selections`() {
+        val controller = testController()
+        val configs = listOf(
+            PlayerConfig("モグカ", Position(5, 4), playerId = 3),
+            PlayerConfig("モグオ", Position(0, 1), playerId = 0),
+        )
+
+        val result = controller.startNewGame(configs, startPlayerIndex = 1)
+
+        val engine = controller.engine!!
+        assertTrue(result.success)
+        assertEquals(listOf(3, 0), engine.players.map { it.id })
+        assertEquals(listOf(Position(5, 4), Position(0, 1)), engine.players.map { it.nestPosition })
+        assertEquals(1, engine.currentPlayerIndex)
+        assertEquals("モグオ", controller.currentPlayer?.name)
+        assertTrue(controller.logs.any { it.contains("モグオ の番") })
     }
 
     @Test

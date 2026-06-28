@@ -1,5 +1,6 @@
 package com.moguru.game.gui
 
+import com.moguru.game.engine.PlayerConfig
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Board
 import com.moguru.game.model.CellType
@@ -390,8 +391,53 @@ class MoguraGameFrame(
             choices,
             choices.first(),
         ) as? String ?: choices.first()
+        val playerCount = choice.toInt()
+        val remainingMoles = MoguraGameController.moleOptions.toMutableList()
+        val remainingNests = MoguraGameController.nestPositions.toMutableList()
+        val configs = mutableListOf<PlayerConfig>()
 
-        controller.startNewGame(choice.toInt())
+        repeat(playerCount) { index ->
+            val moleLabels = remainingMoles.map { it.name }.toTypedArray()
+            val moleChoice = JOptionPane.showInputDialog(
+                this,
+                "P${index + 1} のモグラを選んでください",
+                "モグラ選択",
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                moleLabels,
+                moleLabels.first(),
+            ) as? String ?: return
+            val mole = remainingMoles.removeAt(moleLabels.indexOf(moleChoice).coerceAtLeast(0))
+
+            val nestLabels = remainingNests.map(::nestChoiceLabel).toTypedArray()
+            val nestChoice = JOptionPane.showInputDialog(
+                this,
+                "P${index + 1} の巣を選んでください",
+                "巣選択",
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                nestLabels,
+                nestLabels.first(),
+            ) as? String ?: return
+            val nest = remainingNests.removeAt(nestLabels.indexOf(nestChoice).coerceAtLeast(0))
+            configs.add(PlayerConfig(mole.name, nest, playerId = mole.playerId))
+        }
+
+        val startLabels = configs.mapIndexed { index, config ->
+            "P${index + 1}: ${config.name}"
+        }.toTypedArray()
+        val startChoice = JOptionPane.showInputDialog(
+            this,
+            "先手プレイヤーを選んでください",
+            "先手選択",
+            JOptionPane.QUESTION_MESSAGE,
+            null,
+            startLabels,
+            startLabels.first(),
+        ) as? String ?: startLabels.first()
+        val startPlayerIndex = startLabels.indexOf(startChoice).takeIf { it >= 0 } ?: 0
+
+        controller.startNewGame(configs, startPlayerIndex)
         backgroundMusic.playLooping()
         refresh()
     }
@@ -1435,4 +1481,12 @@ private fun playerColor(id: Int): Color = when (id) {
     1 -> Color(0xF2994A)
     2 -> Color(0xE88DB5)
     else -> Color(0xF2C94C)
+}
+
+private fun nestChoiceLabel(position: Position): String = when (position) {
+    Position(0, 1) -> "巣A (1,2)"
+    Position(5, 1) -> "巣B (6,2)"
+    Position(0, 4) -> "巣C (1,5)"
+    Position(5, 4) -> "巣D (6,5)"
+    else -> "(${position.col + 1},${position.row + 1})"
 }

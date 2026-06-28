@@ -97,6 +97,53 @@ class GameEngineTest {
     }
 
     @Test
+    fun `セットアップでモグラと巣と先手を自由選択できる`() {
+        val customEngine = GameEngine(
+            playerCount = 3,
+            diceRoller = diceRoller,
+            shuffler = shuffler,
+        )
+        val configs = listOf(
+            PlayerConfig("モグカ", Position(5, 4), playerId = 3),
+            PlayerConfig("モグオ", Position(0, 1), playerId = 0),
+            PlayerConfig("モグミ", Position(0, 4), playerId = 2),
+        )
+
+        customEngine.setupGame(configs, startPlayerIndex = 2)
+
+        assertEquals(listOf(3, 0, 2), customEngine.players.map { it.id })
+        assertEquals(listOf("モグカ", "モグオ", "モグミ"), customEngine.players.map { it.name })
+        assertEquals(listOf(Position(5, 4), Position(0, 1), Position(0, 4)), customEngine.players.map { it.nestPosition })
+        assertEquals(listOf(Position(5, 4), Position(0, 1), Position(0, 4)), customEngine.players.map { it.position })
+        assertEquals(2, customEngine.currentPlayerIndex)
+        assertEquals("モグミ", customEngine.players[customEngine.currentPlayerIndex].name)
+    }
+
+    @Test
+    fun `セットアップで同じ巣は選べない`() {
+        val configs = listOf(
+            PlayerConfig("モグオ", Position(0, 1), playerId = 0),
+            PlayerConfig("モグタ", Position(0, 1), playerId = 1),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            engine.setupGame(configs)
+        }
+    }
+
+    @Test
+    fun `セットアップで同じモグラは選べない`() {
+        val configs = listOf(
+            PlayerConfig("モグオ", Position(0, 1), playerId = 0),
+            PlayerConfig("モグオ", Position(5, 1), playerId = 0),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            engine.setupGame(configs)
+        }
+    }
+
+    @Test
     fun `フェーズはDIGからMOVE CAPTURE ENDへ遷移する`() {
         setupDefaultGame()
 
