@@ -97,6 +97,7 @@ class MoguraGameControllerTest {
         assertFalse(state.actionAvailability.canCapture)
         assertFalse(state.actionAvailability.canEat)
         assertFalse(state.actionAvailability.canCarry)
+        assertFalse(state.actionAvailability.canRob)
         assertFalse(state.actionAvailability.canSkip)
         assertFalse(state.actionAvailability.canEndTurn)
     }
@@ -303,6 +304,7 @@ class MoguraGameControllerTest {
         assertEquals(FoodType.EARTHWORM, state.diceRouletteFood, "カード公開用にエサ種別を見せるべき")
         assertEquals(listOf(1, 2), state.diceRouletteEscapeRolls, "逃走目を昇順で見せるべき")
         assertFalse(state.actionAvailability.canCapture)
+        assertFalse(state.actionAvailability.canRob)
         assertFalse(state.actionAvailability.canSkip)
         assertFalse(state.actionAvailability.canEndTurn)
     }
@@ -547,6 +549,7 @@ class MoguraGameControllerTest {
         assertFalse(initialActions.canCapture)
         assertFalse(initialActions.canEat)
         assertFalse(initialActions.canCarry)
+        assertFalse(initialActions.canRob)
         assertFalse(initialActions.canSkip)
         assertFalse(initialActions.canEndTurn)
 
@@ -558,6 +561,7 @@ class MoguraGameControllerTest {
         assertTrue(captureActions.canCapture)
         assertFalse(captureActions.canEat)
         assertFalse(captureActions.canCarry)
+        assertFalse(captureActions.canRob)
         assertTrue(captureActions.canSkip)
         assertTrue(captureActions.canEndTurn)
 
@@ -568,6 +572,7 @@ class MoguraGameControllerTest {
         assertFalse(decideActions.canCapture)
         assertTrue(decideActions.canEat)
         assertTrue(decideActions.canCarry)
+        assertFalse(decideActions.canRob)
         assertFalse(decideActions.canSkip)
         assertFalse(decideActions.canEndTurn)
     }
@@ -1196,7 +1201,7 @@ class MoguraGameControllerTest {
     }
 
     @Test
-    fun `robbed food enters decision without auto carrying`() {
+    fun `entering opponent nest does not rob on the same turn`() {
         val controller = testController()
         controller.startNewGame(2)
         val engine = controller.engine!!
@@ -1205,14 +1210,106 @@ class MoguraGameControllerTest {
         victim.carryFood(FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = false))
         victim.storeFood()
         victim.moveTo(Position(1, 1))
-        thief.moveTo(victim.nestPosition)
+        connectLeftNestToRightNest(engine)
+        engine.advancePhase()
 
-        val needsDecision = controller.resolveCurrentPlayerPositionEffects()
+        val moveResult = controller.moveTo(victim.nestPosition)
+        val captureSkip = controller.skipPhase()
 
-        assertTrue(needsDecision)
+        assertTrue(moveResult.success)
+        assertTrue(captureSkip.success)
+        assertEquals(TurnPhase.END, engine.currentPhase)
+        assertNull(controller.pendingFoodDecision)
         assertFalse(thief.isCarrying)
+        assertEquals(1, victim.storedFoods.size)
+        assertFalse(controller.playScreenUiState().actionAvailability.canRob)
+    }
+
+    @Test
+    fun `robbery becomes available on the next own turn if player remains in opponent nest`() {
+        val controller = testController()
+        val (thief, victim) = advanceToRobberyDecision(controller)
+        val state = controller.playScreenUiState()
+
+        assertEquals(TurnPhase.DECIDE, controller.engine!!.currentPhase)
+        assertTrue(state.actionAvailability.canRob)
+        assertFalse(state.actionAvailability.canEat)
+        assertFalse(state.actionAvailability.canCarry)
+        assertEquals(listOf(FoodType.EARTHWORM), state.robberyTargets.map { it.type })
+
+        val robbery = controller.robSelectedFood()
+
+        assertTrue(robbery.success)
+        assertEquals(FoodDecisionSource.ROBBERY, controller.pendingFoodDecisionSource)
         assertEquals(FoodType.EARTHWORM, controller.pendingFoodDecision?.type)
-        assertEquals(0, victim.score)
+        assertTrue(victim.storedFoods.isEmpty())
+        assertFalse(thief.isCarrying)
+    }
+
+    @Test
+    fun `carrying robbed food scores only after returning to own nest`() {
+        val controller = testController()
+        val (thief, _) = advanceToRobberyDecision(controller)
+        controller.robSelectedFood()
+
+        val carry = controller.carryPendingFood()
+
+        assertTrue(carry.success)
+        assertTrue(thief.isCarrying)
+        assertTrue(thief.storedFoods.isEmpty())
+        assertEquals(0, thief.score)
+        assertEquals(TurnPhase.END, controller.engine!!.currentPhase)
+
+        thief.moveTo(thief.nestPosition)
+        val finish = controller.finishTurn()
+
+        assertTrue(finish.success)
+        assertFalse(thief.isCarrying)
+        assertEquals(FoodType.EARTHWORM, thief.storedFoods.single().type)
+        assertEquals(2, thief.score)
+    }
+
+    @Test
+    fun `selected robbery target is stolen from stored food stack`() {
+        val controller = testController()
+        val (thief, victim) = advanceToRobberyDecision(
+            controller,
+            storedFoods = listOf(
+                FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false),
+                FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = false),
+            ),
+        )
+
+        val initialTargets = controller.playScreenUiState().robberyTargets
+        val select = controller.selectRobberyTarget(1)
+        val robbery = controller.robSelectedFood()
+
+        assertEquals(listOf(FoodType.BEETLE_LARVA, FoodType.EARTHWORM), initialTargets.map { it.type })
+        assertTrue(select.success)
+        assertTrue(robbery.success)
+        assertEquals(FoodType.EARTHWORM, controller.pendingFoodDecision?.type)
+        assertEquals(listOf(FoodType.BEETLE_LARVA), victim.storedFoods.map { it.type })
+        assertFalse(thief.isCarrying)
+    }
+
+    @Test
+    fun `robbery is consumed for the current turn after eating stolen food`() {
+        val controller = testController()
+        val (_, victim) = advanceToRobberyDecision(
+            controller,
+            storedFoods = listOf(
+                FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false),
+                FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = false),
+            ),
+        )
+        controller.robSelectedFood()
+
+        val eat = controller.eatPendingFood()
+        val finish = controller.finishTurn()
+
+        assertTrue(eat.success)
+        assertTrue(finish.success)
+        assertEquals(listOf(FoodType.EARTHWORM), victim.storedFoods.map { it.type })
     }
 
     @Test
@@ -1289,6 +1386,46 @@ class MoguraGameControllerTest {
             // Remove the previous stack so this test controls the capture target.
         }
         engine.placeFoodAt(position, food)
+    }
+
+    private fun advanceToRobberyDecision(
+        controller: MoguraGameController,
+        storedFoods: List<FoodCard> = listOf(FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = false)),
+    ): Pair<Player, Player> {
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val thief = engine.players[0]
+        val victim = engine.players[1]
+        storedFoods.forEach { food ->
+            victim.carryFood(food)
+            victim.storeFood()
+        }
+        victim.moveTo(Position(1, 1))
+        connectLeftNestToRightNest(engine)
+
+        engine.advancePhase()
+        assertTrue(controller.moveTo(victim.nestPosition).success)
+        assertTrue(controller.skipPhase().success)
+        assertEquals(TurnPhase.END, engine.currentPhase)
+        assertTrue(controller.finishTurn().success)
+
+        engine.advancePhase()
+        assertTrue(controller.finishTurn().success)
+        assertEquals(0, engine.currentPlayerIndex)
+
+        engine.advancePhase()
+        assertTrue(controller.skipPhase().success)
+        assertTrue(controller.skipPhase().success)
+        return thief to victim
+    }
+
+    private fun connectLeftNestToRightNest(engine: GameEngine) {
+        for (col in 1..4) {
+            engine.boardState.placeTile(
+                Position(col, 1),
+                HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+            )
+        }
     }
 
     private fun placeFoodForCapture(engine: GameEngine, player: Player, food: FoodCard) {

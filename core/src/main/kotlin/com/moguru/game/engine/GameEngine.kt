@@ -355,20 +355,25 @@ class GameEngine(
         foodDiscard.add(food.copy(isFaceDown = true))
     }
 
+    /** 強奪の基本条件を満たしているか判定する。 */
+    fun canAttemptRobbery(thief: Player, victim: Player): Boolean {
+        if (thief.position != victim.nestPosition) return false
+        if (victim.position == victim.nestPosition) return false
+        if (victim.storedFoods.isEmpty()) return false
+        if (thief.isCarrying) return false
+        return true
+    }
+
     /**
      * 強奪を試みる。
      *
-     * TODO: 【要確認】3-3 強奪を行うフェーズは仮実装。
+     * 強奪の実行タイミングと「次の自分の手番以降」の状態管理は presenter 側で扱う。
      */
-    fun attemptRobbery(thief: Player, victim: Player): FoodCard? {
-        if (thief.position != victim.nestPosition) return null
-        if (victim.position == victim.nestPosition) return null
-        if (victim.storedFoods.isEmpty()) return null
-        if (thief.isCarrying) return null
+    fun attemptRobbery(thief: Player, victim: Player, foodIndex: Int = victim.storedFoods.lastIndex): FoodCard? {
+        if (!canAttemptRobbery(thief, victim)) return null
 
-        return victim.storedFoods.last()
-            .also { stolenFood -> victim.removeStoredFood(stolenFood) }
-            .copy(isFaceDown = false)
+        return victim.removeStoredFoodAt(foodIndex)
+            ?.copy(isFaceDown = false)
     }
 
     /**
