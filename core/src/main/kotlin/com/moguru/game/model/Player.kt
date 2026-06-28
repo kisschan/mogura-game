@@ -63,6 +63,12 @@ class Player(
     /** 巣にあるエサを1枚取り除く。 */
     fun removeStoredFood(food: FoodCard): Boolean = _storedFoods.remove(food)
 
+    /** 巣にある指定位置のエサを1枚取り除く。 */
+    fun removeStoredFoodAt(index: Int): FoodCard? {
+        if (index !in _storedFoods.indices) return null
+        return _storedFoods.removeAt(index)
+    }
+
     /** 位置を更新する。 */
     fun moveTo(position: Position) {
         this.position = position

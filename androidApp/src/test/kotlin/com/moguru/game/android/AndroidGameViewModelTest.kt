@@ -4,9 +4,12 @@ import com.moguru.game.engine.GameEngine
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.FoodCard
 import com.moguru.game.model.FoodType
+import com.moguru.game.model.HoleTile
 import com.moguru.game.model.Player
 import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
+import com.moguru.game.model.TileShape
+import com.moguru.game.presenter.FoodDecisionSource
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.util.FixedDiceRoller
 import com.moguru.game.util.FixedShuffler
@@ -76,6 +79,47 @@ class AndroidGameViewModelTest {
             listOf(AndroidVisibleAction.SKIP, AndroidVisibleAction.END_TURN),
             viewModel.uiState.value.visibleActions,
         )
+    }
+
+    @Test
+    fun `robbery action appears on next own turn in opponent nest`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+        viewModel.startNewGame(2)
+        val engine = controller.engine!!
+        val thief = engine.players[0]
+        val victim = engine.players[1]
+        victim.carryFood(FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = false))
+        victim.storeFood()
+        victim.moveTo(Position(1, 1))
+        connectLeftNestToRightNest(engine)
+
+        engine.advancePhase()
+        viewModel.onCellClicked(victim.nestPosition)
+        engine.advancePhase()
+        viewModel.finishTurn()
+        engine.advancePhase()
+        viewModel.skip()
+
+        var state = viewModel.uiState.value
+        assertEquals(TurnPhase.DECIDE, state.playState.actionAvailability.activePhase)
+        assertEquals(listOf(AndroidVisibleAction.ROB), state.visibleActions)
+        assertEquals(listOf(FoodType.EARTHWORM), state.playState.robberyTargets.map { it.type })
+
+        viewModel.rob()
+
+        state = viewModel.uiState.value
+        assertEquals(FoodDecisionSource.ROBBERY, state.playState.pendingDecisionSource)
+        assertEquals(
+            listOf(AndroidVisibleAction.EAT, AndroidVisibleAction.CARRY),
+            state.visibleActions,
+        )
+
+        viewModel.carry()
+
+        assertTrue(thief.isCarrying)
+        assertEquals(0, thief.score)
+        assertTrue(victim.storedFoods.isEmpty())
     }
 
     @Test
@@ -268,6 +312,15 @@ class AndroidGameViewModelTest {
     ) {
         player.moveTo(Position(1, 1))
         engine.placeFoodAt(player.position, food)
+    }
+
+    private fun connectLeftNestToRightNest(engine: GameEngine) {
+        for (col in 1..4) {
+            engine.boardState.placeTile(
+                Position(col, 1),
+                HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+            )
+        }
     }
 
     private fun testController(): MoguraGameController =

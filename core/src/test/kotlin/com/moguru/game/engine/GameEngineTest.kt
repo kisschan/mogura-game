@@ -269,7 +269,6 @@ class GameEngineTest {
 
     @Test
     fun `相手の巣が留守の時にエサを奪える`() {
-        // TODO: 【要確認】3-3 強奪フェーズは仮実装。
         setupDefaultGame()
         val thief = engine.players[0]
         val victim = engine.players[1]
@@ -297,6 +296,24 @@ class GameEngineTest {
 
         val stolen = engine.attemptRobbery(thief, victim)
         assertNull(stolen)
+    }
+
+    @Test
+    fun `指定した巣のエサだけを奪える`() {
+        setupDefaultGame()
+        val thief = engine.players[0]
+        val victim = engine.players[1]
+        victim.carryFood(FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false))
+        victim.storeFood()
+        victim.carryFood(FoodCard(FoodType.CENTIPEDE, emptyMap(), isFaceDown = false))
+        victim.storeFood()
+        victim.moveTo(Position(1, 1))
+        thief.moveTo(victim.nestPosition)
+
+        val stolen = engine.attemptRobbery(thief, victim, foodIndex = 1)
+
+        assertEquals(FoodType.CENTIPEDE, stolen?.type)
+        assertEquals(listOf(FoodType.BEETLE_LARVA), victim.storedFoods.map { it.type })
     }
 
     @Test
