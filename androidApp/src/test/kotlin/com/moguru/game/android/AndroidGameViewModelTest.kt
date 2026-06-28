@@ -49,6 +49,38 @@ class AndroidGameViewModelTest {
     }
 
     @Test
+    fun `setup selections choose moles nests and start player`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+
+        viewModel.selectPlayerCount(3)
+        viewModel.selectPlayerMole(0, 3)
+        viewModel.selectPlayerNest(0, Position(5, 4))
+        viewModel.selectStartPlayer(2)
+        viewModel.startSelectedGame()
+
+        val engine = controller.engine!!
+        assertEquals(3, viewModel.uiState.value.selectedPlayerCount)
+        assertEquals(listOf(3, 1, 2), engine.players.map { it.id })
+        assertEquals(listOf(Position(5, 4), Position(5, 1), Position(0, 4)), engine.players.map { it.nestPosition })
+        assertEquals(2, engine.currentPlayerIndex)
+        assertEquals("モグミ", controller.currentPlayer?.name)
+    }
+
+    @Test
+    fun `setup rejects duplicate mole and nest selections`() {
+        val viewModel = testViewModel()
+
+        viewModel.selectPlayerMole(1, 0)
+        viewModel.selectPlayerNest(1, Position(0, 1))
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(0, 1), state.setupPlayers.map { it.playerId })
+        assertEquals(listOf(Position(0, 1), Position(5, 1)), state.setupPlayers.map { it.nestPosition })
+        assertTrue(state.canStartGame)
+    }
+
+    @Test
     fun `dig controls only appear while a dig placement is pending`() {
         val viewModel = testViewModel()
         viewModel.startNewGame(2)

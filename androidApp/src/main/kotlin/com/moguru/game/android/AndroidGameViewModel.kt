@@ -1,6 +1,7 @@
 package com.moguru.game.android
 
 import androidx.lifecycle.ViewModel
+import com.moguru.game.engine.PlayerConfig
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Board
 import com.moguru.game.model.CellType
@@ -20,6 +21,9 @@ import kotlinx.coroutines.flow.asStateFlow
 data class AndroidGameUiState(
     val isGameStarted: Boolean,
     val selectedPlayerCount: Int,
+    val setupPlayers: List<AndroidSetupPlayerUiState>,
+    val selectedStartPlayerIndex: Int,
+    val canStartGame: Boolean,
     val playState: PlayScreenUiState,
     val boardState: AndroidBoardUiState,
     val hungerMarkers: List<AndroidHungerMarkerUiState>,
@@ -27,6 +31,14 @@ data class AndroidGameUiState(
     val showDigControls: Boolean,
     val logs: List<String>,
     val lastMessage: String?,
+)
+
+data class AndroidSetupPlayerUiState(
+    val seatIndex: Int,
+    val playerId: Int,
+    val name: String,
+    val nestPosition: Position,
+    val isStartPlayer: Boolean,
 )
 
 /** 腹減りメーターに表示する各プレイヤーの体力マーカー。 */
@@ -84,10 +96,14 @@ enum class AndroidVisibleAction {
 class AndroidGameViewModel(
     private val controller: MoguraGameController = MoguraGameController(),
 ) : ViewModel() {
+    private var selectedPlayerCount = 2
+    private var setupPlayerIds = defaultSetupPlayerIds(selectedPlayerCount)
+    private var setupNestPositions = defaultSetupNestPositions(selectedPlayerCount)
+    private var selectedStartPlayerIndex = 0
+
     private val _uiState = MutableStateFlow(
         snapshot(
             isGameStarted = false,
-            selectedPlayerCount = 2,
             lastMessage = null,
         ),
     )
@@ -95,22 +111,51 @@ class AndroidGameViewModel(
 
     fun selectPlayerCount(playerCount: Int) {
         require(playerCount in 2..4) { "プレイヤー人数は2〜4人にしてください。" }
+        resetSetupDefaults(playerCount)
         _uiState.value = snapshot(
             isGameStarted = _uiState.value.isGameStarted,
-            selectedPlayerCount = playerCount,
             lastMessage = null,
         )
     }
 
+    fun selectPlayerMole(seatIndex: Int, playerId: Int) {
+        if (seatIndex !in 0 until selectedPlayerCount) return
+        if (MoguraGameController.moleOptions.none { it.playerId == playerId }) return
+        if (setupPlayerIds.withIndex().any { it.index != seatIndex && it.value == playerId }) return
+
+        setupPlayerIds = setupPlayerIds.toMutableList().also { it[seatIndex] = playerId }
+        refresh(null)
+    }
+
+    fun selectPlayerNest(seatIndex: Int, nestPosition: Position) {
+        if (seatIndex !in 0 until selectedPlayerCount) return
+        if (nestPosition !in MoguraGameController.nestPositions) return
+        if (setupNestPositions.withIndex().any { it.index != seatIndex && it.value == nestPosition }) return
+
+        setupNestPositions = setupNestPositions.toMutableList().also { it[seatIndex] = nestPosition }
+        refresh(null)
+    }
+
+    fun selectStartPlayer(seatIndex: Int) {
+        if (seatIndex !in 0 until selectedPlayerCount) return
+
+        selectedStartPlayerIndex = seatIndex
+        refresh(null)
+    }
+
     fun startSelectedGame() {
-        startNewGame(_uiState.value.selectedPlayerCount)
+        val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
+        _uiState.value = snapshot(
+            isGameStarted = true,
+            lastMessage = result.message,
+        )
     }
 
     fun startNewGame(playerCount: Int) {
-        val result = controller.startNewGame(playerCount)
+        resetSetupDefaults(playerCount)
+        val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
         _uiState.value = snapshot(
             isGameStarted = true,
-            selectedPlayerCount = playerCount,
             lastMessage = result.message,
         )
     }
@@ -118,7 +163,6 @@ class AndroidGameViewModel(
     fun returnToSetup() {
         _uiState.value = snapshot(
             isGameStarted = false,
-            selectedPlayerCount = _uiState.value.selectedPlayerCount,
             lastMessage = null,
         )
     }
@@ -225,20 +269,21 @@ class AndroidGameViewModel(
     private fun refresh(lastMessage: String?) {
         _uiState.value = snapshot(
             isGameStarted = _uiState.value.isGameStarted,
-            selectedPlayerCount = _uiState.value.selectedPlayerCount,
             lastMessage = lastMessage,
         )
     }
 
     private fun snapshot(
         isGameStarted: Boolean,
-        selectedPlayerCount: Int,
         lastMessage: String?,
     ): AndroidGameUiState {
         val playState = controller.playScreenUiState()
         return AndroidGameUiState(
             isGameStarted = isGameStarted,
             selectedPlayerCount = selectedPlayerCount,
+            setupPlayers = buildSetupPlayers(),
+            selectedStartPlayerIndex = selectedStartPlayerIndex,
+            canStartGame = canStartConfiguredGame(),
             playState = playState,
             boardState = AndroidBoardUiState(
                 cells = if (isGameStarted) buildBoardCells() else emptyList(),
@@ -250,6 +295,40 @@ class AndroidGameViewModel(
             lastMessage = lastMessage,
         )
     }
+
+    private fun resetSetupDefaults(playerCount: Int) {
+        selectedPlayerCount = playerCount
+        setupPlayerIds = defaultSetupPlayerIds(playerCount)
+        setupNestPositions = defaultSetupNestPositions(playerCount)
+        selectedStartPlayerIndex = 0
+    }
+
+    private fun setupConfigs(): List<PlayerConfig> =
+        setupPlayerIds.zip(setupNestPositions).map { (playerId, nestPosition) ->
+            PlayerConfig(
+                name = MoguraGameController.playerNameForId(playerId),
+                nestPosition = nestPosition,
+                playerId = playerId,
+            )
+        }
+
+    private fun buildSetupPlayers(): List<AndroidSetupPlayerUiState> =
+        setupPlayerIds.zip(setupNestPositions).mapIndexed { index, (playerId, nestPosition) ->
+            AndroidSetupPlayerUiState(
+                seatIndex = index,
+                playerId = playerId,
+                name = MoguraGameController.playerNameForId(playerId),
+                nestPosition = nestPosition,
+                isStartPlayer = index == selectedStartPlayerIndex,
+            )
+        }
+
+    private fun canStartConfiguredGame(): Boolean =
+        setupPlayerIds.size == selectedPlayerCount &&
+            setupNestPositions.size == selectedPlayerCount &&
+            setupPlayerIds.toSet().size == selectedPlayerCount &&
+            setupNestPositions.toSet().size == selectedPlayerCount &&
+            selectedStartPlayerIndex in 0 until selectedPlayerCount
 
     private fun visibleActions(playState: PlayScreenUiState): List<AndroidVisibleAction> {
         val actions = playState.actionAvailability
@@ -348,3 +427,11 @@ class AndroidGameViewModel(
             HoleTile(tile.shape).rotate(rotation).openSides == tile.openSides
         } ?: Rotation.DEG_0
 }
+
+private fun defaultSetupPlayerIds(playerCount: Int): List<Int> =
+    MoguraGameController.defaultConfigs(playerCount).mapIndexed { index, config ->
+        config.playerId ?: index
+    }
+
+private fun defaultSetupNestPositions(playerCount: Int): List<Position> =
+    MoguraGameController.defaultConfigs(playerCount).map { it.nestPosition }

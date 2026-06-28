@@ -65,6 +65,7 @@ import com.moguru.game.model.TileShape
 import com.moguru.game.presenter.CaptureTargetDisplay
 import com.moguru.game.presenter.DigCandidateDisplay
 import com.moguru.game.presenter.DigTileChoice
+import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.presenter.RobberyTargetDisplay
 
 internal const val BOARD_HIGHLIGHT_Z = 15f
@@ -140,8 +141,30 @@ private fun SetupScreen(
                 )
             }
         }
+        Text(
+            text = "モグラ・巣・先手",
+            modifier = Modifier.padding(top = 22.dp, bottom = 8.dp),
+            color = Color(0xFF4B3826),
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            state.setupPlayers.forEach { player ->
+                SetupPlayerRow(
+                    player = player,
+                    setupPlayers = state.setupPlayers,
+                    onMoleSelected = viewModel::selectPlayerMole,
+                    onNestSelected = viewModel::selectPlayerNest,
+                    onStartSelected = viewModel::selectStartPlayer,
+                )
+            }
+        }
         Button(
             onClick = viewModel::startSelectedGame,
+            enabled = state.canStartGame,
             modifier = Modifier
                 .padding(top = 24.dp)
                 .fillMaxWidth(0.72f)
@@ -154,6 +177,177 @@ private fun SetupScreen(
         ) {
             Text("ゲームスタート", fontSize = 17.sp, fontWeight = FontWeight.Black)
         }
+    }
+}
+
+@Composable
+private fun SetupPlayerRow(
+    player: AndroidSetupPlayerUiState,
+    setupPlayers: List<AndroidSetupPlayerUiState>,
+    onMoleSelected: (Int, Int) -> Unit,
+    onNestSelected: (Int, Position) -> Unit,
+    onStartSelected: (Int) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFFFFF8E8))
+            .border(2.dp, Color(0xFFD0AD78), RoundedCornerShape(8.dp))
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "P${player.seatIndex + 1}",
+                color = Color(0xFF2E2115),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Black,
+            )
+            OutlinedButton(
+                onClick = { onStartSelected(player.seatIndex) },
+                modifier = Modifier
+                    .width(84.dp)
+                    .height(36.dp),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(2.dp, if (player.isStartPlayer) Color(0xFF158A45) else Color(0xFF9A7A52)),
+                colors = if (player.isStartPlayer) {
+                    ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF35BC67),
+                        contentColor = Color(0xFF102F1B),
+                    )
+                } else {
+                    ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2E2115))
+                },
+            ) {
+                Text("先手", fontSize = 13.sp, fontWeight = FontWeight.Black)
+            }
+        }
+
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            maxItemsInEachRow = 4,
+        ) {
+            MoguraGameController.moleOptions.forEach { option ->
+                val selected = player.playerId == option.playerId
+                val usedByOther = setupPlayers.any {
+                    it.seatIndex != player.seatIndex && it.playerId == option.playerId
+                }
+                MoleChoiceButton(
+                    playerId = option.playerId,
+                    name = option.name,
+                    selected = selected,
+                    enabled = selected || !usedByOther,
+                    onClick = { onMoleSelected(player.seatIndex, option.playerId) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            maxItemsInEachRow = 4,
+        ) {
+            MoguraGameController.nestPositions.forEach { nest ->
+                val selected = player.nestPosition == nest
+                val usedByOther = setupPlayers.any {
+                    it.seatIndex != player.seatIndex && it.nestPosition == nest
+                }
+                NestChoiceButton(
+                    position = nest,
+                    selected = selected,
+                    enabled = selected || !usedByOther,
+                    onClick = { onNestSelected(player.seatIndex, nest) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoleChoiceButton(
+    playerId: Int,
+    name: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.height(44.dp),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(2.dp, if (selected) Color(0xFF158A45) else Color(0xFF9A7A52)),
+        colors = if (selected) {
+            ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF35BC67),
+                contentColor = Color(0xFF102F1B),
+                disabledContainerColor = Color(0xFF35BC67),
+                disabledContentColor = Color(0xFF102F1B),
+            )
+        } else {
+            ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2E2115))
+        },
+    ) {
+        Image(
+            painter = painterResource(playerRes(playerId)),
+            contentDescription = null,
+            modifier = Modifier.size(24.dp),
+            contentScale = ContentScale.Fit,
+        )
+        Text(
+            text = name,
+            modifier = Modifier.padding(start = 4.dp),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Black,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun NestChoiceButton(
+    position: Position,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.height(38.dp),
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(2.dp, if (selected) Color(0xFFE64B3F) else Color(0xFF9A7A52)),
+        colors = if (selected) {
+            ButtonDefaults.buttonColors(
+                containerColor = Color(0xFFFFD9D3),
+                contentColor = Color(0xFF2E2115),
+                disabledContainerColor = Color(0xFFFFD9D3),
+                disabledContentColor = Color(0xFF2E2115),
+            )
+        } else {
+            ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2E2115))
+        },
+    ) {
+        Text(
+            text = nestLabel(position),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Black,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -986,6 +1180,14 @@ private fun FoodType.boardLabel(): String = when (this) {
     FoodType.MOLE_CRICKET -> "ケラ"
     FoodType.CENTIPEDE -> "ムカデ"
     FoodType.FROG -> "カエル"
+}
+
+private fun nestLabel(position: Position): String = when (position) {
+    Position(0, 1) -> "巣A"
+    Position(5, 1) -> "巣B"
+    Position(0, 4) -> "巣C"
+    Position(5, 4) -> "巣D"
+    else -> "${position.col + 1},${position.row + 1}"
 }
 
 private fun tileRes(shape: TileShape): Int = when (shape) {
