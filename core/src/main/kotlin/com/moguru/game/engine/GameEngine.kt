@@ -17,7 +17,7 @@ enum class TurnPhase {
     DIG,      // 1. 掘る
     MOVE,     // 2. 移動
     CAPTURE,  // 3. 捕獲
-    DECIDE,   // 4. タベる or レンコウ
+    DECIDE,   // 4. 食べる or 巣へ持ち帰る
     END,      // 5. ターン終了
 }
 

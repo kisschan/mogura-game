@@ -1,0 +1,207 @@
+package com.moguru.game.android
+
+import androidx.compose.ui.unit.dp
+import com.moguru.game.model.FoodType
+import com.moguru.game.model.Position
+import com.moguru.game.model.CellType
+import com.moguru.game.model.Rotation
+import com.moguru.game.model.TileShape
+import com.moguru.game.engine.TurnPhase
+import com.moguru.game.presenter.CaptureTargetDisplay
+import com.moguru.game.presenter.CaptureOutcomeDisplay
+import com.moguru.game.presenter.CaptureOutcomeKind
+import com.moguru.game.presenter.DigCandidateDisplay
+import com.moguru.game.presenter.DigTileChoice
+import com.moguru.game.presenter.RobberyTargetDisplay
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+
+class AndroidUiTextTest {
+    @Test
+    fun `nest labels include board location`() {
+        val label = nestDisplayLabel(Position(0, 1))
+
+        assertEquals("巣A", label.name)
+        assertEquals("左上", label.location)
+    }
+
+    @Test
+    fun `used setup choices name the player that already owns them`() {
+        assertEquals("P2使用中", setupUsedByLabel(seatIndex = 1))
+    }
+
+    @Test
+    fun `used nest labels keep name location and owner visible together`() {
+        val text = nestChoiceVisualLines(Position(0, 1), usedByLabel = "P2使用中")
+
+        assertEquals(listOf("巣A", "左上", "P2使用中"), text)
+    }
+
+    @Test
+    fun `start player semantics include seat name and state`() {
+        assertEquals(
+            "P1 モグタを先手にする、選択中",
+            startPlayerSemanticsLabel(seatIndex = 0, name = "モグタ", selected = true),
+        )
+    }
+
+    @Test
+    fun `only highlighted cells are exposed as board primary actions`() {
+        val inactiveCell = AndroidBoardCellUiState(
+            position = Position(5, 4),
+            cellType = CellType.UNDERGROUND,
+            tile = AndroidTileUiState(TileShape.STRAIGHT, Rotation.DEG_0, isFaceDown = false),
+            foods = emptyList(),
+            players = emptyList(),
+            highlight = null,
+        )
+        val highlightedCell = inactiveCell.copy(highlight = AndroidHighlightTone.DIG)
+
+        assertFalse(isBoardPrimaryActionCell(inactiveCell, TurnPhase.DIG))
+        assertEquals(true, isBoardPrimaryActionCell(highlightedCell, TurnPhase.DIG))
+        assertFalse(isBoardPrimaryActionCell(highlightedCell, TurnPhase.DECIDE))
+    }
+
+    @Test
+    fun `compact play screens keep the board small enough for controls`() {
+        assertEquals(300.dp, playBoardMaxWidthForHeight(640.dp))
+        assertEquals(420.dp, playBoardMaxWidthForHeight(900.dp))
+    }
+
+    @Test
+    fun `action labels use plain player-facing Japanese`() {
+        assertEquals("食べる", AndroidVisibleAction.EAT.displayLabel())
+        assertEquals("巣へ持ち帰る", AndroidVisibleAction.CARRY.displayLabel())
+    }
+
+    @Test
+    fun `face down capture targets include their order`() {
+        val target = CaptureTargetDisplay(
+            index = 1,
+            type = FoodType.EARTHWORM,
+            isFaceDown = true,
+            selected = true,
+            enabled = true,
+        )
+
+        assertEquals("選択中: 裏向き 2/3", captureTargetLabel(target, total = 3))
+        assertEquals(
+            "捕獲対象: 選択中: 裏向き 2/3",
+            captureTargetSummary(
+                listOf(
+                    target.copy(index = 0, selected = false),
+                    target,
+                    target.copy(index = 2, selected = false),
+                ),
+            ),
+        )
+        assertNull(captureTargetSummary(emptyList()))
+    }
+
+    @Test
+    fun `dig candidate accessibility labels describe action and state`() {
+        val candidate = DigCandidateDisplay(
+            choice = DigTileChoice.DRAWN,
+            label = "山札",
+            shape = TileShape.T_SHAPE,
+            selected = false,
+            enabled = true,
+        )
+
+        assertEquals("山札、T字タイル、未選択", digCandidateSemanticLabel(candidate))
+        assertEquals("山札を選ぶ", digCandidateActionLabel(candidate))
+    }
+
+    @Test
+    fun `capture target accessibility labels describe action and target`() {
+        val target = CaptureTargetDisplay(
+            index = 1,
+            type = FoodType.EARTHWORM,
+            isFaceDown = false,
+            selected = true,
+            enabled = true,
+        )
+
+        assertEquals("捕獲対象、選択中: ミミズ 2/3、選択できます", captureTargetSemanticLabel(target, total = 3))
+        assertEquals("捕獲対象を選ぶ: 選択中: ミミズ 2/3", captureTargetActionLabel(target, total = 3))
+    }
+
+    @Test
+    fun `robbery target labels include owner name`() {
+        val target = RobberyTargetDisplay(
+            index = 0,
+            ownerPlayerId = 1,
+            ownerName = "モグタ",
+            type = FoodType.MOLE_CRICKET,
+            selected = true,
+            enabled = true,
+        )
+
+        assertEquals("モグタの巣", robberyOwnerLabel(target))
+        assertEquals("選択中: ケラ 1/1", robberyTargetLabel(target, total = 1))
+        assertEquals("強奪対象: モグタの巣 / 選択中: ケラ 1/1", robberyTargetSummary(listOf(target)))
+        assertEquals("強奪対象、モグタの巣、選択中: ケラ 1/1、選択できます", robberyTargetSemanticLabel(target, total = 1))
+        assertEquals("強奪対象を選ぶ: モグタの巣 / 選択中: ケラ 1/1", robberyTargetActionLabel(target, total = 1))
+    }
+
+    @Test
+    fun `result banner keeps dice result and next action visible`() {
+        val colors = resultBannerColors(CaptureOutcomeKind.CAPTURED)
+        val text = resultBannerText(
+            CaptureOutcomeDisplay(
+                kind = CaptureOutcomeKind.CAPTURED,
+                diceRoll = 6,
+                message = "モグオ が ミミズ を捕獲しました。食べるか、巣へ持ち帰るか選んでください。",
+            ),
+        )
+
+        assertEquals(0xFFE8FFF0.toInt(), colors.containerArgb)
+        assertTrue(text!!.contains("ダイス: 6"))
+        assertTrue(text.contains("巣へ持ち帰る"))
+    }
+
+    @Test
+    fun `result banner does not cap lines because outcome and next action are critical`() {
+        assertEquals(4, RESULT_BANNER_MAX_LINES)
+    }
+
+    @Test
+    fun `result banner supports no escape captures`() {
+        val text = resultBannerText(
+            CaptureOutcomeDisplay(
+                kind = CaptureOutcomeKind.CAPTURED,
+                diceRoll = null,
+                message = "モグオ が カブトムシの幼虫 を捕獲しました。食べるか、巣へ持ち帰るか選んでください。",
+            ),
+        )
+
+        assertEquals("逃走なし　モグオ が カブトムシの幼虫 を捕獲しました。食べるか、巣へ持ち帰るか選んでください。", text)
+    }
+
+    @Test
+    fun `result banner keeps capture result even when later logs arrive`() {
+        val colors = resultBannerColors(CaptureOutcomeKind.ESCAPED)
+        val text = resultBannerText(
+            CaptureOutcomeDisplay(
+                kind = CaptureOutcomeKind.ESCAPED,
+                diceRoll = 1,
+                message = "ミミズ はダイス 1 で 上に逃げました。",
+            ),
+        )
+
+        assertEquals(0xFFFFF1CF.toInt(), colors.containerArgb)
+        assertEquals("ダイス: 1　ミミズ はダイス 1 で 上に逃げました。", text)
+    }
+
+    @Test
+    fun `roulette copy uses unified capture vocabulary`() {
+        assertEquals("逃走なし", rouletteRevealStatus(emptyList()))
+        assertEquals("捕獲する", roulettePrimaryActionLabel(emptyList()))
+        assertEquals("ダイスで逃走判定", rouletteRevealStatus(listOf(1, 2)))
+        assertEquals("ダイスを振る", roulettePrimaryActionLabel(listOf(1, 2)))
+        assertEquals("ダイスを止める", rouletteStopActionLabel())
+    }
+}

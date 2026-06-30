@@ -10,6 +10,7 @@ import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
 import com.moguru.game.model.TileShape
 import com.moguru.game.presenter.FoodDecisionSource
+import com.moguru.game.presenter.CaptureOutcomeKind
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.util.FixedDiceRoller
 import com.moguru.game.util.FixedShuffler
@@ -111,6 +112,35 @@ class AndroidGameViewModelTest {
             listOf(AndroidVisibleAction.SKIP, AndroidVisibleAction.END_TURN),
             viewModel.uiState.value.visibleActions,
         )
+    }
+
+    @Test
+    fun `pending dig placement can be confirmed without tapping the board again`() {
+        val viewModel = testViewModel()
+        val target = Position(1, 1)
+        viewModel.startNewGame(2)
+
+        viewModel.onCellClicked(target)
+        viewModel.selectRotation(Rotation.DEG_90)
+        viewModel.confirmDigPlacement()
+
+        val state = viewModel.uiState.value
+        assertEquals(TurnPhase.MOVE, state.playState.actionAvailability.activePhase)
+        assertFalse(state.showDigControls)
+        assertEquals("タイルを置きました。", state.lastMessage)
+    }
+
+    @Test
+    fun `candidate outside the active board choices gives feedback without advancing`() {
+        val viewModel = testViewModel()
+        viewModel.startNewGame(2)
+
+        viewModel.onCellClicked(Position(5, 4))
+
+        val state = viewModel.uiState.value
+        assertEquals(TurnPhase.DIG, state.playState.actionAvailability.activePhase)
+        assertEquals(0, state.playState.currentPlayer.playerId)
+        assertEquals("現在のプレイヤーに隣接する掘れる穴タイルを選んでください。", state.lastMessage)
     }
 
     @Test
@@ -240,10 +270,51 @@ class AndroidGameViewModelTest {
         assertFalse(state.diceRouletteActive)
         assertEquals(6, state.lastDiceRoll)
         assertEquals(TurnPhase.DECIDE, state.actionAvailability.activePhase)
+        assertEquals(CaptureOutcomeKind.CAPTURED, state.captureOutcome?.kind)
+        assertTrue(
+            resultBannerText(state.captureOutcome)
+                ?.contains("ダイス: 6") == true,
+        )
         assertEquals(
             listOf(AndroidVisibleAction.EAT, AndroidVisibleAction.CARRY),
             viewModel.uiState.value.visibleActions,
         )
+
+        viewModel.eat()
+
+        assertNull(viewModel.uiState.value.playState.captureOutcome)
+    }
+
+    @Test
+    fun `escaped capture result remains visible after auto advance logs`() {
+        val controller = MoguraGameController(
+            diceRoller = FixedDiceRoller(listOf(1)),
+            shuffler = FixedShuffler(),
+        )
+        val viewModel = AndroidGameViewModel(controller)
+        viewModel.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.CENTIPEDE).first())
+        engine.advancePhase()
+        engine.advancePhase()
+
+        viewModel.capture()
+        viewModel.stopDiceRoulette()
+        viewModel.finishDiceRoulette()
+
+        val state = viewModel.uiState.value.playState
+        val outcome = state.captureOutcome
+        val text = resultBannerText(outcome)
+        assertEquals(1, state.lastDiceRoll)
+        assertEquals(CaptureOutcomeKind.ESCAPED, outcome?.kind)
+        assertEquals(1, outcome?.diceRoll)
+        assertTrue(text?.contains("ダイス: 1") == true)
+        assertTrue(text?.contains("逃げました") == true)
+
+        viewModel.finishTurn()
+
+        assertNull(viewModel.uiState.value.playState.captureOutcome)
     }
 
     @Test
@@ -270,9 +341,55 @@ class AndroidGameViewModelTest {
         state = viewModel.uiState.value.playState
         assertFalse(state.diceRouletteActive)
         assertEquals(TurnPhase.DECIDE, state.actionAvailability.activePhase)
+        assertTrue(
+            resultBannerText(state.captureOutcome)
+                ?.startsWith("逃走なし") == true,
+        )
         assertEquals(
             listOf(AndroidVisibleAction.EAT, AndroidVisibleAction.CARRY),
             viewModel.uiState.value.visibleActions,
+        )
+
+        viewModel.carry()
+
+        assertNull(viewModel.uiState.value.playState.captureOutcome)
+    }
+
+    @Test
+    fun `capture reveal guidance does not depend on tap wording`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+        viewModel.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        engine.advancePhase()
+        engine.advancePhase()
+
+        viewModel.capture()
+
+        assertFalse(
+            viewModel.uiState.value.logs.any { it.contains("タップ") || it.contains("クリック") },
+            "shared capture guidance should stay neutral across Android and Desktop",
+        )
+    }
+
+    @Test
+    fun `capture reveal guidance without escape dice does not depend on tap wording`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+        viewModel.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        placeFoodForCapture(engine, player, FoodCard(FoodType.BEETLE_LARVA, emptyMap()))
+        engine.advancePhase()
+        engine.advancePhase()
+
+        viewModel.capture()
+
+        assertFalse(
+            viewModel.uiState.value.logs.any { it.contains("タップ") || it.contains("クリック") },
+            "no-escape capture guidance should stay neutral across Android and Desktop",
         )
     }
 

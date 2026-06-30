@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,15 +26,20 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,8 +52,11 @@ import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -63,10 +72,13 @@ import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
 import com.moguru.game.model.TileShape
 import com.moguru.game.presenter.CaptureTargetDisplay
+import com.moguru.game.presenter.CaptureOutcomeDisplay
+import com.moguru.game.presenter.CaptureOutcomeKind
 import com.moguru.game.presenter.DigCandidateDisplay
 import com.moguru.game.presenter.DigTileChoice
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.presenter.RobberyTargetDisplay
+import com.moguru.game.presenter.displayName
 
 internal const val BOARD_HIGHLIGHT_Z = 15f
 internal const val BOARD_TILE_Z = 20f
@@ -203,16 +215,30 @@ private fun SetupPlayerRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "P${player.seatIndex + 1}",
+                text = "P${player.seatIndex + 1}: ${player.name}",
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 8.dp),
                 color = Color(0xFF2E2115),
                 fontSize = 15.sp,
+                lineHeight = 17.sp,
                 fontWeight = FontWeight.Black,
+                maxLines = 2,
             )
             OutlinedButton(
                 onClick = { onStartSelected(player.seatIndex) },
                 modifier = Modifier
-                    .width(84.dp)
-                    .height(36.dp),
+                    .widthIn(min = 84.dp)
+                    .heightIn(min = 48.dp)
+                    .semantics {
+                        contentDescription = startPlayerSemanticsLabel(
+                            seatIndex = player.seatIndex,
+                            name = player.name,
+                            selected = player.isStartPlayer,
+                        )
+                        selected = player.isStartPlayer
+                        stateDescription = if (player.isStartPlayer) "先手に選択中" else "先手ではありません"
+                    },
                 shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(2.dp, if (player.isStartPlayer) Color(0xFF158A45) else Color(0xFF9A7A52)),
                 colors = if (player.isStartPlayer) {
@@ -232,18 +258,19 @@ private fun SetupPlayerRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
-            maxItemsInEachRow = 4,
+            maxItemsInEachRow = 2,
         ) {
             MoguraGameController.moleOptions.forEach { option ->
                 val selected = player.playerId == option.playerId
-                val usedByOther = setupPlayers.any {
+                val usedByOther = setupPlayers.firstOrNull {
                     it.seatIndex != player.seatIndex && it.playerId == option.playerId
                 }
                 MoleChoiceButton(
                     playerId = option.playerId,
                     name = option.name,
                     selected = selected,
-                    enabled = selected || !usedByOther,
+                    usedByLabel = usedByOther?.let { setupUsedByLabel(it.seatIndex) },
+                    enabled = selected || usedByOther == null,
                     onClick = { onMoleSelected(player.seatIndex, option.playerId) },
                     modifier = Modifier.weight(1f),
                 )
@@ -258,13 +285,14 @@ private fun SetupPlayerRow(
         ) {
             MoguraGameController.nestPositions.forEach { nest ->
                 val selected = player.nestPosition == nest
-                val usedByOther = setupPlayers.any {
+                val usedByOther = setupPlayers.firstOrNull {
                     it.seatIndex != player.seatIndex && it.nestPosition == nest
                 }
                 NestChoiceButton(
                     position = nest,
                     selected = selected,
-                    enabled = selected || !usedByOther,
+                    usedByLabel = usedByOther?.let { setupUsedByLabel(it.seatIndex) },
+                    enabled = selected || usedByOther == null,
                     onClick = { onNestSelected(player.seatIndex, nest) },
                     modifier = Modifier.weight(1f),
                 )
@@ -278,6 +306,7 @@ private fun MoleChoiceButton(
     playerId: Int,
     name: String,
     selected: Boolean,
+    usedByLabel: String?,
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -285,8 +314,14 @@ private fun MoleChoiceButton(
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(44.dp),
+        modifier = modifier
+            .heightIn(min = 54.dp)
+            .semantics {
+                this.selected = selected
+                stateDescription = setupChoiceStateDescription(selected, usedByLabel)
+            },
         shape = RoundedCornerShape(8.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
         border = BorderStroke(2.dp, if (selected) Color(0xFF158A45) else Color(0xFF9A7A52)),
         colors = if (selected) {
             ButtonDefaults.buttonColors(
@@ -296,23 +331,40 @@ private fun MoleChoiceButton(
                 disabledContentColor = Color(0xFF102F1B),
             )
         } else {
-            ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2E2115))
+            ButtonDefaults.outlinedButtonColors(
+                contentColor = Color(0xFF2E2115),
+                disabledContentColor = Color(0xFF5F5144),
+            )
         },
     ) {
         Image(
             painter = painterResource(playerRes(playerId)),
             contentDescription = null,
-            modifier = Modifier.size(24.dp),
+            modifier = Modifier.size(30.dp),
             contentScale = ContentScale.Fit,
         )
-        Text(
-            text = name,
+        Column(
             modifier = Modifier.padding(start = 4.dp),
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Black,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = name,
+                fontSize = 13.sp,
+                lineHeight = 15.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 2,
+            )
+            usedByLabel?.let { label ->
+                Text(
+                    text = label,
+                    color = Color(0xFF5F5144),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
     }
 }
 
@@ -320,15 +372,26 @@ private fun MoleChoiceButton(
 private fun NestChoiceButton(
     position: Position,
     selected: Boolean,
+    usedByLabel: String?,
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val label = nestDisplayLabel(position)
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(38.dp),
+        modifier = modifier
+            .heightIn(min = 62.dp)
+            .semantics {
+                this.selected = selected
+                stateDescription = setupChoiceStateDescription(selected, usedByLabel)
+                contentDescription = nestChoiceVisualLines(position, usedByLabel)
+                    .plus(setupChoiceStateDescription(selected, usedByLabel))
+                    .joinToString("、")
+            },
         shape = RoundedCornerShape(8.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 3.dp),
         border = BorderStroke(2.dp, if (selected) Color(0xFFE64B3F) else Color(0xFF9A7A52)),
         colors = if (selected) {
             ButtonDefaults.buttonColors(
@@ -338,16 +401,32 @@ private fun NestChoiceButton(
                 disabledContentColor = Color(0xFF2E2115),
             )
         } else {
-            ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2E2115))
+            ButtonDefaults.outlinedButtonColors(
+                contentColor = Color(0xFF2E2115),
+                disabledContentColor = Color(0xFF5F5144),
+            )
         },
     ) {
-        Text(
-            text = nestLabel(position),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Black,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = label.name,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            nestChoiceVisualLines(position, usedByLabel)
+                .drop(1)
+                .forEach { line ->
+                    Text(
+                        text = line,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+        }
     }
 }
 
@@ -369,8 +448,12 @@ private fun PlayerCountButton(
     OutlinedButton(
         onClick = onClick,
         modifier = Modifier
-            .width(78.dp)
-            .height(48.dp),
+            .widthIn(min = 78.dp)
+            .heightIn(min = 48.dp)
+            .semantics {
+                this.selected = selected
+                stateDescription = if (selected) "選択中" else "未選択"
+            },
         shape = RoundedCornerShape(8.dp),
         border = BorderStroke(2.dp, borderColor),
         colors = colors,
@@ -384,19 +467,30 @@ private fun PlayScreen(
     state: AndroidGameUiState,
     viewModel: AndroidGameViewModel,
 ) {
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .safeDrawingPadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 4.dp, vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(5.dp),
+            .safeDrawingPadding(),
     ) {
-        PlayStatusBar(state = state, onNewGame = viewModel::returnToSetup)
-        BoardView(state = state, onCellClicked = viewModel::onCellClicked)
-        ContextControls(state = state, viewModel = viewModel)
-        MessageLine(state = state)
+        val boardMaxWidth = playBoardMaxWidthForHeight(maxHeight)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            PlayStatusBar(state = state, onNewGame = viewModel::returnToSetup)
+            BoardView(
+                state = state,
+                maxBoardWidth = boardMaxWidth,
+                onCellClicked = viewModel::onCellClicked,
+            )
+            ResultBanner(state = state)
+            ContextControls(state = state, viewModel = viewModel)
+            MessageLine(state = state)
+        }
     }
 }
 
@@ -407,6 +501,7 @@ private fun PlayStatusBar(
 ) {
     val current = state.playState.currentPlayer
     val deck = state.playState.deckSummary
+    var showNewGameConfirmation by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -430,11 +525,20 @@ private fun PlayStatusBar(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             Text(
-                text = "${current.phaseText}　${current.scoreText}",
+                text = current.titleText,
                 color = Color(0xFF2E2115),
-                fontSize = 14.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Black,
-                maxLines = 2,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = "${current.phaseText}　${current.healthText}　${current.scoreText}",
+                color = Color(0xFF2E2115),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = "${current.carriedFoodText}　穴:${deck.tileDrawCount}/${deck.tileDiscardCount}　エサ:${deck.foodDrawCount}/${deck.foodDiscardCount}",
@@ -445,10 +549,10 @@ private fun PlayStatusBar(
             )
         }
         OutlinedButton(
-            onClick = onNewGame,
+            onClick = { showNewGameConfirmation = true },
             modifier = Modifier
-                .width(58.dp)
-                .height(38.dp),
+                .widthIn(min = 58.dp)
+                .heightIn(min = 48.dp),
             shape = RoundedCornerShape(8.dp),
             border = BorderStroke(2.dp, Color(0xFF9A7A52)),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2E2115)),
@@ -456,19 +560,46 @@ private fun PlayStatusBar(
             Text("新規", fontSize = 12.sp, fontWeight = FontWeight.Bold)
         }
     }
+    if (showNewGameConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showNewGameConfirmation = false },
+            title = {
+                Text("設定画面に戻りますか？", fontWeight = FontWeight.Black)
+            },
+            text = {
+                Text("進行中のゲームを中断します。")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showNewGameConfirmation = false
+                        onNewGame()
+                    },
+                ) {
+                    Text("戻る", fontWeight = FontWeight.Black)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNewGameConfirmation = false }) {
+                    Text("続ける")
+                }
+            },
+        )
+    }
 }
 
 @Composable
 private fun BoardView(
     state: AndroidGameUiState,
+    maxBoardWidth: Dp,
     onCellClicked: (Position) -> Unit,
 ) {
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             // 盤面は縦長(高さ≈幅÷0.75)。幅の上限で派生する高さを抑え、操作パネルを
-            // 画面外へ押し出しにくくする(幅360dp→高さ約480dp、歪みなし)。
-            .widthIn(max = 360.dp)
+            // 画面外へ押し出しにくくしつつ、広い端末ではコマと文字を読みやすくする。
+            .widthIn(max = maxBoardWidth)
             .aspectRatio(BOARD_SOURCE_WIDTH / BOARD_SOURCE_HEIGHT)
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFFC88A4A))
@@ -533,6 +664,10 @@ private fun BoardView(
                         contentDescription = player.name,
                         modifier = Modifier.fillMaxSize(),
                     )
+                    BoardPlayerNameBadge(
+                        name = player.name,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
                 }
             }
         }
@@ -545,14 +680,16 @@ private fun BoardView(
                             modifier = Modifier
                                 .boardRect(maxWidth, maxHeight, playerRect(cell.position, index, cell.players.size))
                                 .zIndex(BOARD_CURRENT_PLAYER_OUTLINE_Z)
-                                .border(3.dp, Color(0xFFFFD54F), RoundedCornerShape(999.dp)),
+                                .border(3.dp, Color(0xFF2E2115), RoundedCornerShape(999.dp))
+                                .padding(2.dp)
+                                .border(2.dp, Color.White, RoundedCornerShape(999.dp)),
                         )
                     }
                 }
             }
 
         state.boardState.cells
-            .filter { it.highlight != null }
+            .filter { isBoardPrimaryActionCell(it, state.playState.actionAvailability.activePhase) }
             .forEach { cell ->
                 Box(
                     modifier = Modifier
@@ -591,6 +728,51 @@ private fun BoardPlayerImage(
 }
 
 @Composable
+private fun BoardPlayerNameBadge(
+    name: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = name,
+        color = Color.White,
+        fontSize = 10.sp,
+        lineHeight = 11.sp,
+        fontWeight = FontWeight.Black,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center,
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(999.dp))
+            .background(Color(0xCC2E2115))
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+    )
+}
+
+@Composable
+private fun ResultBanner(state: AndroidGameUiState) {
+    val outcome = state.playState.captureOutcome ?: return
+    val text = resultBannerText(outcome) ?: return
+    val colors = resultBannerColors(outcome.kind)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = Color(colors.containerArgb),
+        border = BorderStroke(2.dp, Color(colors.borderArgb)),
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            color = Color(colors.contentArgb),
+            fontSize = 13.sp,
+            lineHeight = 16.sp,
+            fontWeight = FontWeight.Black,
+            maxLines = RESULT_BANNER_MAX_LINES,
+        )
+    }
+}
+
+@Composable
 private fun HungerMeterOverlay(
     maxWidth: Dp,
     maxHeight: Dp,
@@ -620,7 +802,9 @@ private fun HungerMeterOverlay(
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .border(2.dp, Color(0xFFFFD54F), RoundedCornerShape(999.dp)),
+                        .border(2.dp, Color(0xFF2E2115), RoundedCornerShape(999.dp))
+                        .padding(1.dp)
+                        .border(1.dp, Color.White, RoundedCornerShape(999.dp)),
                 )
             }
         }
@@ -689,19 +873,22 @@ private fun ContextControls(
                 state = state,
                 onChoice = viewModel::selectDigChoice,
                 onRotation = viewModel::selectRotation,
+                onConfirm = viewModel::confirmDigPlacement,
             )
         }
-        if (state.playState.captureTargets.size > 1) {
+        if (state.playState.captureTargets.isNotEmpty()) {
             CaptureTargetControls(
                 targets = state.playState.captureTargets,
                 onSelect = viewModel::selectCaptureTarget,
             )
+            TargetSummary(captureTargetSummary(state.playState.captureTargets))
         }
-        if (state.playState.robberyTargets.size > 1) {
+        if (state.playState.robberyTargets.isNotEmpty()) {
             RobberyTargetControls(
                 targets = state.playState.robberyTargets,
                 onSelect = viewModel::selectRobberyTarget,
             )
+            TargetSummary(robberyTargetSummary(state.playState.robberyTargets))
         }
         if (state.visibleActions.isNotEmpty()) {
             ActionControls(state = state, viewModel = viewModel)
@@ -718,10 +905,33 @@ private fun ContextControls(
 }
 
 @Composable
+private fun TargetSummary(text: String?) {
+    text ?: return
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = Color(0xFFEFFFF3),
+        border = BorderStroke(2.dp, Color(0xFF35BC67)),
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            color = Color(0xFF102F1B),
+            fontSize = 13.sp,
+            lineHeight = 16.sp,
+            fontWeight = FontWeight.Black,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
 private fun DigControls(
     state: AndroidGameUiState,
     onChoice: (DigTileChoice) -> Unit,
     onRotation: (Rotation) -> Unit,
+    onConfirm: () -> Unit,
 ) {
     val enabledCandidates = state.playState.digCandidates.filter { it.enabled }
     Column(
@@ -749,7 +959,11 @@ private fun DigControls(
                     onClick = { onRotation(rotation) },
                     modifier = Modifier
                         .weight(1f)
-                        .height(38.dp),
+                        .heightIn(min = 48.dp)
+                        .semantics {
+                            this.selected = selected
+                            stateDescription = if (selected) "選択中" else "未選択"
+                        },
                     shape = RoundedCornerShape(8.dp),
                     border = BorderStroke(2.dp, if (selected) Color(0xFF158A45) else Color(0xFF9A7A52)),
                     colors = ButtonDefaults.outlinedButtonColors(
@@ -760,6 +974,19 @@ private fun DigControls(
                     Text("${rotation.steps * 90}°", fontSize = 14.sp, fontWeight = FontWeight.Black)
                 }
             }
+        }
+        Button(
+            onClick = onConfirm,
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 48.dp),
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF35BC67),
+                contentColor = Color(0xFF102F1B),
+            ),
+        ) {
+            Text("この配置で置く", fontSize = 14.sp, fontWeight = FontWeight.Black)
         }
     }
 }
@@ -773,8 +1000,17 @@ private fun DigCandidateCard(
     val borderColor = if (candidate.selected) Color(0xFF158A45) else Color(0xFFD3AA72)
     Surface(
         modifier = modifier
+            .heightIn(min = 48.dp)
             .clip(RoundedCornerShape(8.dp))
-            .clickable { onChoice(candidate.choice) },
+            .semantics {
+                this.selected = candidate.selected
+                stateDescription = if (candidate.selected) "選択中" else "未選択"
+                contentDescription = digCandidateSemanticLabel(candidate)
+            }
+            .clickable(
+                onClickLabel = digCandidateActionLabel(candidate),
+                role = Role.Button,
+            ) { onChoice(candidate.choice) },
         shape = RoundedCornerShape(8.dp),
         color = if (candidate.selected) Color(0xFFEFFFF3) else Color(0xFFFFFCF4),
         border = BorderStroke(2.dp, borderColor),
@@ -837,6 +1073,7 @@ private fun CaptureTargetControls(
         targets.forEach { target ->
             CaptureTargetCard(
                 target = target,
+                total = targets.size,
                 onSelect = onSelect,
                 modifier = Modifier.weight(1f),
             )
@@ -847,15 +1084,25 @@ private fun CaptureTargetControls(
 @Composable
 private fun CaptureTargetCard(
     target: CaptureTargetDisplay,
+    total: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val borderColor = if (target.selected) Color(0xFFE64B3F) else Color(0xFFD3AA72)
     Surface(
         modifier = modifier
-            .height(86.dp)
+            .heightIn(min = 96.dp)
             .clip(RoundedCornerShape(8.dp))
-            .clickable(enabled = target.enabled) { onSelect(target.index) },
+            .semantics {
+                this.selected = target.selected
+                stateDescription = if (target.selected) "選択中" else "未選択"
+                contentDescription = captureTargetSemanticLabel(target, total)
+            }
+            .clickable(
+                enabled = target.enabled,
+                onClickLabel = captureTargetActionLabel(target, total),
+                role = Role.Button,
+            ) { onSelect(target.index) },
         shape = RoundedCornerShape(8.dp),
         color = if (target.selected) Color(0xFFFFEFEA) else Color(0xFFFFFCF4),
         border = BorderStroke(2.dp, borderColor),
@@ -872,12 +1119,12 @@ private fun CaptureTargetCard(
                 contentScale = ContentScale.Fit,
             )
             Text(
-                text = if (target.isFaceDown) "?" else target.type.boardLabel(),
+                text = captureTargetLabel(target, total),
                 color = Color(0xFF2E2115),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Black,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                maxLines = 2,
+                textAlign = TextAlign.Center,
             )
         }
     }
@@ -902,6 +1149,7 @@ private fun RobberyTargetControls(
         targets.forEach { target ->
             RobberyTargetCard(
                 target = target,
+                total = targets.size,
                 onSelect = onSelect,
                 modifier = Modifier.weight(1f),
             )
@@ -912,15 +1160,25 @@ private fun RobberyTargetControls(
 @Composable
 private fun RobberyTargetCard(
     target: RobberyTargetDisplay,
+    total: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val borderColor = if (target.selected) Color(0xFF8A4BD8) else Color(0xFFD3AA72)
     Surface(
         modifier = modifier
-            .height(86.dp)
+            .heightIn(min = 92.dp)
             .clip(RoundedCornerShape(8.dp))
-            .clickable(enabled = target.enabled) { onSelect(target.index) },
+            .semantics {
+                this.selected = target.selected
+                stateDescription = if (target.selected) "選択中" else "未選択"
+                contentDescription = robberyTargetSemanticLabel(target, total)
+            }
+            .clickable(
+                enabled = target.enabled,
+                onClickLabel = robberyTargetActionLabel(target, total),
+                role = Role.Button,
+            ) { onSelect(target.index) },
         shape = RoundedCornerShape(8.dp),
         color = if (target.selected) Color(0xFFF3ECFF) else Color(0xFFFFFCF4),
         border = BorderStroke(2.dp, borderColor),
@@ -937,13 +1195,30 @@ private fun RobberyTargetCard(
                 contentScale = ContentScale.Fit,
             )
             Text(
-                text = target.type.boardLabel(),
-                color = Color(0xFF2E2115),
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Black,
+                text = robberyOwnerLabel(target),
+                color = Color(0xFF4B3826),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Text(
+                text = robberyTargetLabel(target, total),
+                color = Color(0xFF2E2115),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 2,
+                textAlign = TextAlign.Center,
+            )
+            if (target.selected) {
+                Text(
+                    text = "選択中",
+                    color = Color(0xFF8A4BD8),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -961,7 +1236,7 @@ private fun ActionControls(
     ) {
         state.visibleActions.forEach { action ->
             ActionButton(
-                text = action.label(),
+                action = action,
                 modifier = Modifier.weight(1f),
                 onClick = {
                     when (action) {
@@ -980,40 +1255,39 @@ private fun ActionControls(
 
 @Composable
 private fun ActionButton(
-    text: String,
+    action: AndroidVisibleAction,
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
-    Button(
-        onClick = onClick,
-        modifier = modifier.height(46.dp),
-        shape = RoundedCornerShape(8.dp),
-        colors = ButtonDefaults.buttonColors(
+    val colors = when (action) {
+        AndroidVisibleAction.CAPTURE,
+        AndroidVisibleAction.EAT,
+        AndroidVisibleAction.CARRY,
+        -> ButtonDefaults.buttonColors(
             containerColor = Color(0xFF35BC67),
             contentColor = Color(0xFF102F1B),
-        ),
-    ) {
-        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        )
+        AndroidVisibleAction.ROB -> ButtonDefaults.buttonColors(
+            containerColor = Color(0xFFFFD9D3),
+            contentColor = Color(0xFF5A180F),
+        )
+        AndroidVisibleAction.SKIP,
+        AndroidVisibleAction.END_TURN,
+        -> ButtonDefaults.buttonColors(
+            containerColor = Color(0xFFFFF1CF),
+            contentColor = Color(0xFF2E2115),
+        )
     }
-}
-
-@Composable
-private fun MessageLine(state: AndroidGameUiState) {
-    val text = state.lastMessage ?: state.logs.lastOrNull() ?: phaseInstruction(state.playState.actionAvailability.activePhase)
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 48.dp),
+    Button(
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 48.dp),
         shape = RoundedCornerShape(8.dp),
-        color = Color(0xFFFFF1CF),
-        border = BorderStroke(2.dp, Color(0xFFD0AD78)),
+        colors = colors,
     ) {
         Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            color = Color(0xFF2E2115),
-            fontSize = 14.sp,
-            lineHeight = 18.sp,
+            action.displayLabel(),
+            fontSize = 13.sp,
+            lineHeight = 15.sp,
             fontWeight = FontWeight.Black,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -1021,23 +1295,76 @@ private fun MessageLine(state: AndroidGameUiState) {
     }
 }
 
-private fun AndroidVisibleAction.label(): String = when (this) {
+@Composable
+private fun MessageLine(state: AndroidGameUiState) {
+    val instruction = if (state.showDigControls) {
+        "タイルと向きを選び、「この配置で置く」を押してください"
+    } else {
+        phaseInstruction(state.playState.actionAvailability.activePhase)
+    }
+    val feedback = state.lastMessage ?: state.logs.lastOrNull()
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 58.dp),
+        shape = RoundedCornerShape(8.dp),
+        color = Color(0xFFFFF1CF),
+        border = BorderStroke(2.dp, Color(0xFFD0AD78)),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            if (instruction.isNotBlank()) {
+                Text(
+                    text = instruction,
+                    color = Color(0xFF2E2115),
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            feedback?.takeIf { it != instruction }?.let { text ->
+                Text(
+                    text = text,
+                    color = Color(0xFF4B3826),
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+internal fun AndroidVisibleAction.displayLabel(): String = when (this) {
     AndroidVisibleAction.CAPTURE -> "捕獲"
     AndroidVisibleAction.ROB -> "強奪"
-    AndroidVisibleAction.EAT -> "タベる"
-    AndroidVisibleAction.CARRY -> "レンコウ"
+    AndroidVisibleAction.EAT -> "食べる"
+    AndroidVisibleAction.CARRY -> "巣へ持ち帰る"
     AndroidVisibleAction.SKIP -> "スキップ"
     AndroidVisibleAction.END_TURN -> "ターン終了"
 }
 
 private fun phaseInstruction(phase: TurnPhase?): String = when (phase) {
-    TurnPhase.DIG -> "黄色のマスをタップして掘る"
-    TurnPhase.MOVE -> "緑のマスをタップして移動"
-    TurnPhase.CAPTURE -> "捕獲できる場合だけボタンが出ます"
-    TurnPhase.DECIDE -> "タベる/レンコウ/強奪を選択"
+    TurnPhase.DIG -> "ハイライトされた隣の穴タイルを選んで掘る"
+    TurnPhase.MOVE -> "ハイライトされた到達可能マスへ移動"
+    TurnPhase.CAPTURE -> "捕獲対象を確認して捕獲する"
+    TurnPhase.DECIDE -> "食べる/巣へ持ち帰る/強奪を選択"
     TurnPhase.END -> "ターン終了を押してください"
     null -> ""
 }
+
+internal fun playBoardMaxWidthForHeight(availableHeight: Dp): Dp =
+    when {
+        availableHeight < 680.dp -> 300.dp
+        availableHeight < 760.dp -> 340.dp
+        else -> 420.dp
+    }
 
 private data class BoardRectSpec(
     val left: Float,
@@ -1123,8 +1450,12 @@ private fun cellClickLabel(cell: AndroidBoardCellUiState): String =
         AndroidHighlightTone.DIG -> "このマスを掘る"
         AndroidHighlightTone.MOVE -> "このマスへ移動"
         AndroidHighlightTone.CAPTURE -> "このマスで捕獲"
-        null -> "このマスを選択"
+        null -> "このマスは選択できません"
     }
+
+internal fun isBoardPrimaryActionCell(cell: AndroidBoardCellUiState, phase: TurnPhase?): Boolean =
+    cell.highlight != null &&
+        (phase == TurnPhase.DIG || phase == TurnPhase.MOVE || phase == TurnPhase.CAPTURE)
 
 private fun playerRect(position: Position, index: Int, count: Int): BoardRectSpec {
     val base = cellRect(position, 1f)
@@ -1182,13 +1513,125 @@ private fun FoodType.boardLabel(): String = when (this) {
     FoodType.FROG -> "カエル"
 }
 
-private fun nestLabel(position: Position): String = when (position) {
-    Position(0, 1) -> "巣A"
-    Position(5, 1) -> "巣B"
-    Position(0, 4) -> "巣C"
-    Position(5, 4) -> "巣D"
-    else -> "${position.col + 1},${position.row + 1}"
+internal data class NestDisplayLabel(
+    val name: String,
+    val location: String,
+)
+
+internal fun nestDisplayLabel(position: Position): NestDisplayLabel = when (position) {
+    Position(0, 1) -> NestDisplayLabel("巣A", "左上")
+    Position(5, 1) -> NestDisplayLabel("巣B", "右上")
+    Position(0, 4) -> NestDisplayLabel("巣C", "左下")
+    Position(5, 4) -> NestDisplayLabel("巣D", "右下")
+    else -> NestDisplayLabel("${position.col + 1},${position.row + 1}", "盤面")
 }
+
+private fun nestLabel(position: Position): String = nestDisplayLabel(position).name
+
+internal fun setupUsedByLabel(seatIndex: Int): String = "P${seatIndex + 1}使用中"
+
+internal fun nestChoiceVisualLines(position: Position, usedByLabel: String?): List<String> =
+    buildList {
+        val label = nestDisplayLabel(position)
+        add(label.name)
+        add(label.location)
+        usedByLabel?.let(::add)
+    }
+
+internal fun startPlayerSemanticsLabel(seatIndex: Int, name: String, selected: Boolean): String =
+    "P${seatIndex + 1} ${name}を先手にする、${if (selected) "選択中" else "未選択"}"
+
+private fun setupChoiceStateDescription(selected: Boolean, usedByLabel: String?): String =
+    when {
+        selected -> "選択中"
+        usedByLabel != null -> "$usedByLabel のため選択不可"
+        else -> "未選択"
+    }
+
+internal fun captureTargetLabel(target: CaptureTargetDisplay, total: Int): String =
+    selectedPrefix(target.selected) + if (target.isFaceDown) {
+        "裏向き ${target.index + 1}/$total"
+    } else if (total > 1) {
+        "${target.type.boardLabel()} ${target.index + 1}/$total"
+    } else {
+        target.type.boardLabel()
+    }
+
+internal fun captureTargetSummary(targets: List<CaptureTargetDisplay>): String? {
+    val selected = targets.firstOrNull { it.selected } ?: return null
+    return "捕獲対象: ${captureTargetLabel(selected, targets.size)}"
+}
+
+internal fun digCandidateSemanticLabel(candidate: DigCandidateDisplay): String {
+    val tileName = candidate.shape?.displayName() ?: "裏向き"
+    val state = if (candidate.selected) "選択中" else "未選択"
+    return "${digCandidateShortLabel(candidate.choice)}、$tileName、$state"
+}
+
+internal fun digCandidateActionLabel(candidate: DigCandidateDisplay): String =
+    "${digCandidateShortLabel(candidate.choice)}を選ぶ"
+
+internal fun captureTargetSemanticLabel(target: CaptureTargetDisplay, total: Int): String =
+    "捕獲対象、${captureTargetLabel(target, total)}、${if (target.enabled) "選択できます" else "選択できません"}"
+
+internal fun captureTargetActionLabel(target: CaptureTargetDisplay, total: Int): String =
+    "捕獲対象を選ぶ: ${captureTargetLabel(target, total)}"
+
+internal fun robberyOwnerLabel(target: RobberyTargetDisplay): String = "${target.ownerName}の巣"
+
+internal fun robberyTargetLabel(target: RobberyTargetDisplay, total: Int): String =
+    selectedPrefix(target.selected) + if (total > 1) {
+        "${target.type.boardLabel()} ${target.index + 1}/$total"
+    } else {
+        "${target.type.boardLabel()} 1/1"
+    }
+
+internal fun robberyTargetSummary(targets: List<RobberyTargetDisplay>): String? {
+    val selected = targets.firstOrNull { it.selected } ?: return null
+    return "強奪対象: ${robberyOwnerLabel(selected)} / ${robberyTargetLabel(selected, targets.size)}"
+}
+
+internal fun robberyTargetSemanticLabel(target: RobberyTargetDisplay, total: Int): String =
+    "強奪対象、${robberyOwnerLabel(target)}、${robberyTargetLabel(target, total)}、${if (target.enabled) "選択できます" else "選択できません"}"
+
+internal fun robberyTargetActionLabel(target: RobberyTargetDisplay, total: Int): String =
+    "強奪対象を選ぶ: ${robberyOwnerLabel(target)} / ${robberyTargetLabel(target, total)}"
+
+internal fun resultBannerText(outcome: CaptureOutcomeDisplay?): String? {
+    outcome ?: return null
+    val prefix = outcome.diceRoll?.let { "ダイス: $it" } ?: "逃走なし"
+    return "$prefix　${outcome.message}"
+}
+
+internal data class ResultBannerColors(
+    val containerArgb: Int,
+    val borderArgb: Int,
+    val contentArgb: Int,
+)
+
+internal const val RESULT_BANNER_MAX_LINES = 4
+
+internal fun resultBannerColors(kind: CaptureOutcomeKind): ResultBannerColors =
+    when (kind) {
+        CaptureOutcomeKind.CAPTURED -> ResultBannerColors(
+            containerArgb = 0xFFE8FFF0.toInt(),
+            borderArgb = 0xFF158A45.toInt(),
+            contentArgb = 0xFF102F1B.toInt(),
+        )
+        CaptureOutcomeKind.ESCAPED -> ResultBannerColors(
+            containerArgb = 0xFFFFF1CF.toInt(),
+            borderArgb = 0xFFE8AD20.toInt(),
+            contentArgb = 0xFF4B3826.toInt(),
+        )
+    }
+
+internal fun rouletteRevealStatus(escapeRolls: List<Int>): String =
+    if (escapeRolls.isEmpty()) "逃走なし" else "ダイスで逃走判定"
+
+internal fun roulettePrimaryActionLabel(escapeRolls: List<Int>): String =
+    if (escapeRolls.isEmpty()) "捕獲する" else "ダイスを振る"
+
+private fun selectedPrefix(selected: Boolean): String = if (selected) "選択中: " else ""
 
 private fun tileRes(shape: TileShape): Int = when (shape) {
     TileShape.STRAIGHT -> R.drawable.tile_straight
