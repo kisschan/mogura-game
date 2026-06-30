@@ -62,6 +62,17 @@ data class RobberyTargetDisplay(
     val enabled: Boolean,
 )
 
+data class CaptureOutcomeDisplay(
+    val kind: CaptureOutcomeKind,
+    val diceRoll: Int?,
+    val message: String,
+)
+
+enum class CaptureOutcomeKind {
+    CAPTURED,
+    ESCAPED,
+}
+
 data class ActionAvailability(
     val canCapture: Boolean,
     val canEat: Boolean,
@@ -84,6 +95,7 @@ data class PlayScreenUiState(
     val diceRouletteEscapeRolls: List<Int>,
     val captureTargets: List<CaptureTargetDisplay>,
     val robberyTargets: List<RobberyTargetDisplay>,
+    val captureOutcome: CaptureOutcomeDisplay?,
     val pendingDecisionSource: FoodDecisionSource?,
     val actionAvailability: ActionAvailability,
 )
@@ -154,6 +166,8 @@ class MoguraGameController(
 
     var lastDiceRoll: Int? = null
         private set
+
+    private var captureOutcome: CaptureOutcomeDisplay? = null
 
     private var pendingDecision: PendingFoodDecision? = null
 
@@ -226,6 +240,7 @@ class MoguraGameController(
             diceRouletteEscapeRolls = pendingCaptureRoll?.food?.escapeMap?.keys?.sorted().orEmpty(),
             captureTargets = captureTargetDisplays(),
             robberyTargets = robberyTargetDisplays(),
+            captureOutcome = captureOutcome,
             pendingDecisionSource = pendingFoodDecisionSource,
             actionAvailability = ActionAvailability(
                 canCapture = isPlaying && canCapture() && pendingCaptureRoll == null,
@@ -260,6 +275,7 @@ class MoguraGameController(
         engine = nextEngine
         lastCaptureResult = null
         lastDiceRoll = null
+        captureOutcome = null
         pendingDecision = null
         pendingCaptureRoll = null
         pendingDigPlacement = null
@@ -336,7 +352,7 @@ class MoguraGameController(
         val pending = pendingDigPlacement
         if (pending != null) {
             if (pending.position != position) {
-                return GameActionResult(false, "めくったタイルと同じマスをクリックして配置を確定してください。")
+                return GameActionResult(false, "先にめくったタイルの配置を確定してください。")
             }
             setPendingDigRotation(rotation)
             return confirmPendingDig()
@@ -471,7 +487,7 @@ class MoguraGameController(
             return GameActionResult(false, "ダイス判定の解決を待っています。")
         }
         if (player.isCarrying) {
-            return GameActionResult(false, "エサをレンコウ中は捕獲できません。")
+            return GameActionResult(false, "エサを持っている間は捕獲できません。")
         }
 
         val foods = current.foodsAt(player.position)
@@ -519,7 +535,7 @@ class MoguraGameController(
         robberyVisits[player.id] = RobberyVisit(candidate.victim.nestPosition, eligible = false)
         selectedRobberyFoodIndex = null
         addLog("${player.name} が ${candidate.victim.name} の巣から ${stolen.type.displayName()} を強奪しました。")
-        addLog("強奪したエサをタベるかレンコウしてください。")
+        addLog("強奪したエサを食べるか、巣へ持ち帰るか選んでください。")
         return GameActionResult(true, "エサを強奪しました。")
     }
 
@@ -540,9 +556,9 @@ class MoguraGameController(
 
         pendingCaptureRoll = PendingCaptureRoll(position, targetIndex, food)
         if (food.escapeMap.isEmpty()) {
-            addLog("${player.name} が ${food.type.displayName()} を見つけた！逃げないエサだ。タップして捕まえてください。")
+            addLog("${player.name} が ${food.type.displayName()} を見つけました。逃走なしです。捕獲を確定してください。")
         } else {
-            addLog("${player.name} が ${food.type.displayName()} を見つけた！タップしてダイスを回してください。")
+            addLog("${player.name} が ${food.type.displayName()} を見つけました。逃走判定のダイスを進めてください。")
         }
         return GameActionResult(true, "エサカードを公開しました。")
     }
@@ -621,16 +637,25 @@ class MoguraGameController(
             is CaptureResult.Success -> {
                 val captured = current.removeFoodAt(position, foodIndex) ?: food
                 pendingDecision = PendingFoodDecision.Captured(captured.copy(isFaceDown = false))
-                addLog("${player.name} が ${captured.type.displayName()} を捕獲しました。タベるかレンコウを選んでください。")
+                val message = "${player.name} が ${captured.type.displayName()} を捕獲しました。食べるか、巣へ持ち帰るか選んでください。"
+                captureOutcome = CaptureOutcomeDisplay(
+                    kind = CaptureOutcomeKind.CAPTURED,
+                    diceRoll = result.diceRoll,
+                    message = message,
+                )
+                addLog(message)
             }
 
             is CaptureResult.Escaped -> {
                 pendingDecision = null
                 selectedCaptureFoodIndex = null
-                addLog(
-                    "${food.type.displayName()} はダイス ${result.diceRoll} で " +
-                        "${result.direction.displayName()} に逃げました。",
+                val message = "${food.type.displayName()} はダイス ${result.diceRoll} で ${result.direction.displayName()} に逃げました。"
+                captureOutcome = CaptureOutcomeDisplay(
+                    kind = CaptureOutcomeKind.ESCAPED,
+                    diceRoll = result.diceRoll,
+                    message = message,
                 )
+                addLog(message)
             }
         }
 
@@ -650,47 +675,49 @@ class MoguraGameController(
         val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
         val player = currentPlayer ?: return GameActionResult(false, "現在のプレイヤーがいません。")
         val decision = pendingDecision
-            ?: return GameActionResult(false, "タベるエサがありません。")
+            ?: return GameActionResult(false, "食べるエサがありません。")
         val food = decision.food
         if (current.currentPhase != TurnPhase.DECIDE) {
-            return GameActionResult(false, "タベるのは捕獲または強奪後だけです。")
+            return GameActionResult(false, "食べるのは捕獲または強奪後だけです。")
         }
 
         player.heal(food.type.recovery)
         current.discardFood(food)
         pendingDecision = null
+        captureOutcome = null
         current.advancePhase()
         val prefix = if (decision.source == FoodDecisionSource.ROBBERY) "強奪した " else ""
-        addLog("${player.name} が $prefix${food.type.displayName()} をタベました。体力を ${food.type.recovery} 回復しました。")
-        return GameActionResult(true, "エサをタベました。")
+        addLog("${player.name} が $prefix${food.type.displayName()} を食べました。体力を ${food.type.recovery} 回復しました。")
+        return GameActionResult(true, "エサを食べました。")
     }
 
     fun carryPendingFood(): GameActionResult {
         val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
         val player = currentPlayer ?: return GameActionResult(false, "現在のプレイヤーがいません。")
         val decision = pendingDecision
-            ?: return GameActionResult(false, "レンコウするエサがありません。")
+            ?: return GameActionResult(false, "巣へ持ち帰るエサがありません。")
         val food = decision.food
         if (current.currentPhase != TurnPhase.DECIDE) {
-            return GameActionResult(false, "レンコウは捕獲または強奪後だけです。")
+            return GameActionResult(false, "巣へ持ち帰るのは捕獲または強奪後だけです。")
         }
         if (player.isCarrying) {
-            return GameActionResult(false, "すでにエサをレンコウ中です。")
+            return GameActionResult(false, "すでにエサを巣へ持ち帰る途中です。")
         }
 
         when (decision) {
             is PendingFoodDecision.Captured -> {
                 player.carryFood(food)
-                addLog("${player.name} が ${food.type.displayName()} をレンコウします。巣まで持ち帰ってください。")
+                addLog("${player.name} が ${food.type.displayName()} を巣へ持ち帰ります。")
             }
             is PendingFoodDecision.Stolen -> {
                 player.carryFood(food)
-                addLog("${player.name} が強奪した ${food.type.displayName()} をレンコウします。巣まで持ち帰ってください。")
+                addLog("${player.name} が強奪した ${food.type.displayName()} を巣へ持ち帰ります。")
             }
         }
         pendingDecision = null
+        captureOutcome = null
         current.advancePhase()
-        return GameActionResult(true, "エサをレンコウします。")
+        return GameActionResult(true, "エサを巣へ持ち帰ります。")
     }
 
     fun skipPhase(): GameActionResult {
@@ -716,7 +743,7 @@ class MoguraGameController(
             return GameActionResult(true, "強奪を選べます。")
         }
         if (current.currentPhase == TurnPhase.DECIDE && pendingDecision != null) {
-            return GameActionResult(false, "タベるかレンコウを選んでください。")
+            return GameActionResult(false, "食べるか、巣へ持ち帰るか選んでください。")
         }
         if (current.currentPhase == TurnPhase.DECIDE && canRobbery()) {
             return GameActionResult(false, "強奪するエサを選んでください。")
@@ -764,7 +791,7 @@ class MoguraGameController(
             TurnPhase.MOVE -> moveTargets().isNotEmpty()
             TurnPhase.CAPTURE -> canCapture() || pendingCaptureRoll != null
             TurnPhase.DECIDE -> pendingDecision != null || canRobbery()
-            TurnPhase.END -> false
+            TurnPhase.END -> captureOutcome != null
         }
     }
 
@@ -781,7 +808,7 @@ class MoguraGameController(
             return GameActionResult(false, "掘るフェーズを終えるまでターン終了できません。")
         }
         if (current.currentPhase == TurnPhase.DECIDE && pendingDecision != null) {
-            return GameActionResult(false, "タベるかレンコウを選んでください。")
+            return GameActionResult(false, "食べるか、巣へ持ち帰るか選んでください。")
         }
         if (canRobbery() || hasRobberyOpportunityForCurrentPlayer()) {
             return GameActionResult(false, "強奪を選べるため、先にフェーズを進めてください。")
@@ -789,6 +816,7 @@ class MoguraGameController(
 
         moveToEndPhase()
         selectedCaptureFoodIndex = null
+        captureOutcome = null
         resolveHomecoming(player)
         current.endTurn()
         addLog("${player.name} の番を終了しました。体力: ${player.health}")
@@ -900,7 +928,7 @@ class MoguraGameController(
         val carried = player.carriedFood
         if (carried != null) {
             player.storeFood()
-            addLog("${player.name} が ${carried.type.displayName()} を巣に持ち帰りました（${carried.type.points}点）。")
+            addLog("${player.name} が ${carried.type.displayName()} を巣へ持ち帰りました（${carried.type.points}点）。")
         }
 
         if (current.evictFromNest(player)) {
