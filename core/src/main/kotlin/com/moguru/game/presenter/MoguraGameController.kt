@@ -535,7 +535,7 @@ class MoguraGameController(
         robberyVisits[player.id] = RobberyVisit(candidate.victim.nestPosition, eligible = false)
         selectedRobberyFoodIndex = null
         addLog("${player.name} が ${candidate.victim.name} の巣から ${stolen.type.displayName()} を強奪しました。")
-        addLog("強奪したエサを食べるか、巣へ持ち帰るか選んでください。")
+        addLog("強奪したエサをタベるか、レンコウするか選んでください。")
         return GameActionResult(true, "エサを強奪しました。")
     }
 
@@ -637,7 +637,7 @@ class MoguraGameController(
             is CaptureResult.Success -> {
                 val captured = current.removeFoodAt(position, foodIndex) ?: food
                 pendingDecision = PendingFoodDecision.Captured(captured.copy(isFaceDown = false))
-                val message = "${player.name} が ${captured.type.displayName()} を捕獲しました。食べるか、巣へ持ち帰るか選んでください。"
+                val message = "${player.name} が ${captured.type.displayName()} を捕獲しました。タベるか、レンコウするか選んでください。"
                 captureOutcome = CaptureOutcomeDisplay(
                     kind = CaptureOutcomeKind.CAPTURED,
                     diceRoll = result.diceRoll,
@@ -675,10 +675,10 @@ class MoguraGameController(
         val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
         val player = currentPlayer ?: return GameActionResult(false, "現在のプレイヤーがいません。")
         val decision = pendingDecision
-            ?: return GameActionResult(false, "食べるエサがありません。")
+            ?: return GameActionResult(false, "タベるエサがありません。")
         val food = decision.food
         if (current.currentPhase != TurnPhase.DECIDE) {
-            return GameActionResult(false, "食べるのは捕獲または強奪後だけです。")
+            return GameActionResult(false, "タベるのは捕獲または強奪後だけです。")
         }
 
         player.heal(food.type.recovery)
@@ -687,37 +687,37 @@ class MoguraGameController(
         captureOutcome = null
         current.advancePhase()
         val prefix = if (decision.source == FoodDecisionSource.ROBBERY) "強奪した " else ""
-        addLog("${player.name} が $prefix${food.type.displayName()} を食べました。体力を ${food.type.recovery} 回復しました。")
-        return GameActionResult(true, "エサを食べました。")
+        addLog("${player.name} が $prefix${food.type.displayName()} をタベました。体力を ${food.type.recovery} 回復しました。")
+        return GameActionResult(true, "エサをタベました。")
     }
 
     fun carryPendingFood(): GameActionResult {
         val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
         val player = currentPlayer ?: return GameActionResult(false, "現在のプレイヤーがいません。")
         val decision = pendingDecision
-            ?: return GameActionResult(false, "巣へ持ち帰るエサがありません。")
+            ?: return GameActionResult(false, "レンコウするエサがありません。")
         val food = decision.food
         if (current.currentPhase != TurnPhase.DECIDE) {
-            return GameActionResult(false, "巣へ持ち帰るのは捕獲または強奪後だけです。")
+            return GameActionResult(false, "レンコウできるのは捕獲または強奪後だけです。")
         }
         if (player.isCarrying) {
-            return GameActionResult(false, "すでにエサを巣へ持ち帰る途中です。")
+            return GameActionResult(false, "すでにエサをレンコウ中です。")
         }
 
         when (decision) {
             is PendingFoodDecision.Captured -> {
                 player.carryFood(food)
-                addLog("${player.name} が ${food.type.displayName()} を巣へ持ち帰ります。")
+                addLog("${player.name} が ${food.type.displayName()} をレンコウします。")
             }
             is PendingFoodDecision.Stolen -> {
                 player.carryFood(food)
-                addLog("${player.name} が強奪した ${food.type.displayName()} を巣へ持ち帰ります。")
+                addLog("${player.name} が強奪した ${food.type.displayName()} をレンコウします。")
             }
         }
         pendingDecision = null
         captureOutcome = null
         current.advancePhase()
-        return GameActionResult(true, "エサを巣へ持ち帰ります。")
+        return GameActionResult(true, "エサをレンコウします。")
     }
 
     fun skipPhase(): GameActionResult {
@@ -743,7 +743,7 @@ class MoguraGameController(
             return GameActionResult(true, "強奪を選べます。")
         }
         if (current.currentPhase == TurnPhase.DECIDE && pendingDecision != null) {
-            return GameActionResult(false, "食べるか、巣へ持ち帰るか選んでください。")
+            return GameActionResult(false, "タベるか、レンコウするか選んでください。")
         }
         if (current.currentPhase == TurnPhase.DECIDE && canRobbery()) {
             return GameActionResult(false, "強奪するエサを選んでください。")
@@ -808,7 +808,7 @@ class MoguraGameController(
             return GameActionResult(false, "掘るフェーズを終えるまでターン終了できません。")
         }
         if (current.currentPhase == TurnPhase.DECIDE && pendingDecision != null) {
-            return GameActionResult(false, "食べるか、巣へ持ち帰るか選んでください。")
+            return GameActionResult(false, "タベるか、レンコウするか選んでください。")
         }
         if (canRobbery() || hasRobberyOpportunityForCurrentPlayer()) {
             return GameActionResult(false, "強奪を選べるため、先にフェーズを進めてください。")

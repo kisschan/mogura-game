@@ -2,6 +2,7 @@ package com.moguru.game.android
 
 import com.moguru.game.engine.GameEngine
 import com.moguru.game.engine.TurnPhase
+import com.moguru.game.model.Direction
 import com.moguru.game.model.FoodCard
 import com.moguru.game.model.FoodType
 import com.moguru.game.model.HoleTile
@@ -229,6 +230,27 @@ class AndroidGameViewModelTest {
         assertEquals(4, markers.size)
         assertEquals(0, markers.last().playerId)
         assertTrue(markers.last().isCurrent)
+    }
+
+    @Test
+    fun `board state exposes current cell and connection edges without visible player names`() {
+        val viewModel = testViewModel()
+        val target = Position(1, 1)
+        viewModel.startNewGame(2)
+
+        viewModel.onCellClicked(target)
+        viewModel.selectRotation(Rotation.DEG_90)
+        viewModel.confirmDigPlacement()
+
+        val boardCells = viewModel.uiState.value.boardState.cells
+        val currentCell = boardCells.single { it.isCurrentPlayerCell }
+        assertTrue(currentCell.players.single().accessibilityLabel.contains("モグオ"))
+        assertTrue(currentCell.players.single().accessibilityLabel.contains("現在の手番"))
+
+        val targetCell = boardCells.single { it.position == target }
+        assertEquals(setOf(Direction.LEFT, Direction.RIGHT), targetCell.tile?.openSides)
+        assertTrue(targetCell.connectionEdges.any { it.direction == Direction.LEFT })
+        assertTrue(targetCell.connectionEdges.any { it.direction == Direction.RIGHT })
     }
 
     @Test

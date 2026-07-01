@@ -5,6 +5,7 @@ import com.moguru.game.engine.PlayerConfig
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Board
 import com.moguru.game.model.CellType
+import com.moguru.game.model.Direction
 import com.moguru.game.model.FoodType
 import com.moguru.game.model.HoleTile
 import com.moguru.game.model.Position
@@ -59,12 +60,15 @@ data class AndroidBoardCellUiState(
     val foods: List<AndroidFoodUiState>,
     val players: List<AndroidPlayerTokenUiState>,
     val highlight: AndroidHighlightTone?,
+    val isCurrentPlayerCell: Boolean = false,
+    val connectionEdges: List<AndroidConnectionEdgeUiState> = emptyList(),
 )
 
 data class AndroidTileUiState(
     val shape: TileShape,
     val rotation: Rotation,
     val isFaceDown: Boolean,
+    val openSides: Set<Direction> = emptySet(),
 )
 
 data class AndroidFoodUiState(
@@ -74,9 +78,20 @@ data class AndroidFoodUiState(
 
 data class AndroidPlayerTokenUiState(
     val playerId: Int,
-    val name: String,
+    val accessibilityLabel: String,
     val isCurrent: Boolean,
 )
+
+data class AndroidConnectionEdgeUiState(
+    val direction: Direction,
+    val tone: AndroidConnectionTone,
+)
+
+enum class AndroidConnectionTone {
+    OPEN,
+    CONNECTED,
+    BLOCKED,
+}
 
 enum class AndroidHighlightTone {
     DIG,
@@ -368,6 +383,17 @@ class AndroidGameViewModel(
         val playersByPosition = engine.players
             .filter { !it.isEliminated }
             .groupBy { it.position }
+        val currentPlayer = controller.currentPlayer
+        val tilesByPosition = buildMap {
+            for (row in 0 until Board.ROWS) {
+                for (col in 0 until Board.COLS) {
+                    val position = Position(col, row)
+                    engine.boardState.getTile(position)?.toAndroidTileUiState()?.let { tile ->
+                        put(position, tile)
+                    }
+                }
+            }
+        }
 
         return buildList {
             for (row in 0 until Board.ROWS) {
@@ -375,23 +401,44 @@ class AndroidGameViewModel(
                     val position = Position(col, row)
                     val cell = engine.board.getCell(position) ?: continue
                     if (cell.type == CellType.INVALID) continue
+                    val tile = tilesByPosition[position]
+                    val isCurrentPlayerCell = currentPlayer?.position == position
 
                     add(
                         AndroidBoardCellUiState(
                             position = position,
                             cellType = cell.type,
-                            tile = engine.boardState.getTile(position)?.toAndroidTileUiState(),
+                            tile = tile,
                             foods = engine.foodsAt(position).map {
                                 AndroidFoodUiState(it.type, it.isFaceDown)
                             },
                             players = playersByPosition[position].orEmpty().map { player ->
                                 AndroidPlayerTokenUiState(
                                     playerId = player.id,
-                                    name = player.name,
+                                    accessibilityLabel = boardPlayerContentDescription(
+                                        name = player.name,
+                                        isCurrent = player == currentPlayer,
+                                    ),
                                     isCurrent = player == controller.currentPlayer,
                                 )
                             },
                             highlight = highlights[position],
+                            isCurrentPlayerCell = isCurrentPlayerCell,
+                            connectionEdges = connectionEdgesForCell(
+                                tile = tile,
+                                cellType = cell.type,
+                                isCurrentCell = isCurrentPlayerCell,
+                                neighborCellType = { direction ->
+                                    neighborPosition(position, direction)?.let { neighbor ->
+                                        engine.board.getCell(neighbor)?.type
+                                    }
+                                },
+                                neighborOpenSides = { direction ->
+                                    neighborPosition(position, direction)?.let { neighbor ->
+                                        tilesByPosition[neighbor]?.openSides
+                                    }
+                                },
+                            ),
                         ),
                     )
                 }
@@ -424,6 +471,7 @@ class AndroidGameViewModel(
             shape = shape,
             rotation = rotationFor(this),
             isFaceDown = isFaceDown,
+            openSides = androidTileOpenSides(shape, rotationFor(this), isFaceDown),
         )
 
     private fun rotationFor(tile: HoleTile): Rotation =
@@ -431,6 +479,71 @@ class AndroidGameViewModel(
             HoleTile(tile.shape).rotate(rotation).openSides == tile.openSides
         } ?: Rotation.DEG_0
 }
+
+internal fun androidTileOpenSides(
+    shape: TileShape,
+    rotation: Rotation,
+    isFaceDown: Boolean,
+): Set<Direction> =
+    if (isFaceDown) {
+        emptySet()
+    } else {
+        HoleTile(shape).rotate(rotation).openSides
+    }
+
+internal fun connectionToneFor(
+    currentOpenSides: Set<Direction>,
+    currentCellType: CellType,
+    neighborOpenSides: Set<Direction>?,
+    neighborCellType: CellType?,
+    direction: Direction,
+    isCurrentCell: Boolean,
+): AndroidConnectionTone? {
+    if (neighborCellType == null || neighborCellType == CellType.INVALID) return null
+    val currentHasPath = currentCellType == CellType.NEST || direction in currentOpenSides
+    if (!currentHasPath) return null
+    if (!isCurrentCell) return AndroidConnectionTone.OPEN
+    if (
+        (currentCellType == CellType.NEST && neighborCellType == CellType.GROUND) ||
+        (currentCellType == CellType.GROUND && neighborCellType == CellType.NEST)
+    ) {
+        return AndroidConnectionTone.BLOCKED
+    }
+    val neighborHasPath = neighborCellType == CellType.NEST || neighborOpenSides?.contains(direction.opposite()) == true
+    return if (neighborHasPath) {
+        AndroidConnectionTone.CONNECTED
+    } else {
+        AndroidConnectionTone.BLOCKED
+    }
+}
+
+internal fun connectionEdgesForCell(
+    tile: AndroidTileUiState?,
+    cellType: CellType,
+    isCurrentCell: Boolean,
+    neighborCellType: (Direction) -> CellType?,
+    neighborOpenSides: (Direction) -> Set<Direction>?,
+): List<AndroidConnectionEdgeUiState> {
+    return Direction.entries.mapNotNull { direction ->
+        val tone = connectionToneFor(
+            currentOpenSides = tile?.takeUnless { it.isFaceDown }?.openSides.orEmpty(),
+            currentCellType = cellType,
+            neighborOpenSides = neighborOpenSides(direction),
+            neighborCellType = neighborCellType(direction),
+            direction = direction,
+            isCurrentCell = isCurrentCell,
+        ) ?: return@mapNotNull null
+        AndroidConnectionEdgeUiState(direction, tone)
+    }
+}
+
+private fun neighborPosition(position: Position, direction: Direction): Position? =
+    when (direction) {
+        Direction.TOP -> Position(position.col, position.row - 1)
+        Direction.RIGHT -> Position(position.col + 1, position.row)
+        Direction.BOTTOM -> Position(position.col, position.row + 1)
+        Direction.LEFT -> Position(position.col - 1, position.row)
+    }.takeIf { it.col in 0 until Board.COLS && it.row in 0 until Board.ROWS }
 
 private fun defaultSetupPlayerIds(playerCount: Int): List<Int> =
     MoguraGameController.defaultConfigs(playerCount).mapIndexed { index, config ->
