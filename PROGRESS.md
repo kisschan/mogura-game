@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-最終更新: 2026-06-27
+最終更新: 2026-06-29
 
 ## 現在の状況
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
@@ -47,8 +47,13 @@
 - [x] Phase 2: 巣ごとの固定追い出し先を定義し、追い出し処理で固定先へ移動するよう修正
 - [x] Phase 3: 強奪を移動時自動発動から、次の自分の手番以降の④選択式へ変更
 - [x] Phase 3: 強奪対象選択、強奪後のタベる/レンコウ結果処理、Android/Swingの強奪表示を追加
+- [x] Phase 4: セットアップでモグラ・巣・先手を自由選択できるように実装
+- [x] ケラの逃走面数は2面で設計者確認済みとして整理
 
 ## テスト結果
+- 最終実行日: 2026-06-28
+- 実行コマンド: `$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat :core:test :androidApp:testDebugUnitTest :desktop:test`
+- 結果: `BUILD SUCCESSFUL`（Phase 4 セットアップ自由選択実装後）
 - 最終実行日: 2026-06-27
 - 実行コマンド: `$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat :core:test :androidApp:testDebugUnitTest :desktop:test`
 - 結果: `BUILD SUCCESSFUL`（Phase 3 実装後。JDK 21 daemon toolchain は Android Studio JBR を使用）
@@ -129,7 +134,6 @@
 - `keystore.properties.example`
 
 ## TODO / 未確定・要確認
-- `Food.kt`: `// TODO: 【要確認】12-1` ケラは要件では3面逃走だが画像では3/4の2面のみ読めるため画像優先で仮実装
 - `TilePlacementEngine.kt`: `// TODO: 【要確認】3-1` 隣接に裏向きタイルがない場合の山札タイル新規配置ルール（GUIでは「移動へ進む」で暫定対応済み）
 - `TilePlacementEngine.kt`: `// TODO: 【要確認】3-2` 穴タイル配置先の選択ルール（めくったタイル / 山札タイルの選択はGUIで実装済み）
 - `moguru_requirements_v2(3).txt`: `13-3` 次の自分の手番までに相手の巣から出た場合の強奪権消滅ルール（Phase 3では「同じ相手巣に残っている場合のみ強奪可」として実装）
@@ -175,7 +179,7 @@
   - Android/Swing で「強奪」表示を追加する。
 
 ### Phase 4: セットアップとカードデータを仕上げる
-- [ ] [#16](https://github.com/kisschan/mogura-game/issues/16) セットアップ自由選択を実装する。
+- [x] [#16](https://github.com/kisschan/mogura-game/issues/16) セットアップ自由選択を実装する。
   - モグラ選択、巣選択、スタートプレイヤー選択を core/presenter/UI に通す。
   - 固定配置・固定先手の仮実装をテストから外す。
 - [ ] [#23](https://github.com/kisschan/mogura-game/issues/23) エサカード個別データを確定後に更新する。
@@ -189,7 +193,6 @@
 - [x] `PROGRESS.md` とコード内TODOを、解消した issue 番号に合わせて整理する。
 
 ## 次の作業
-- 未実装解消ロードマップの Phase 4 から着手する
+- エサカード13枚の確定逃走目・方向データを入手したら [#23](https://github.com/kisschan/mogura-game/issues/23) を実装する
 - 未確定 / 要確認ルールの確定後に仮実装を調整する
-- セットアップ自由選択は [#16](https://github.com/kisschan/mogura-game/issues/16)、エサカード個別データは [#23](https://github.com/kisschan/mogura-game/issues/23) で対応する
 - 内部テスト前にローカルでupload keyを作成し、Git管理外の `keystore.properties` を設定して署名済みAABを作成する。生成AAB/APKはGitHubへ上げず、Play Consoleへ直接アップロードする
