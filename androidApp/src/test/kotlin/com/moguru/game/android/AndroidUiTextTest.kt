@@ -73,8 +73,53 @@ class AndroidUiTextTest {
 
     @Test
     fun `action labels use plain player-facing Japanese`() {
-        assertEquals("食べる", AndroidVisibleAction.EAT.displayLabel())
-        assertEquals("巣へ持ち帰る", AndroidVisibleAction.CARRY.displayLabel())
+        assertEquals("タベる", AndroidVisibleAction.EAT.displayLabel())
+        assertEquals("レンコウ", AndroidVisibleAction.CARRY.displayLabel())
+        assertEquals("タベる（食べる）", AndroidVisibleAction.EAT.accessibilityLabel())
+        assertEquals("レンコウ（巣へ持ち帰る）", AndroidVisibleAction.CARRY.accessibilityLabel())
+    }
+
+    @Test
+    fun `board player token keeps accessibility name without visible board label`() {
+        assertNull(boardPlayerVisibleLabel("モグタ"))
+        assertEquals("モグタの駒", boardPlayerContentDescription("モグタ", isCurrent = false))
+        assertEquals("モグタの駒、現在の手番", boardPlayerContentDescription("モグタ", isCurrent = true))
+    }
+
+    @Test
+    fun `single board target becomes one primary action`() {
+        val target = AndroidBoardCellUiState(
+            position = Position(1, 1),
+            cellType = CellType.UNDERGROUND,
+            tile = null,
+            foods = emptyList(),
+            players = emptyList(),
+            highlight = AndroidHighlightTone.DIG,
+        )
+
+        assertEquals(
+            MobilePrimaryBoardAction(label = "このタイルを掘る", position = Position(1, 1)),
+            singlePrimaryBoardAction(listOf(target), TurnPhase.DIG),
+        )
+        assertNull(
+            singlePrimaryBoardAction(
+                listOf(target, target.copy(position = Position(2, 1))),
+                TurnPhase.DIG,
+            ),
+        )
+    }
+
+    @Test
+    fun `single board action is preferred over generic visible actions`() {
+        val action = MobilePrimaryBoardAction(label = "このマスへ移動", position = Position(1, 1))
+
+        assertTrue(preferSingleBoardAction(action, listOf(AndroidVisibleAction.SKIP)))
+        assertFalse(preferSingleBoardAction(null, listOf(AndroidVisibleAction.SKIP)))
+    }
+
+    @Test
+    fun `latest event strip is intentionally one line`() {
+        assertEquals(1, EVENT_STRIP_MAX_LINES)
     }
 
     @Test
@@ -154,13 +199,13 @@ class AndroidUiTextTest {
             CaptureOutcomeDisplay(
                 kind = CaptureOutcomeKind.CAPTURED,
                 diceRoll = 6,
-                message = "モグオ が ミミズ を捕獲しました。食べるか、巣へ持ち帰るか選んでください。",
+                message = "モグオ が ミミズ を捕獲しました。タベるか、レンコウするか選んでください。",
             ),
         )
 
         assertEquals(0xFFE8FFF0.toInt(), colors.containerArgb)
         assertTrue(text!!.contains("ダイス: 6"))
-        assertTrue(text.contains("巣へ持ち帰る"))
+        assertTrue(text.contains("レンコウ"))
     }
 
     @Test
@@ -174,11 +219,11 @@ class AndroidUiTextTest {
             CaptureOutcomeDisplay(
                 kind = CaptureOutcomeKind.CAPTURED,
                 diceRoll = null,
-                message = "モグオ が カブトムシの幼虫 を捕獲しました。食べるか、巣へ持ち帰るか選んでください。",
+                message = "モグオ が カブトムシの幼虫 を捕獲しました。タベるか、レンコウするか選んでください。",
             ),
         )
 
-        assertEquals("逃走なし　モグオ が カブトムシの幼虫 を捕獲しました。食べるか、巣へ持ち帰るか選んでください。", text)
+        assertEquals("逃走なし　モグオ が カブトムシの幼虫 を捕獲しました。タベるか、レンコウするか選んでください。", text)
     }
 
     @Test

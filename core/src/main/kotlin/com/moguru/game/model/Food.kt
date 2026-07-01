@@ -29,7 +29,7 @@ enum class FoodType(
 ) {
     BEETLE_LARVA(points = 1, recovery = 1, escapeCount = 0, cardCount = 4),
     EARTHWORM(points = 2, recovery = 2, escapeCount = 2, cardCount = 3),
-    // TODO: 【要確認】12-1 要件では3面逃走だが、現画像では3/4の2面のみ読めるため画像優先で仮実装。
+    // 設計者確認済み: ケラは2面逃走。
     MOLE_CRICKET(points = 2, recovery = 3, escapeCount = 2, cardCount = 3),
     CENTIPEDE(points = 3, recovery = 4, escapeCount = 4, cardCount = 2),
     FROG(points = 4, recovery = 5, escapeCount = 5, cardCount = 1),
@@ -56,7 +56,6 @@ data class FoodCard(
                     1 to EscapeDirection.TOP,
                     2 to EscapeDirection.BOTTOM,
                 )
-                // TODO: 【要確認】12-1 要件では3面逃走だが、画像上は3/4の2面のみ確認できる。
                 FoodType.MOLE_CRICKET -> mapOf(
                     3 to EscapeDirection.TOP_RIGHT,
                     4 to EscapeDirection.BOTTOM_RIGHT,

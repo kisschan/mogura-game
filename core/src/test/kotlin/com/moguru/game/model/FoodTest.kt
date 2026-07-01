@@ -72,7 +72,7 @@ class FoodTest {
     }
 
     @Test
-    fun `ケラは画像で読める3で右上4で右下へ逃走として仮実装`() {
+    fun `ケラは確認済みの2面逃走で3右上4右下へ逃走`() {
         val card = FoodCard.createDummyCards(FoodType.MOLE_CRICKET).first()
         assertEquals(
             mapOf(
