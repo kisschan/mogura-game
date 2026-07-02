@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-最終更新: 2026-06-29
+最終更新: 2026-07-03
 
 ## 現在の状況
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
@@ -49,8 +49,20 @@
 - [x] Phase 3: 強奪対象選択、強奪後のタベる/レンコウ結果処理、Android/Swingの強奪表示を追加
 - [x] Phase 4: セットアップでモグラ・巣・先手を自由選択できるように実装
 - [x] ケラの逃走面数は2面で設計者確認済みとして整理
+- [x] ユーザー追加確認を `AGENT.md` に反映し、地上マスへの穴タイル配置禁止とタイルなし地上移動を実装
+- [x] PR #28 コメント対応として、Android 4人セットアップで使用中のモグラ・巣を選んだ場合に座席同士で入れ替えるよう修正
+- [x] PR #28 コメント対応として、単一移動/捕獲ターゲットや複数捕獲対象の専用アクション行でも `スキップ` / `ターン終了` を表示するよう修正
 
 ## テスト結果
+- 最終実行日: 2026-07-03
+- 実行コマンド: `$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat :core:test :androidApp:testDebugUnitTest`
+- 結果: `BUILD SUCCESSFUL`（地上ルール修正、Androidセットアップ入れ替え、任意アクション表示修正後）
+- 最終実行日: 2026-07-03
+- 実行コマンド: `$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat :core:test`
+- 結果: `BUILD SUCCESSFUL`（地上タイル除外ヘルパー修正後のcore再確認）
+- 最終実行日: 2026-07-03
+- 実行コマンド: `$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat :androidApp:testDebugUnitTest :desktop:test`
+- 結果: `BUILD SUCCESSFUL`（core再確認後のAndroid/Swing回帰確認）
 - 最終実行日: 2026-06-28
 - 実行コマンド: `$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat :core:test :androidApp:testDebugUnitTest :desktop:test`
 - 結果: `BUILD SUCCESSFUL`（Phase 4 セットアップ自由選択実装後）
@@ -137,9 +149,7 @@
 - `TilePlacementEngine.kt`: `// TODO: 【要確認】3-1` 隣接に裏向きタイルがない場合の山札タイル新規配置ルール（GUIでは「移動へ進む」で暫定対応済み）
 - `TilePlacementEngine.kt`: `// TODO: 【要確認】3-2` 穴タイル配置先の選択ルール（めくったタイル / 山札タイルの選択はGUIで実装済み）
 - `moguru_requirements_v2(3).txt`: `13-3` 次の自分の手番までに相手の巣から出た場合の強奪権消滅ルール（Phase 3では「同じ相手巣に残っている場合のみ強奪可」として実装）
-- `GameEngine.kt`: `// TODO: 【要確認】13-5` 追い出し先に他モグラ・エサ・穴タイルがある場合の正式ルール（Phase 2では固定先への強制移動として仮実装）
 - `moguru_requirements_v2(3).txt`: `12-2` 未開示の追加ルール
-- `moguru_requirements_v2(3).txt`: `13-6` 地上と地下の接続条件
 
 ## 2026-06-20 コードレビューで起票した未実装 issue
 - [#16](https://github.com/kisschan/mogura-game/issues/16) セットアップでモグラ・巣・先手をプレイヤーが自由に選べるようにする
@@ -167,7 +177,7 @@
   - 防衛中の巣は停止先にも中継先にも含めない。
 - [x] [#20](https://github.com/kisschan/mogura-game/issues/20) 巣ごとの固定追い出し先を実装する。
   - 4つの巣に対する固定追い出し先座標を定義する。
-  - 追い出し先に駒やエサがある場合は、`13-5` の正式確定まで固定先へ強制移動する仮仕様として扱う。
+  - 追い出し先に駒やエサがある場合も、ユーザー確認に基づき固定先へ強制移動する。
 
 ### Phase 3: 強奪を正式フローへ置き換える
 - [x] [#21](https://github.com/kisschan/mogura-game/issues/21) 強奪を移動時自動発動から④選択式へ変更する。

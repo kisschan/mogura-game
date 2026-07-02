@@ -70,15 +70,32 @@ class AndroidGameViewModelTest {
     }
 
     @Test
-    fun `setup rejects duplicate mole and nest selections`() {
+    fun `setup swaps duplicate mole and nest selections`() {
         val viewModel = testViewModel()
 
         viewModel.selectPlayerMole(1, 0)
         viewModel.selectPlayerNest(1, Position(0, 1))
 
         val state = viewModel.uiState.value
-        assertEquals(listOf(0, 1), state.setupPlayers.map { it.playerId })
-        assertEquals(listOf(Position(0, 1), Position(5, 1)), state.setupPlayers.map { it.nestPosition })
+        assertEquals(listOf(1, 0), state.setupPlayers.map { it.playerId })
+        assertEquals(listOf(Position(5, 1), Position(0, 1)), state.setupPlayers.map { it.nestPosition })
+        assertTrue(state.canStartGame)
+    }
+
+    @Test
+    fun `four player setup can swap occupied mole and nest choices`() {
+        val viewModel = testViewModel()
+
+        viewModel.selectPlayerCount(4)
+        viewModel.selectPlayerMole(0, 3)
+        viewModel.selectPlayerNest(0, Position(5, 4))
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(3, 1, 2, 0), state.setupPlayers.map { it.playerId })
+        assertEquals(
+            listOf(Position(5, 4), Position(5, 1), Position(0, 4), Position(0, 1)),
+            state.setupPlayers.map { it.nestPosition },
+        )
         assertTrue(state.canStartGame)
     }
 

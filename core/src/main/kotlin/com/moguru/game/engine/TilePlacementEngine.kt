@@ -41,6 +41,7 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
         board: Board,
     ): List<Pair<Position, HoleTile>> {
         return board.getValidNeighbors(molePosition).mapNotNull { position ->
+            if (board.getCell(position)?.type == CellType.GROUND) return@mapNotNull null
             val tile = boardState.getTile(position)
             if (tile != null && tile.isFaceDown) position to tile else null
         }
@@ -53,6 +54,7 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
         board: Board,
     ): List<Pair<Position, HoleTile>> {
         return board.getValidNeighbors(molePosition).mapNotNull { position ->
+            if (board.getCell(position)?.type == CellType.GROUND) return@mapNotNull null
             boardState.getTile(position)?.let { tile -> position to tile }
         }
     }
@@ -62,11 +64,10 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
         boardState: BoardState,
         board: Board,
     ): List<Position> {
-        val currentCell = board.getCell(molePosition)
         return board.getValidNeighbors(molePosition).filter { position ->
             val tile = boardState.getTile(position)
             val cell = board.getCell(position)
-            tile != null || (cell?.type == CellType.GROUND && currentCell?.type != CellType.NEST)
+            cell?.type != CellType.GROUND && tile != null
         }
     }
 
@@ -81,7 +82,8 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
         board: Board,
     ): List<Position> {
         return board.getValidNeighbors(molePosition).filter { position ->
-            !boardState.hasTile(position) || boardState.isFaceDown(position)
+            board.getCell(position)?.type != CellType.GROUND &&
+                (!boardState.hasTile(position) || boardState.isFaceDown(position))
         }
     }
 
