@@ -769,7 +769,7 @@ class MoguraGameControllerTest {
     }
 
     @Test
-    fun `dig targets include empty ground cells along current tile open sides`() {
+    fun `dig targets exclude empty ground cells even along current tile open sides`() {
         val controller = testController()
         controller.startNewGame(2)
         val engine = controller.engine!!
@@ -784,12 +784,12 @@ class MoguraGameControllerTest {
 
         val targets = controller.digTargets().toSet()
 
-        assertTrue(ground in targets)
-        assertFalse(controller.canAdvanceFromDigWithoutTargets())
+        assertFalse(ground in targets)
+        assertTrue(controller.canAdvanceFromDigWithoutTargets())
     }
 
     @Test
-    fun `dig can place drawn tile on empty ground cell`() {
+    fun `dig cannot place drawn tile on empty ground cell`() {
         val controller = testController()
         controller.startNewGame(2)
         val engine = controller.engine!!
@@ -804,15 +804,10 @@ class MoguraGameControllerTest {
 
         val revealResult = controller.revealDigTile(ground)
 
-        assertTrue(revealResult.success)
-        assertEquals(DigTileChoice.DRAWN, controller.pendingDigTileChoice)
-        val confirmResult = controller.confirmPendingDig()
-
-        assertTrue(confirmResult.success)
-        assertEquals(TurnPhase.MOVE, engine.currentPhase)
-        val placedTile = engine.boardState.getTile(ground)!!
-        assertEquals(TileShape.L_SHAPE, placedTile.shape)
-        assertFalse(placedTile.isFaceDown)
+        assertFalse(revealResult.success)
+        assertNull(controller.pendingDigTileChoice)
+        assertNull(engine.boardState.getTile(ground))
+        assertEquals(TurnPhase.DIG, engine.currentPhase)
     }
 
     @Test

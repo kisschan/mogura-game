@@ -118,6 +118,24 @@ class AndroidUiTextTest {
     }
 
     @Test
+    fun `single board capture keeps optional end turn without duplicate capture action`() {
+        assertEquals(
+            listOf(AndroidVisibleAction.END_TURN),
+            visibleActionsAfterSingleBoardAction(
+                TurnPhase.CAPTURE,
+                listOf(AndroidVisibleAction.CAPTURE, AndroidVisibleAction.END_TURN),
+            ),
+        )
+        assertEquals(
+            listOf(AndroidVisibleAction.SKIP, AndroidVisibleAction.END_TURN),
+            visibleActionsAfterSingleBoardAction(
+                TurnPhase.MOVE,
+                listOf(AndroidVisibleAction.SKIP, AndroidVisibleAction.END_TURN),
+            ),
+        )
+    }
+
+    @Test
     fun `latest event strip is intentionally one line`() {
         assertEquals(1, EVENT_STRIP_MAX_LINES)
     }

@@ -136,18 +136,16 @@ class AndroidGameViewModel(
     fun selectPlayerMole(seatIndex: Int, playerId: Int) {
         if (seatIndex !in 0 until selectedPlayerCount) return
         if (MoguraGameController.moleOptions.none { it.playerId == playerId }) return
-        if (setupPlayerIds.withIndex().any { it.index != seatIndex && it.value == playerId }) return
 
-        setupPlayerIds = setupPlayerIds.toMutableList().also { it[seatIndex] = playerId }
+        setupPlayerIds = setupPlayerIds.swappingSelection(seatIndex, playerId)
         refresh(null)
     }
 
     fun selectPlayerNest(seatIndex: Int, nestPosition: Position) {
         if (seatIndex !in 0 until selectedPlayerCount) return
         if (nestPosition !in MoguraGameController.nestPositions) return
-        if (setupNestPositions.withIndex().any { it.index != seatIndex && it.value == nestPosition }) return
 
-        setupNestPositions = setupNestPositions.toMutableList().also { it[seatIndex] = nestPosition }
+        setupNestPositions = setupNestPositions.swappingSelection(seatIndex, nestPosition)
         refresh(null)
     }
 
@@ -500,7 +498,11 @@ internal fun connectionToneFor(
     isCurrentCell: Boolean,
 ): AndroidConnectionTone? {
     if (neighborCellType == null || neighborCellType == CellType.INVALID) return null
-    val currentHasPath = currentCellType == CellType.NEST || direction in currentOpenSides
+    val currentHasPath = when (currentCellType) {
+        CellType.NEST -> true
+        CellType.GROUND -> isCurrentCell
+        else -> direction in currentOpenSides
+    }
     if (!currentHasPath) return null
     if (!isCurrentCell) return AndroidConnectionTone.OPEN
     if (
@@ -509,7 +511,12 @@ internal fun connectionToneFor(
     ) {
         return AndroidConnectionTone.BLOCKED
     }
-    val neighborHasPath = neighborCellType == CellType.NEST || neighborOpenSides?.contains(direction.opposite()) == true
+    val neighborHasPath = when (neighborCellType) {
+        CellType.NEST,
+        CellType.GROUND,
+        -> true
+        else -> neighborOpenSides?.contains(direction.opposite()) == true
+    }
     return if (neighborHasPath) {
         AndroidConnectionTone.CONNECTED
     } else {
@@ -552,3 +559,14 @@ private fun defaultSetupPlayerIds(playerCount: Int): List<Int> =
 
 private fun defaultSetupNestPositions(playerCount: Int): List<Position> =
     MoguraGameController.defaultConfigs(playerCount).map { it.nestPosition }
+
+private fun <T> List<T>.swappingSelection(seatIndex: Int, selectedValue: T): List<T> {
+    val currentValue = getOrNull(seatIndex) ?: return this
+    val otherSeatIndex = indexOfFirst { it == selectedValue }.takeIf { it >= 0 && it != seatIndex }
+    return toMutableList().also { values ->
+        values[seatIndex] = selectedValue
+        if (otherSeatIndex != null) {
+            values[otherSeatIndex] = currentValue
+        }
+    }
+}

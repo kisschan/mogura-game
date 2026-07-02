@@ -84,22 +84,30 @@ class MovementEngine(private val board: Board) {
             return false
         }
 
-        val fromHasPath = when (fromCell.type) {
-            CellType.NEST -> true
-            else -> boardState.getTile(from)?.let { tile ->
-                !tile.isFaceDown && tile.hasOpenSide(directionFromTo)
-            } ?: false
-        }
+        val fromHasPath = hasPathTo(
+            cellType = fromCell.type,
+            tile = boardState.getTile(from),
+            direction = directionFromTo,
+        )
 
-        val toHasPath = when (toCell.type) {
-            CellType.NEST -> true
-            else -> boardState.getTile(to)?.let { tile ->
-                !tile.isFaceDown && tile.hasOpenSide(directionToFrom)
-            } ?: false
-        }
+        val toHasPath = hasPathTo(
+            cellType = toCell.type,
+            tile = boardState.getTile(to),
+            direction = directionToFrom,
+        )
 
         return fromHasPath && toHasPath
     }
+
+    private fun hasPathTo(cellType: CellType, tile: HoleTile?, direction: Direction): Boolean =
+        when (cellType) {
+            CellType.NEST,
+            CellType.GROUND,
+            -> true
+            else -> tile?.let {
+                !it.isFaceDown && it.hasOpenSide(direction)
+            } ?: false
+        }
 
     /**
      * `from` から `to` への方向を返す。隣接していなければ `null`。

@@ -308,7 +308,7 @@ private fun SetupPlayerRow(
                     name = option.name,
                     selected = selected,
                     usedByLabel = usedByOther?.let { setupUsedByLabel(it.seatIndex) },
-                    enabled = selected || usedByOther == null,
+                    enabled = true,
                     onClick = { onMoleSelected(player.seatIndex, option.playerId) },
                     modifier = Modifier.weight(1f),
                 )
@@ -330,7 +330,7 @@ private fun SetupPlayerRow(
                     position = nest,
                     selected = selected,
                     usedByLabel = usedByOther?.let { setupUsedByLabel(it.seatIndex) },
-                    enabled = selected || usedByOther == null,
+                    enabled = true,
                     onClick = { onNestSelected(player.seatIndex, nest) },
                     modifier = Modifier.weight(1f),
                 )
@@ -692,6 +692,7 @@ private fun GameplayActionBar(
         state.playState.actionAvailability.activePhase,
     )
     val preferSingleBoardAction = preferSingleBoardAction(singleBoardAction, state.visibleActions)
+    val activePhase = state.playState.actionAvailability.activePhase
     var showLogHistory by remember { mutableStateOf(!LOG_HISTORY_COLLAPSED_BY_DEFAULT) }
     Box(modifier = modifier) {
         Surface(
@@ -723,6 +724,8 @@ private fun GameplayActionBar(
                             onSelect = viewModel::selectCaptureTarget,
                             action = AndroidVisibleAction.CAPTURE,
                             onAction = viewModel::capture,
+                            extraActions = state.visibleActions.filter { it != AndroidVisibleAction.CAPTURE },
+                            onExtraAction = { action -> viewModel.performVisibleAction(action) },
                         )
                     state.playState.robberyTargets.size > 1 && state.visibleActions.contains(AndroidVisibleAction.ROB) ->
                         CompactTargetActionRow(
@@ -733,23 +736,15 @@ private fun GameplayActionBar(
                             onSelect = viewModel::selectRobberyTarget,
                             action = AndroidVisibleAction.ROB,
                             onAction = viewModel::rob,
+                            extraActions = state.visibleActions.filter { it != AndroidVisibleAction.ROB },
+                            onExtraAction = { action -> viewModel.performVisibleAction(action) },
                         )
-                    preferSingleBoardAction && singleBoardAction != null -> {
-                        Button(
-                            onClick = { viewModel.onCellClicked(singleBoardAction.position) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("primary-action")
-                                .height(COMPACT_ACTION_BUTTON_HEIGHT),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF35BC67),
-                                contentColor = Color(0xFF102F1B),
-                            ),
-                        ) {
-                            Text(singleBoardAction.label, fontSize = 14.sp, fontWeight = FontWeight.Black, maxLines = 1)
-                        }
-                    }
+                    preferSingleBoardAction && singleBoardAction != null -> CompactBoardActionRow(
+                        singleBoardAction = singleBoardAction,
+                        onBoardAction = { viewModel.onCellClicked(singleBoardAction.position) },
+                        extraActions = visibleActionsAfterSingleBoardAction(activePhase, state.visibleActions),
+                        onExtraAction = { action -> viewModel.performVisibleAction(action) },
+                    )
                     state.visibleActions.isNotEmpty() -> ActionControls(state = state, viewModel = viewModel)
                     else -> Text(
                         text = actionBarInstruction(state),
@@ -965,10 +960,12 @@ private fun CompactTargetActionRow(
     onSelect: (Int) -> Unit,
     action: AndroidVisibleAction,
     onAction: () -> Unit,
+    extraActions: List<AndroidVisibleAction> = emptyList(),
+    onExtraAction: (AndroidVisibleAction) -> Unit = {},
 ) {
     val selected = selectedIndex.takeIf { it in labels.indices } ?: 0
     val next = if (labels.isEmpty()) 0 else (selected + 1) % labels.size
-    val showTargetCycler = compactTargetActionSlotCount(labels.size) == 2
+    val showTargetCycler = labels.size > 1
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -977,9 +974,9 @@ private fun CompactTargetActionRow(
         if (showTargetCycler) {
             OutlinedButton(
                 onClick = { onSelect(next) },
-                    modifier = Modifier
-                        .weight(1.35f)
-                        .height(COMPACT_ACTION_BUTTON_HEIGHT),
+                modifier = Modifier
+                    .weight(1.35f)
+                    .height(COMPACT_ACTION_BUTTON_HEIGHT),
                 contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
                 shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(2.dp, Color(0xFF158A45)),
@@ -1008,6 +1005,57 @@ private fun CompactTargetActionRow(
             testTag = "primary-action",
             onClick = onAction,
         )
+        extraActions.forEach { extraAction ->
+            ActionButton(
+                action = extraAction,
+                modifier = Modifier.weight(1f),
+                onClick = { onExtraAction(extraAction) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactBoardActionRow(
+    singleBoardAction: MobilePrimaryBoardAction,
+    onBoardAction: () -> Unit,
+    extraActions: List<AndroidVisibleAction>,
+    onExtraAction: (AndroidVisibleAction) -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Button(
+            onClick = onBoardAction,
+            modifier = Modifier
+                .weight(1.2f)
+                .testTag("primary-action")
+                .height(COMPACT_ACTION_BUTTON_HEIGHT),
+            contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF35BC67),
+                contentColor = Color(0xFF102F1B),
+            ),
+        ) {
+            Text(
+                singleBoardAction.label,
+                fontSize = 13.sp,
+                lineHeight = 15.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        extraActions.forEach { action ->
+            ActionButton(
+                action = action,
+                modifier = Modifier.weight(1f),
+                onClick = { onExtraAction(action) },
+            )
+        }
     }
 }
 
@@ -1285,16 +1333,7 @@ private fun ActionControls(
                 action = action,
                 modifier = Modifier.weight(1f),
                 testTag = primaryTag,
-                onClick = {
-                    when (action) {
-                        AndroidVisibleAction.CAPTURE -> viewModel.capture()
-                        AndroidVisibleAction.ROB -> viewModel.rob()
-                        AndroidVisibleAction.EAT -> viewModel.eat()
-                        AndroidVisibleAction.CARRY -> viewModel.carry()
-                        AndroidVisibleAction.SKIP -> viewModel.skip()
-                        AndroidVisibleAction.END_TURN -> viewModel.finishTurn()
-                    }
-                },
+                onClick = { viewModel.performVisibleAction(action) },
             )
         }
     }
@@ -1633,6 +1672,28 @@ internal fun preferSingleBoardAction(
     singleBoardAction: MobilePrimaryBoardAction?,
     _visibleActions: List<AndroidVisibleAction>,
 ): Boolean = singleBoardAction != null
+
+internal fun visibleActionsAfterSingleBoardAction(
+    phase: TurnPhase?,
+    visibleActions: List<AndroidVisibleAction>,
+): List<AndroidVisibleAction> {
+    val consumedAction = when (phase) {
+        TurnPhase.CAPTURE -> AndroidVisibleAction.CAPTURE
+        else -> null
+    }
+    return visibleActions.filter { it != consumedAction }
+}
+
+private fun AndroidGameViewModel.performVisibleAction(action: AndroidVisibleAction) {
+    when (action) {
+        AndroidVisibleAction.CAPTURE -> capture()
+        AndroidVisibleAction.ROB -> rob()
+        AndroidVisibleAction.EAT -> eat()
+        AndroidVisibleAction.CARRY -> carry()
+        AndroidVisibleAction.SKIP -> skip()
+        AndroidVisibleAction.END_TURN -> finishTurn()
+    }
+}
 
 internal fun boardPlayerVisibleLabel(name: String): String? = null
 

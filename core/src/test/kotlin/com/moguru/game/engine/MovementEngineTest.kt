@@ -95,11 +95,11 @@ class MovementEngineTest {
     @Test
     fun `道が繋がっていなければ移動不可`() {
         val state = BoardState(board)
-        placeTile(state, Position(1, 1), TileShape.STRAIGHT)
-        placeTile(state, Position(2, 1), TileShape.STRAIGHT)
+        placeTile(state, Position(2, 2), TileShape.STRAIGHT)
+        placeTile(state, Position(3, 2), TileShape.STRAIGHT)
 
-        val reachable = engine.findReachablePositions(Position(1, 1), state, emptySet())
-        assertFalse(Position(2, 1) in reachable)
+        val reachable = engine.findReachablePositions(Position(2, 2), state, emptySet())
+        assertFalse(Position(3, 2) in reachable)
     }
 
     @Test
@@ -214,11 +214,29 @@ class MovementEngineTest {
     fun `地下と地上は道が繋がっていれば移動できる`() {
         val state = BoardState(board)
         placeTile(state, Position(1, 1), TileShape.STRAIGHT)
-        placeTile(state, Position(1, 0), TileShape.STRAIGHT)
 
         val reachable = engine.findReachablePositions(Position(1, 1), state, emptySet())
 
         assertTrue(Position(1, 0) in reachable)
+    }
+
+    @Test
+    fun `地下タイルが地上側に開いていなければ地上へ移動できない`() {
+        val state = BoardState(board)
+        placeTile(state, Position(1, 1), TileShape.STRAIGHT, Rotation.DEG_90)
+
+        val reachable = engine.findReachablePositions(Position(1, 1), state, emptySet())
+
+        assertFalse(Position(1, 0) in reachable)
+    }
+
+    @Test
+    fun `地上同士は穴タイルなしで移動できる`() {
+        val state = BoardState(board)
+
+        val reachable = engine.findReachablePositions(Position(1, 0), state, emptySet())
+
+        assertTrue(Position(2, 0) in reachable)
     }
 
     @Test

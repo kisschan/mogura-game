@@ -416,8 +416,6 @@ class GameEngine(
 
     /**
      * 巣に戻った際に侵入者を追い出す。
-     *
-     * TODO: 【要確認】13-5 追い出し先の占有時は固定先への強制移動として仮実装。
      */
     fun evictFromNest(owner: Player): Boolean {
         owner.moveTo(owner.nestPosition)

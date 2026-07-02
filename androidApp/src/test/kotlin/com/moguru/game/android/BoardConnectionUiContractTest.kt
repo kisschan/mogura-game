@@ -104,6 +104,21 @@ class BoardConnectionUiContractTest {
     }
 
     @Test
+    fun `current underground edge treats ground as connected without a ground tile`() {
+        assertEquals(
+            AndroidConnectionTone.CONNECTED,
+            connectionToneFor(
+                currentOpenSides = setOf(Direction.TOP),
+                currentCellType = CellType.UNDERGROUND,
+                neighborOpenSides = null,
+                neighborCellType = CellType.GROUND,
+                direction = Direction.TOP,
+                isCurrentCell = true,
+            ),
+        )
+    }
+
+    @Test
     fun `connected and blocked ports are visually stronger than open ports`() {
         assertTrue(connectionPortStrokeWidth(AndroidConnectionTone.CONNECTED) > connectionPortStrokeWidth(AndroidConnectionTone.OPEN))
         assertTrue(connectionPortStrokeWidth(AndroidConnectionTone.BLOCKED) > connectionPortStrokeWidth(AndroidConnectionTone.OPEN))
