@@ -196,6 +196,7 @@ class MoguraGameController(
         private set
 
     private val robberyVisits = mutableMapOf<Int, RobberyVisit>()
+    private val ownNestEatEligiblePlayers = mutableSetOf<Int>()
 
     private val messages = ArrayDeque<String>()
     val logs: List<String> get() = messages.toList()
@@ -222,6 +223,7 @@ class MoguraGameController(
         val phase = current?.currentPhase
         val isPlaying = current?.gameState == GameState.PLAYING
         val hasPendingDecision = phase == TurnPhase.DECIDE && pendingDecision != null
+        val hasOwnNestFoodToEat = isPlaying && canEatOwnNestStoredFood()
         val hasPendingRobberyChoice = isPlaying && phase == TurnPhase.DECIDE && canRobbery()
         val hasUpcomingRobberyChoice = isPlaying && (phase == TurnPhase.MOVE || phase == TurnPhase.CAPTURE) &&
             hasRobberyOpportunityForCurrentPlayer()
@@ -244,7 +246,7 @@ class MoguraGameController(
             pendingDecisionSource = pendingFoodDecisionSource,
             actionAvailability = ActionAvailability(
                 canCapture = isPlaying && canCapture() && pendingCaptureRoll == null,
-                canEat = isPlaying && hasPendingDecision,
+                canEat = isPlaying && (hasPendingDecision || hasOwnNestFoodToEat),
                 canCarry = isPlaying && hasPendingDecision,
                 canRob = hasPendingRobberyChoice,
                 canSkip = isPlaying && !hasPendingDecision && !hasPendingRobberyChoice && pendingCaptureRoll == null &&
@@ -284,6 +286,7 @@ class MoguraGameController(
         selectedCaptureFoodIndex = null
         selectedRobberyFoodIndex = null
         robberyVisits.clear()
+        ownNestEatEligiblePlayers.clear()
         messages.clear()
         addLog("${configs.size}人プレイで開始しました。")
         addLog("${currentPlayer?.name} の番です。隣の穴タイルを掘ってください。")
@@ -467,6 +470,9 @@ class MoguraGameController(
         player.moveTo(position)
         selectedCaptureFoodIndex = null
         selectedRobberyFoodIndex = null
+        if (position != player.nestPosition) {
+            ownNestEatEligiblePlayers.remove(player.id)
+        }
         updateRobberyVisitAfterMove(player)
         addLog("${player.name} が ${position.label()} に移動しました。")
         resolveCurrentPlayerPositionEffects()
@@ -674,12 +680,16 @@ class MoguraGameController(
     fun eatPendingFood(): GameActionResult {
         val current = engine ?: return GameActionResult(false, "先にゲームを開始してください。")
         val player = currentPlayer ?: return GameActionResult(false, "現在のプレイヤーがいません。")
-        val decision = pendingDecision
-            ?: return GameActionResult(false, "タベるエサがありません。")
-        val food = decision.food
         if (current.currentPhase != TurnPhase.DECIDE) {
-            return GameActionResult(false, "タベるのは捕獲または強奪後だけです。")
+            return GameActionResult(false, "タベるのは捕獲・強奪後、または自分の巣に戻った直後だけです。")
         }
+
+        val decision = pendingDecision
+        if (decision == null) {
+            return eatOwnNestStoredFood(current, player)
+        }
+
+        val food = decision.food
 
         player.heal(food.type.recovery)
         current.discardFood(food)
@@ -689,6 +699,23 @@ class MoguraGameController(
         val prefix = if (decision.source == FoodDecisionSource.ROBBERY) "強奪した " else ""
         addLog("${player.name} が $prefix${food.type.displayName()} をタベました。体力を ${food.type.recovery} 回復しました。")
         return GameActionResult(true, "エサをタベました。")
+    }
+
+    private fun eatOwnNestStoredFood(current: GameEngine, player: Player): GameActionResult {
+        if (!canEatOwnNestStoredFood()) {
+            return GameActionResult(false, "タベるエサがありません。")
+        }
+
+        val food = player.removeStoredFoodAt(0)
+            ?: return GameActionResult(false, "タベるエサがありません。")
+        player.heal(food.type.recovery)
+        current.discardFood(food)
+        ownNestEatEligiblePlayers.remove(player.id)
+        selectedRobberyFoodIndex = null
+        captureOutcome = null
+        current.advancePhase()
+        addLog("${player.name} が巣の ${food.type.displayName()} をタベました。体力を ${food.type.recovery} 回復し、${food.type.points}点を失いました。")
+        return GameActionResult(true, "巣のエサをタベました。")
     }
 
     fun carryPendingFood(): GameActionResult {
@@ -742,6 +769,12 @@ class MoguraGameController(
             addLog("${currentPlayer?.name} は強奪を選べます。")
             return GameActionResult(true, "強奪を選べます。")
         }
+        if (current.currentPhase == TurnPhase.CAPTURE && hasOwnNestStoredFoodOpportunityForCurrentPlayer()) {
+            selectedCaptureFoodIndex = null
+            current.enterDecisionPhase()
+            addLog("${currentPlayer?.name} は巣のエサをタベられます。")
+            return GameActionResult(true, "巣のエサをタベられます。")
+        }
         if (current.currentPhase == TurnPhase.DECIDE && pendingDecision != null) {
             return GameActionResult(false, "タベるか、レンコウするか選んでください。")
         }
@@ -790,7 +823,7 @@ class MoguraGameController(
             TurnPhase.DIG -> pendingDigPlacement != null || digTargets().isNotEmpty()
             TurnPhase.MOVE -> moveTargets().isNotEmpty()
             TurnPhase.CAPTURE -> canCapture() || pendingCaptureRoll != null
-            TurnPhase.DECIDE -> pendingDecision != null || canRobbery()
+            TurnPhase.DECIDE -> pendingDecision != null || canRobbery() || canEatOwnNestStoredFood()
             TurnPhase.END -> captureOutcome != null
         }
     }
@@ -818,6 +851,7 @@ class MoguraGameController(
         selectedCaptureFoodIndex = null
         captureOutcome = null
         resolveHomecoming(player)
+        ownNestEatEligiblePlayers.remove(player.id)
         current.endTurn()
         addLog("${player.name} の番を終了しました。体力: ${player.health}")
 
@@ -856,6 +890,20 @@ class MoguraGameController(
         pendingDecision == null &&
             pendingCaptureRoll == null &&
             robberyCandidateForCurrentPlayer() != null
+
+    private fun canEatOwnNestStoredFood(): Boolean {
+        val current = engine ?: return false
+        return current.currentPhase == TurnPhase.DECIDE && hasOwnNestStoredFoodOpportunityForCurrentPlayer()
+    }
+
+    private fun hasOwnNestStoredFoodOpportunityForCurrentPlayer(): Boolean {
+        val player = currentPlayer ?: return false
+        return pendingDecision == null &&
+            pendingCaptureRoll == null &&
+            player.id in ownNestEatEligiblePlayers &&
+            player.position == player.nestPosition &&
+            player.storedFoods.isNotEmpty()
+    }
 
     private fun robberyCandidateForCurrentPlayer(): RobberyCandidate? {
         clearStaleRobberyVisits()
@@ -933,6 +981,10 @@ class MoguraGameController(
 
         if (current.evictFromNest(player)) {
             addLog("${player.name} が巣を守り、侵入者を追い出しました。")
+        }
+
+        if (player.storedFoods.isNotEmpty()) {
+            ownNestEatEligiblePlayers.add(player.id)
         }
     }
 

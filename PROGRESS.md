@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-最終更新: 2026-07-03
+最終更新: 2026-07-04
 
 ## 現在の状況
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
@@ -52,8 +52,20 @@
 - [x] ユーザー追加確認を `AGENT.md` に反映し、地上マスへの穴タイル配置禁止とタイルなし地上移動を実装
 - [x] PR #28 コメント対応として、Android 4人セットアップで使用中のモグラ・巣を選んだ場合に座席同士で入れ替えるよう修正
 - [x] PR #28 コメント対応として、単一移動/捕獲ターゲットや複数捕獲対象の専用アクション行でも `スキップ` / `ターン終了` を表示するよう修正
+- [x] 新規AABリリース用にAndroid `versionCode` / `versionName` を `4` に更新し、release bundleを作成
+- [x] 2026-07-04共有写真の追加ルールを `moguru_requirements_v2(3).txt` / `AGENT.md` / `CLAUDE.md` に反映し、旧 `12-2` と強奪関連の要確認を解消
+- [x] 自分の巣に戻った手番で、巣に保存済みのエサを1匹タベられるよう修正
 
 ## テスト結果
+- 最終実行日: 2026-07-04
+- 実行コマンド: `$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat :core:test`
+- 結果: `BUILD SUCCESSFUL`（共有写真ルール反映、自分の巣エサのタベる処理追加後）
+- 最終実行日: 2026-07-04
+- 実行コマンド: `$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat :androidApp:testDebugUnitTest :desktop:test`
+- 結果: `BUILD SUCCESSFUL`（controllerのアクション表示変更後のAndroid/Swing回帰確認）
+- 最終実行日: 2026-07-03
+- 実行コマンド: `$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat :androidApp:testDebugUnitTest :androidApp:bundleRelease`
+- 結果: `BUILD SUCCESSFUL`（Android `versionCode` / `versionName` を `4` に更新後、`androidApp/build/outputs/bundle/release/androidApp-release.aab` を生成）
 - 最終実行日: 2026-07-03
 - 実行コマンド: `$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat :core:test :androidApp:testDebugUnitTest`
 - 結果: `BUILD SUCCESSFUL`（地上ルール修正、Androidセットアップ入れ替え、任意アクション表示修正後）
@@ -146,10 +158,7 @@
 - `keystore.properties.example`
 
 ## TODO / 未確定・要確認
-- `TilePlacementEngine.kt`: `// TODO: 【要確認】3-1` 隣接に裏向きタイルがない場合の山札タイル新規配置ルール（GUIでは「移動へ進む」で暫定対応済み）
-- `TilePlacementEngine.kt`: `// TODO: 【要確認】3-2` 穴タイル配置先の選択ルール（めくったタイル / 山札タイルの選択はGUIで実装済み）
-- `moguru_requirements_v2(3).txt`: `13-3` 次の自分の手番までに相手の巣から出た場合の強奪権消滅ルール（Phase 3では「同じ相手巣に残っている場合のみ強奪可」として実装）
-- `moguru_requirements_v2(3).txt`: `12-2` 未開示の追加ルール
+- `moguru_requirements_v2(3).txt`: `12-1` 各エサカード13枚の具体的な逃走ダイス目と矢印方向
 
 ## 2026-06-20 コードレビューで起票した未実装 issue
 - [#16](https://github.com/kisschan/mogura-game/issues/16) セットアップでモグラ・巣・先手をプレイヤーが自由に選べるようにする
@@ -204,5 +213,4 @@
 
 ## 次の作業
 - エサカード13枚の確定逃走目・方向データを入手したら [#23](https://github.com/kisschan/mogura-game/issues/23) を実装する
-- 未確定 / 要確認ルールの確定後に仮実装を調整する
-- 内部テスト前にローカルでupload keyを作成し、Git管理外の `keystore.properties` を設定して署名済みAABを作成する。生成AAB/APKはGitHubへ上げず、Play Consoleへ直接アップロードする
+- 生成AAB/APKはGitHubへ上げず、Play Consoleへ直接アップロードする
