@@ -983,7 +983,7 @@ class MoguraGameController(
             addLog("${player.name} が巣を守り、侵入者を追い出しました。")
         }
 
-        if (player.storedFoods.isNotEmpty()) {
+        if (player.storedFoods.isNotEmpty() && current.checkWinCondition() == null) {
             ownNestEatEligiblePlayers.add(player.id)
         }
     }
@@ -1005,7 +1005,7 @@ class MoguraGameController(
 
     private fun digDirectionsFromCurrentPosition(current: GameEngine, position: Position): Set<Direction> {
         val cell = current.board.getCell(position) ?: return emptySet()
-        if (cell.type == CellType.NEST) {
+        if (cell.type == CellType.NEST || cell.type == CellType.GROUND) {
             return Direction.entries.toSet()
         }
 

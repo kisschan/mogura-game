@@ -713,6 +713,37 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `winning homecoming does not allow own nest eating before game over`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        player.carryFood(FoodCard(FoodType.CENTIPEDE, emptyMap(), isFaceDown = false))
+        player.storeFood()
+        player.carryFood(FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false))
+        player.moveTo(Position(1, 1))
+        engine.boardState.placeTile(
+            Position(1, 1),
+            HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+        )
+        engine.advancePhase()
+
+        val moveHome = controller.moveTo(player.nestPosition)
+        val actionsAfterHomecoming = controller.playScreenUiState().actionAvailability
+        val skipCapture = controller.skipPhase()
+        val finish = controller.finishTurn()
+
+        assertTrue(moveHome.success)
+        assertEquals(4, player.score)
+        assertEquals(TurnPhase.CAPTURE, actionsAfterHomecoming.activePhase)
+        assertFalse(actionsAfterHomecoming.canEat)
+        assertTrue(skipCapture.success)
+        assertTrue(finish.success)
+        assertEquals(GameState.FINISHED, engine.gameState)
+        assertEquals(player, engine.checkWinCondition())
+    }
+
+    @Test
     fun `dig phase cannot be skipped`() {
         val controller = testController()
         controller.startNewGame(2)
@@ -737,6 +768,23 @@ class MoguraGameControllerTest {
         assertTrue(controller.digTargets().isEmpty())
         assertTrue(result.success)
         assertEquals(TurnPhase.MOVE, engine.currentPhase)
+    }
+
+    @Test
+    fun `dig phase on surface can dig adjacent underground tile`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val target = Position(1, 1)
+        engine.boardState.clear()
+        engine.boardState.placeTile(target, HoleTile(TileShape.STRAIGHT).flip())
+        player.moveTo(Position(1, 0))
+
+        val targets = controller.digTargets()
+
+        assertEquals(listOf(target), targets)
+        assertFalse(controller.canAdvanceFromDigWithoutTargets())
     }
 
     @Test
