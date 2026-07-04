@@ -679,6 +679,40 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `stored food in own nest can be eaten after returning home`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val stored = FoodCard(FoodType.MOLE_CRICKET, emptyMap(), isFaceDown = false)
+        repeat(5) { player.reduceHealth(isOnSurface = false) }
+        player.carryFood(stored)
+        player.storeFood()
+        player.moveTo(Position(1, 1))
+        engine.boardState.placeTile(
+            Position(1, 1),
+            HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+        )
+        engine.advancePhase()
+
+        val moveHome = controller.moveTo(player.nestPosition)
+        val enterDecide = controller.skipPhase()
+        val actions = controller.playScreenUiState().actionAvailability
+        val eat = controller.eatPendingFood()
+
+        assertTrue(moveHome.success)
+        assertTrue(enterDecide.success)
+        assertEquals(TurnPhase.DECIDE, actions.activePhase)
+        assertTrue(actions.canEat)
+        assertFalse(actions.canCarry)
+        assertTrue(eat.success)
+        assertEquals(11, player.health)
+        assertTrue(player.storedFoods.isEmpty())
+        assertEquals(0, player.score)
+        assertEquals(TurnPhase.END, engine.currentPhase)
+    }
+
+    @Test
     fun `dig phase cannot be skipped`() {
         val controller = testController()
         controller.startNewGame(2)

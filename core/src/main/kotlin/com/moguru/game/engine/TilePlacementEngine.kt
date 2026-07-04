@@ -33,7 +33,7 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
     /**
      * モグラに隣接する裏向きタイルを返す。
      *
-     * TODO: 【要確認】3-1 隣接に裏向きタイルがない場合の掘る処理は仮実装。
+     * 隣接する既存タイルが1枚もない場合は、掘る処理を行わず移動へ進む。
      */
     fun getAdjacentFaceDownTiles(
         molePosition: Position,
@@ -74,7 +74,7 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
     /**
      * タイルを配置可能なマスを返す。
      *
-     * TODO: 【要確認】3-2 配置先は隣接4方向から自由選択として仮実装。
+     * 配置先はモグラに隣接する、既存穴タイルのある地中マスに限る。
      */
     fun getPlaceablePositions(
         molePosition: Position,
