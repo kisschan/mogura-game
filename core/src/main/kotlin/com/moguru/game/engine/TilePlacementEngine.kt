@@ -33,7 +33,7 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
     /**
      * モグラに隣接する裏向きタイルを返す。
      *
-     * TODO: 【要確認】3-1 隣接に裏向きタイルがない場合の掘る処理は仮実装。
+     * 隣接する既存タイルが1枚もない場合は、掘る処理を行わず移動へ進む。
      */
     fun getAdjacentFaceDownTiles(
         molePosition: Position,
@@ -41,6 +41,7 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
         board: Board,
     ): List<Pair<Position, HoleTile>> {
         return board.getValidNeighbors(molePosition).mapNotNull { position ->
+            if (board.getCell(position)?.type == CellType.GROUND) return@mapNotNull null
             val tile = boardState.getTile(position)
             if (tile != null && tile.isFaceDown) position to tile else null
         }
@@ -53,6 +54,7 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
         board: Board,
     ): List<Pair<Position, HoleTile>> {
         return board.getValidNeighbors(molePosition).mapNotNull { position ->
+            if (board.getCell(position)?.type == CellType.GROUND) return@mapNotNull null
             boardState.getTile(position)?.let { tile -> position to tile }
         }
     }
@@ -62,18 +64,17 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
         boardState: BoardState,
         board: Board,
     ): List<Position> {
-        val currentCell = board.getCell(molePosition)
         return board.getValidNeighbors(molePosition).filter { position ->
             val tile = boardState.getTile(position)
             val cell = board.getCell(position)
-            tile != null || (cell?.type == CellType.GROUND && currentCell?.type != CellType.NEST)
+            cell?.type != CellType.GROUND && tile != null
         }
     }
 
     /**
      * タイルを配置可能なマスを返す。
      *
-     * TODO: 【要確認】3-2 配置先は隣接4方向から自由選択として仮実装。
+     * 配置先はモグラに隣接する、既存穴タイルのある地中マスに限る。
      */
     fun getPlaceablePositions(
         molePosition: Position,
@@ -81,7 +82,8 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
         board: Board,
     ): List<Position> {
         return board.getValidNeighbors(molePosition).filter { position ->
-            !boardState.hasTile(position) || boardState.isFaceDown(position)
+            board.getCell(position)?.type != CellType.GROUND &&
+                (!boardState.hasTile(position) || boardState.isFaceDown(position))
         }
     }
 

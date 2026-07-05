@@ -54,7 +54,7 @@ class TilePlacementEngineTest {
         val state = BoardState(board)
         val engine = TilePlacementEngine(shuffler)
 
-        state.placeTile(Position(1, 0), HoleTile(TileShape.STRAIGHT))
+        state.placeTile(Position(2, 1), HoleTile(TileShape.STRAIGHT))
         state.placeTile(Position(1, 2), HoleTile(TileShape.L_SHAPE))
 
         val faceDownNeighbors = engine.getAdjacentFaceDownTiles(Position(1, 1), state, board)
@@ -100,8 +100,21 @@ class TilePlacementEngineTest {
         val molePosition = Position(1, 1)
 
         val placeable = engine.getPlaceablePositions(molePosition, state, board)
-        val expected = board.getValidNeighbors(molePosition)
+        val expected = board.getValidNeighbors(molePosition).filter { it.row != 0 }
         assertTrue(placeable.all { it in expected })
+    }
+
+    @Test
+    fun `地上マスには穴タイルを配置できない`() {
+        val state = BoardState(board)
+        val engine = TilePlacementEngine(shuffler)
+        val molePosition = Position(1, 1)
+
+        val diggable = engine.getDiggableAdjacentPositions(molePosition, state, board)
+        val placeable = engine.getPlaceablePositions(molePosition, state, board)
+
+        assertFalse(Position(1, 0) in diggable)
+        assertFalse(Position(1, 0) in placeable)
     }
 
     @Test

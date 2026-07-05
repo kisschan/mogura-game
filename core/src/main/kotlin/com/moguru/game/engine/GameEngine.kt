@@ -17,7 +17,7 @@ enum class TurnPhase {
     DIG,      // 1. 掘る
     MOVE,     // 2. 移動
     CAPTURE,  // 3. 捕獲
-    DECIDE,   // 4. タベる or レンコウ
+    DECIDE,   // 4. 食べる or 巣へ持ち帰る
     END,      // 5. ターン終了
 }
 
@@ -45,7 +45,11 @@ sealed class CaptureResult {
 /**
  * プレイヤー設定。セットアップ時に使用する。
  */
-data class PlayerConfig(val name: String, val nestPosition: Position)
+data class PlayerConfig(
+    val name: String,
+    val nestPosition: Position,
+    val playerId: Int? = null,
+)
 
 /**
  * ターン進行とゲーム状態を管理するエンジン。
@@ -90,8 +94,8 @@ class GameEngine(
     private var lastCaptureSuccess = false
 
     /** ゲームを初期化する。 */
-    fun setupGame(configs: List<PlayerConfig>) {
-        require(configs.size == playerCount) { "プレイヤー数が一致しません" }
+    fun setupGame(configs: List<PlayerConfig>, startPlayerIndex: Int = 0) {
+        validateSetupConfigs(configs, startPlayerIndex)
 
         players.clear()
         boardState.clear()
@@ -100,11 +104,17 @@ class GameEngine(
         foodDiscard.clear()
         tilePlacementEngine.drawPile.clear()
         tilePlacementEngine.discardPile.clear()
-        currentPlayerIndex = 0
+        currentPlayerIndex = startPlayerIndex
         lastCaptureSuccess = false
 
         configs.forEachIndexed { index, config ->
-            players.add(Player(id = index, name = config.name, nestPosition = config.nestPosition))
+            players.add(
+                Player(
+                    id = config.playerId ?: index,
+                    name = config.name,
+                    nestPosition = config.nestPosition,
+                ),
+            )
         }
 
         val allTiles = shuffler.shuffle(HoleTile.createFullSet())
@@ -134,6 +144,27 @@ class GameEngine(
 
         gameState = GameState.PLAYING
         currentPhase = TurnPhase.DIG
+    }
+
+    private fun validateSetupConfigs(configs: List<PlayerConfig>, startPlayerIndex: Int) {
+        require(configs.size == playerCount) { "プレイヤー数が一致しません" }
+        require(startPlayerIndex in configs.indices) { "先手プレイヤーが選択範囲外です" }
+
+        val nestPositions = configs.map { it.nestPosition }
+        require(nestPositions.all { board.getCell(it)?.type == CellType.NEST }) {
+            "巣は4箇所の巣マスから選んでください"
+        }
+        require(nestPositions.toSet().size == nestPositions.size) {
+            "同じ巣を複数プレイヤーに割り当てることはできません"
+        }
+
+        val playerIds = configs.mapIndexed { index, config -> config.playerId ?: index }
+        require(playerIds.all { it in 0 until Board.NEST_POSITIONS.size }) {
+            "モグラIDは0〜${Board.NEST_POSITIONS.size - 1}で指定してください"
+        }
+        require(playerIds.toSet().size == playerIds.size) {
+            "同じモグラを複数プレイヤーに割り当てることはできません"
+        }
     }
 
     /** フェーズを次へ進める。 */
@@ -385,8 +416,6 @@ class GameEngine(
 
     /**
      * 巣に戻った際に侵入者を追い出す。
-     *
-     * TODO: 【要確認】13-5 追い出し先の占有時は固定先への強制移動として仮実装。
      */
     fun evictFromNest(owner: Player): Boolean {
         owner.moveTo(owner.nestPosition)

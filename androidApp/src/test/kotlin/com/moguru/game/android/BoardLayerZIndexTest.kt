@@ -7,6 +7,14 @@ class BoardLayerZIndexTest {
     @Test
     fun `food cards render below player tokens on occupied cells`() {
         assertTrue(
+            BOARD_TILE_Z < BOARD_CONNECTION_PORT_Z,
+            "Connection ports should render above tile art.",
+        )
+        assertTrue(
+            BOARD_CONNECTION_PORT_Z < BOARD_FOOD_Z,
+            "Connection ports should not cover food cards.",
+        )
+        assertTrue(
             BOARD_TILE_Z < BOARD_FOOD_Z,
             "Food cards should remain above board tiles.",
         )
@@ -17,6 +25,10 @@ class BoardLayerZIndexTest {
         assertTrue(
             BOARD_PLAYER_BASE_Z < BOARD_CURRENT_PLAYER_OUTLINE_Z,
             "Current-player outline should stay above player tokens.",
+        )
+        assertTrue(
+            BOARD_CURRENT_CELL_RING_Z < BOARD_CURRENT_PLAYER_OUTLINE_Z,
+            "Current-cell ring should not cover the current-player token outline.",
         )
         assertTrue(
             BOARD_CURRENT_PLAYER_OUTLINE_Z < BOARD_CLICK_TARGET_Z,
