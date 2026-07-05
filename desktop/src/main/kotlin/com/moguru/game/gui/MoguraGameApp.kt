@@ -1,5 +1,6 @@
 package com.moguru.game.gui
 
+import com.moguru.game.engine.PlayerConfig
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Board
 import com.moguru.game.model.CellType
@@ -60,6 +61,30 @@ fun main() {
     }
 }
 
+internal enum class BoardPaintLayer {
+    HIGHLIGHT,
+    DIG_DIRECTION,
+    FOOD,
+    PLAYERS,
+    CURRENT_PLAYER_OUTLINE,
+    HOVER_PREVIEW,
+}
+
+internal val boardPaintLayerOrder = listOf(
+    BoardPaintLayer.HIGHLIGHT,
+    BoardPaintLayer.DIG_DIRECTION,
+    BoardPaintLayer.FOOD,
+    BoardPaintLayer.PLAYERS,
+    BoardPaintLayer.CURRENT_PLAYER_OUTLINE,
+    BoardPaintLayer.HOVER_PREVIEW,
+)
+
+internal fun boardPaintRenderPlan(): List<BoardPaintLayer> = boardPaintLayerOrder
+
+internal const val BOARD_HIGHLIGHT_FILL_ALPHA = 52
+internal val DESKTOP_ROTATION_BUTTON_SIZE = Dimension(52, 40)
+internal const val DESKTOP_SHOW_BUTTON_FOCUS = true
+
 class MoguraGameFrame(
     private val controller: MoguraGameController,
     private val backgroundMusic: BackgroundMusicPlayer = defaultBackgroundMusicPlayer(BACKGROUND_MUSIC_PATH),
@@ -71,12 +96,12 @@ class MoguraGameFrame(
     private val statusLabel = JLabel()
     private val diceLabel = JLabel("ダイス", SwingConstants.CENTER)
     private val logArea = JTextArea()
-    private val digGuideButton = JButton("掘る")
-    private val moveGuideButton = JButton("移動")
+    private val digGuideButton = JButton("掘る候補")
+    private val moveGuideButton = JButton("移動候補")
     private val captureButton = JButton("捕獲")
     private val robButton = JButton("強奪")
-    private val eatButton = JButton("タベる")
-    private val carryButton = JButton("レンコウ")
+    private val eatButton = JButton("食べる")
+    private val carryButton = JButton("巣へ持ち帰る")
     private val skipButton = JButton("スキップ")
     private val endTurnButton = JButton("ターン終了")
     private val newGameButton = JButton("新しいゲーム")
@@ -119,8 +144,8 @@ class MoguraGameFrame(
         root.add(createLogPanel(), BorderLayout.SOUTH)
 
         newGameButton.addActionListener { promptNewGame() }
-        digGuideButton.addActionListener { showStatus(phaseHelp(controller.engine?.currentPhase)) }
-        moveGuideButton.addActionListener { showStatus(phaseHelp(controller.engine?.currentPhase)) }
+        digGuideButton.addActionListener { showCurrentPhaseHelp() }
+        moveGuideButton.addActionListener { showCurrentPhaseHelp() }
         captureButton.addActionListener { runAction { captureSelectedOrPromptImmediately() } }
         robButton.addActionListener { runAction { robSelectedOrPrompt() } }
         eatButton.addActionListener { runAction { controller.eatPendingFood() } }
@@ -267,6 +292,9 @@ class MoguraGameFrame(
         rotationButtons.forEach { (rotation, button) ->
             button.font = button.font.deriveFont(Font.BOLD, 11f)
             button.margin = java.awt.Insets(2, 5, 2, 5)
+            button.preferredSize = DESKTOP_ROTATION_BUTTON_SIZE
+            button.minimumSize = DESKTOP_ROTATION_BUTTON_SIZE
+            button.isFocusPainted = DESKTOP_SHOW_BUTTON_FOCUS
             rotationGroup.add(button)
             rotationPanel.add(button)
             button.addActionListener {
@@ -292,7 +320,7 @@ class MoguraGameFrame(
         styleActionButton(captureButton, "現在地のエサを捕獲")
         styleActionButton(robButton, "相手の巣からエサを強奪")
         styleActionButton(eatButton, "保留中のエサを食べる")
-        styleActionButton(carryButton, "保留中のエサを持つ")
+        styleActionButton(carryButton, "保留中のエサを巣へ持ち帰る")
         styleActionButton(skipButton, "可能なフェーズをスキップ")
         styleActionButton(endTurnButton, "現在のターンを終了")
 
@@ -352,7 +380,7 @@ class MoguraGameFrame(
         button.horizontalTextPosition = SwingConstants.CENTER
         button.background = Color(0xFFFCF2)
         button.isOpaque = true
-        button.isFocusPainted = false
+        button.isFocusPainted = DESKTOP_SHOW_BUTTON_FOCUS
     }
 
     private fun styleActionButton(button: JButton, tooltip: String) {
@@ -363,7 +391,7 @@ class MoguraGameFrame(
         button.background = Color(0xFFF1D4)
         button.border = BorderFactory.createLineBorder(Color(0xA88455), 2)
         button.isOpaque = true
-        button.isFocusPainted = false
+        button.isFocusPainted = DESKTOP_SHOW_BUTTON_FOCUS
     }
 
     private fun updateActionButtonStyle(button: JButton, active: Boolean, accent: Color = Color(0x35BC67)) {
@@ -390,8 +418,53 @@ class MoguraGameFrame(
             choices,
             choices.first(),
         ) as? String ?: choices.first()
+        val playerCount = choice.toInt()
+        val remainingMoles = MoguraGameController.moleOptions.toMutableList()
+        val remainingNests = MoguraGameController.nestPositions.toMutableList()
+        val configs = mutableListOf<PlayerConfig>()
 
-        controller.startNewGame(choice.toInt())
+        repeat(playerCount) { index ->
+            val moleLabels = remainingMoles.map { it.name }.toTypedArray()
+            val moleChoice = JOptionPane.showInputDialog(
+                this,
+                "P${index + 1} のモグラを選んでください",
+                "モグラ選択",
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                moleLabels,
+                moleLabels.first(),
+            ) as? String ?: return
+            val mole = remainingMoles.removeAt(moleLabels.indexOf(moleChoice).coerceAtLeast(0))
+
+            val nestLabels = remainingNests.map(::nestChoiceLabel).toTypedArray()
+            val nestChoice = JOptionPane.showInputDialog(
+                this,
+                "P${index + 1} の巣を選んでください",
+                "巣選択",
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                nestLabels,
+                nestLabels.first(),
+            ) as? String ?: return
+            val nest = remainingNests.removeAt(nestLabels.indexOf(nestChoice).coerceAtLeast(0))
+            configs.add(PlayerConfig(mole.name, nest, playerId = mole.playerId))
+        }
+
+        val startLabels = configs.mapIndexed { index, config ->
+            "P${index + 1}: ${config.name}"
+        }.toTypedArray()
+        val startChoice = JOptionPane.showInputDialog(
+            this,
+            "先手プレイヤーを選んでください",
+            "先手選択",
+            JOptionPane.QUESTION_MESSAGE,
+            null,
+            startLabels,
+            startLabels.first(),
+        ) as? String ?: startLabels.first()
+        val startPlayerIndex = startLabels.indexOf(startChoice).takeIf { it >= 0 } ?: 0
+
+        controller.startNewGame(configs, startPlayerIndex)
         backgroundMusic.playLooping()
         refresh()
     }
@@ -492,10 +565,11 @@ class MoguraGameFrame(
         val canAdvanceFromDig = controller.canAdvanceFromDigWithoutTargets()
 
         currentPlayerPanel.render(uiState.currentPlayer)
-        val statusText = controller.pendingFoodDecision?.let { food ->
-            val prefix = if (uiState.pendingDecisionSource == FoodDecisionSource.ROBBERY) "強奪した " else ""
-            "${prefix}${food.type.displayName()} をタベるかレンコウしてください。"
-        } ?: if (canAdvanceFromDig) {
+        val statusText = uiState.captureOutcome?.let(::desktopCaptureOutcomeStatus)
+            ?: controller.pendingFoodDecision?.let { food ->
+                val prefix = if (uiState.pendingDecisionSource == FoodDecisionSource.ROBBERY) "強奪した " else ""
+                "${prefix}${food.type.displayName()} を食べるか、巣へ持ち帰るか選んでください。"
+            } ?: if (canAdvanceFromDig) {
             "掘れる穴タイルがありません。移動へ進んでください。"
         } else if (actions.canRob) {
             "強奪するエサを選んでください。"
@@ -575,21 +649,35 @@ class MoguraGameFrame(
         statusLabel.text = "<html><body style='width:300px'>${escapeHtml(message)}</body></html>"
     }
 
+    private fun showCurrentPhaseHelp() {
+        showStatus(desktopGuideStatusText(controller.playScreenUiState().captureOutcome, controller.engine?.currentPhase))
+    }
+
     private fun escapeHtml(text: String): String =
         text
             .replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;")
 
-    private fun phaseHelp(phase: TurnPhase?): String = when (phase) {
+    private fun phaseHelp(phase: TurnPhase?): String = desktopPhaseHelp(phase)
+}
+
+internal fun desktopCaptureOutcomeStatus(outcome: CaptureOutcomeDisplay): String {
+    val prefix = outcome.diceRoll?.let { "ダイス: $it" } ?: "逃走なし"
+    return "$prefix　${outcome.message}"
+}
+
+internal fun desktopGuideStatusText(outcome: CaptureOutcomeDisplay?, phase: TurnPhase?): String =
+    outcome?.let(::desktopCaptureOutcomeStatus) ?: desktopPhaseHelp(phase)
+
+internal fun desktopPhaseHelp(phase: TurnPhase?): String = when (phase) {
         TurnPhase.DIG -> "ハイライトされた穴タイルをクリックしてください。"
         TurnPhase.MOVE -> "ハイライトされた移動可能マスをクリックしてください。"
         TurnPhase.CAPTURE -> "プレイヤーの足元にエサがあれば捕獲できます。"
-        TurnPhase.DECIDE -> "タベる、レンコウ、または強奪を選んでください。"
+        TurnPhase.DECIDE -> "食べる、巣へ持ち帰る、または強奪を選んでください。"
         TurnPhase.END -> "ターンを終了してください。"
         null -> "新しいゲームを開始してください。"
     }
-}
 
 private class DeckSummaryPanel(
     private val controller: MoguraGameController,
@@ -887,18 +975,31 @@ class BoardPanel(
                 current.boardState.getTile(position)?.let { tile ->
                     drawTile(g, tile, cellRect)
                 }
-
-                if (position in highlights) {
-                    drawHighlight(g, cellRect, current.currentPhase)
-                }
             }
         }
 
-        drawDigDirectionArrows(g, highlights)
-        drawPlayers(g)
-        drawFoods(g)
-        drawCurrentPlayerOutline(g)
-        drawHoveredFoodPreview(g)
+        drawBoardLayers(g, highlights)
+    }
+
+    private fun drawBoardLayers(g: Graphics2D, highlights: Set<Position>) {
+        boardPaintRenderPlan().forEach { layer ->
+            when (layer) {
+                BoardPaintLayer.HIGHLIGHT -> drawHighlights(g, highlights)
+                BoardPaintLayer.DIG_DIRECTION -> drawDigDirectionArrows(g, highlights)
+                BoardPaintLayer.FOOD -> drawFoods(g)
+                BoardPaintLayer.PLAYERS -> drawPlayers(g)
+                BoardPaintLayer.CURRENT_PLAYER_OUTLINE -> drawCurrentPlayerOutline(g)
+                BoardPaintLayer.HOVER_PREVIEW -> drawHoveredFoodPreview(g)
+            }
+        }
+    }
+
+    private fun drawHighlights(g: Graphics2D, highlights: Set<Position>) {
+        val current = controller.engine ?: return
+        highlights.forEach { position ->
+            val cellRect = cellRect(position) ?: return@forEach
+            drawHighlight(g, cellRect, current.currentPhase)
+        }
     }
 
     private fun drawBoardHungerMeters(g: Graphics2D, players: List<Player>, currentPlayer: Player?) {
@@ -1005,6 +1106,7 @@ class BoardPanel(
                     } else {
                         drawPlaceholder(g, tokenRect, player.name.take(1), playerColor(player.id))
                     }
+                    drawPlayerNameBadge(g, tokenRect, player.name)
                 }
             }
     }
@@ -1110,7 +1212,7 @@ class BoardPanel(
             TurnPhase.END,
             -> Color(0x56CCF2)
         }
-        g.color = Color(color.red, color.green, color.blue, 92)
+        g.color = Color(color.red, color.green, color.blue, BOARD_HIGHLIGHT_FILL_ALPHA)
         g.fillRect(rect.x + 4, rect.y + 4, rect.width - 8, rect.height - 8)
         g.color = color
         g.stroke = BasicStroke(4f)
@@ -1430,9 +1532,96 @@ private fun drawPlaceholder(g: Graphics2D, rect: Rectangle, text: String, color:
     g.drawString(text.take(10), rect.x + 6, rect.y + rect.height / 2)
 }
 
+private fun drawPlayerNameBadge(g: Graphics2D, rect: Rectangle, name: String) {
+    val oldFont = g.font
+    g.font = oldFont.deriveFont(Font.BOLD, 11f)
+    val metrics = g.fontMetrics
+    val label = playerNameBadgeLabelForMetrics(g, name, rect.width)
+    val badge = playerNameBadgeRectForMetrics(g, rect, label)
+
+    g.color = Color(0x2E, 0x21, 0x15, 210)
+    g.fillRoundRect(badge.x, badge.y, badge.width, badge.height, 8, 8)
+    g.color = Color.WHITE
+    g.drawString(label, badge.x + (badge.width - metrics.stringWidth(label)) / 2, badge.y + metrics.ascent)
+    g.font = oldFont
+}
+
+internal fun playerNameBadgeRect(rect: Rectangle, label: String): Rectangle {
+    val badgeHeight = (rect.height * PLAYER_NAME_BADGE_HEIGHT_RATIO).roundToInt()
+        .coerceIn(14, 18)
+        .coerceAtMost(rect.height)
+    val badgeWidth = (label.length * PLAYER_NAME_BADGE_APPROX_CHAR_WIDTH + 10)
+        .coerceAtLeast(24)
+        .coerceAtMost(rect.width)
+    return Rectangle(
+        rect.x + (rect.width - badgeWidth) / 2,
+        rect.y + rect.height - badgeHeight - 2,
+        badgeWidth,
+        badgeHeight,
+    )
+}
+
+internal fun playerNameBadgeLabel(name: String, tokenWidth: Int): String {
+    val maxChars = ((tokenWidth - 10) / PLAYER_NAME_BADGE_APPROX_CHAR_WIDTH).coerceAtLeast(1)
+    if (name.length <= maxChars) return name
+    return name.take((maxChars - 1).coerceAtLeast(0)) + "…"
+}
+
+internal fun playerNameBadgeRectForMetrics(g: Graphics2D, rect: Rectangle, label: String): Rectangle {
+    val badgeHeight = (g.fontMetrics.height + 2)
+        .coerceAtLeast(14)
+        .coerceAtMost((rect.height * PLAYER_NAME_BADGE_HEIGHT_RATIO).roundToInt().coerceAtLeast(14))
+        .coerceAtMost(rect.height)
+    val badgeWidth = (g.fontMetrics.stringWidth(label) + 10)
+        .coerceAtLeast(24)
+        .coerceAtMost(rect.width)
+    return Rectangle(
+        rect.x + (rect.width - badgeWidth) / 2,
+        rect.y + rect.height - badgeHeight - 2,
+        badgeWidth,
+        badgeHeight,
+    )
+}
+
+internal fun playerNameBadgeLabelForMetrics(g: Graphics2D, name: String, tokenWidth: Int): String {
+    val maxWidth = (tokenWidth - 10).coerceAtLeast(1)
+    if (g.fontMetrics.stringWidth(name) <= maxWidth) return name
+    val ellipsis = "…"
+    val available = maxWidth - g.fontMetrics.stringWidth(ellipsis)
+    if (available <= 0) return ellipsis
+    var end = name.length
+    while (end > 0 && g.fontMetrics.stringWidth(name.take(end)) > available) {
+        end--
+    }
+    return name.take(end) + ellipsis
+}
+
+private fun elideText(g: Graphics2D, text: String, maxWidth: Int): String {
+    if (g.fontMetrics.stringWidth(text) <= maxWidth) return text
+    val ellipsis = "…"
+    val available = maxWidth - g.fontMetrics.stringWidth(ellipsis)
+    if (available <= 0) return ellipsis
+    var end = text.length
+    while (end > 0 && g.fontMetrics.stringWidth(text.take(end)) > available) {
+        end--
+    }
+    return text.take(end) + ellipsis
+}
+
 private fun playerColor(id: Int): Color = when (id) {
     0 -> Color(0x4E8BD8)
     1 -> Color(0xF2994A)
     2 -> Color(0xE88DB5)
     else -> Color(0xF2C94C)
+}
+
+private const val PLAYER_NAME_BADGE_HEIGHT_RATIO = 0.24
+private const val PLAYER_NAME_BADGE_APPROX_CHAR_WIDTH = 14
+
+private fun nestChoiceLabel(position: Position): String = when (position) {
+    Position(0, 1) -> "巣A (1,2)"
+    Position(5, 1) -> "巣B (6,2)"
+    Position(0, 4) -> "巣C (1,5)"
+    Position(5, 4) -> "巣D (6,5)"
+    else -> "(${position.col + 1},${position.row + 1})"
 }

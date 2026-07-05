@@ -2,6 +2,7 @@ package com.moguru.game.presenter
 
 import com.moguru.game.engine.GameEngine
 import com.moguru.game.engine.GameState
+import com.moguru.game.engine.PlayerConfig
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Board
 import com.moguru.game.model.Direction
@@ -34,6 +35,25 @@ class MoguraGameControllerTest {
         assertEquals(3, engine.players.size)
         assertEquals(listOf("モグオ", "モグタ", "モグミ"), engine.players.map { it.name })
         assertEquals(TurnPhase.DIG, engine.currentPhase)
+    }
+
+    @Test
+    fun `new game accepts custom mole nest and start player selections`() {
+        val controller = testController()
+        val configs = listOf(
+            PlayerConfig("モグカ", Position(5, 4), playerId = 3),
+            PlayerConfig("モグオ", Position(0, 1), playerId = 0),
+        )
+
+        val result = controller.startNewGame(configs, startPlayerIndex = 1)
+
+        val engine = controller.engine!!
+        assertTrue(result.success)
+        assertEquals(listOf(3, 0), engine.players.map { it.id })
+        assertEquals(listOf(Position(5, 4), Position(0, 1)), engine.players.map { it.nestPosition })
+        assertEquals(1, engine.currentPlayerIndex)
+        assertEquals("モグオ", controller.currentPlayer?.name)
+        assertTrue(controller.logs.any { it.contains("モグオ の番") })
     }
 
     @Test
@@ -659,6 +679,71 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `stored food in own nest can be eaten after returning home`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val stored = FoodCard(FoodType.MOLE_CRICKET, emptyMap(), isFaceDown = false)
+        repeat(5) { player.reduceHealth(isOnSurface = false) }
+        player.carryFood(stored)
+        player.storeFood()
+        player.moveTo(Position(1, 1))
+        engine.boardState.placeTile(
+            Position(1, 1),
+            HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+        )
+        engine.advancePhase()
+
+        val moveHome = controller.moveTo(player.nestPosition)
+        val enterDecide = controller.skipPhase()
+        val actions = controller.playScreenUiState().actionAvailability
+        val eat = controller.eatPendingFood()
+
+        assertTrue(moveHome.success)
+        assertTrue(enterDecide.success)
+        assertEquals(TurnPhase.DECIDE, actions.activePhase)
+        assertTrue(actions.canEat)
+        assertFalse(actions.canCarry)
+        assertTrue(eat.success)
+        assertEquals(11, player.health)
+        assertTrue(player.storedFoods.isEmpty())
+        assertEquals(0, player.score)
+        assertEquals(TurnPhase.END, engine.currentPhase)
+    }
+
+    @Test
+    fun `winning homecoming does not allow own nest eating before game over`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        player.carryFood(FoodCard(FoodType.CENTIPEDE, emptyMap(), isFaceDown = false))
+        player.storeFood()
+        player.carryFood(FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false))
+        player.moveTo(Position(1, 1))
+        engine.boardState.placeTile(
+            Position(1, 1),
+            HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+        )
+        engine.advancePhase()
+
+        val moveHome = controller.moveTo(player.nestPosition)
+        val actionsAfterHomecoming = controller.playScreenUiState().actionAvailability
+        val skipCapture = controller.skipPhase()
+        val finish = controller.finishTurn()
+
+        assertTrue(moveHome.success)
+        assertEquals(4, player.score)
+        assertEquals(TurnPhase.CAPTURE, actionsAfterHomecoming.activePhase)
+        assertFalse(actionsAfterHomecoming.canEat)
+        assertTrue(skipCapture.success)
+        assertTrue(finish.success)
+        assertEquals(GameState.FINISHED, engine.gameState)
+        assertEquals(player, engine.checkWinCondition())
+    }
+
+    @Test
     fun `dig phase cannot be skipped`() {
         val controller = testController()
         controller.startNewGame(2)
@@ -683,6 +768,23 @@ class MoguraGameControllerTest {
         assertTrue(controller.digTargets().isEmpty())
         assertTrue(result.success)
         assertEquals(TurnPhase.MOVE, engine.currentPhase)
+    }
+
+    @Test
+    fun `dig phase on surface can dig adjacent underground tile`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val target = Position(1, 1)
+        engine.boardState.clear()
+        engine.boardState.placeTile(target, HoleTile(TileShape.STRAIGHT).flip())
+        player.moveTo(Position(1, 0))
+
+        val targets = controller.digTargets()
+
+        assertEquals(listOf(target), targets)
+        assertFalse(controller.canAdvanceFromDigWithoutTargets())
     }
 
     @Test
@@ -749,7 +851,7 @@ class MoguraGameControllerTest {
     }
 
     @Test
-    fun `dig targets include empty ground cells along current tile open sides`() {
+    fun `dig targets exclude empty ground cells even along current tile open sides`() {
         val controller = testController()
         controller.startNewGame(2)
         val engine = controller.engine!!
@@ -764,12 +866,12 @@ class MoguraGameControllerTest {
 
         val targets = controller.digTargets().toSet()
 
-        assertTrue(ground in targets)
-        assertFalse(controller.canAdvanceFromDigWithoutTargets())
+        assertFalse(ground in targets)
+        assertTrue(controller.canAdvanceFromDigWithoutTargets())
     }
 
     @Test
-    fun `dig can place drawn tile on empty ground cell`() {
+    fun `dig cannot place drawn tile on empty ground cell`() {
         val controller = testController()
         controller.startNewGame(2)
         val engine = controller.engine!!
@@ -784,15 +886,10 @@ class MoguraGameControllerTest {
 
         val revealResult = controller.revealDigTile(ground)
 
-        assertTrue(revealResult.success)
-        assertEquals(DigTileChoice.DRAWN, controller.pendingDigTileChoice)
-        val confirmResult = controller.confirmPendingDig()
-
-        assertTrue(confirmResult.success)
-        assertEquals(TurnPhase.MOVE, engine.currentPhase)
-        val placedTile = engine.boardState.getTile(ground)!!
-        assertEquals(TileShape.L_SHAPE, placedTile.shape)
-        assertFalse(placedTile.isFaceDown)
+        assertFalse(revealResult.success)
+        assertNull(controller.pendingDigTileChoice)
+        assertNull(engine.boardState.getTile(ground))
+        assertEquals(TurnPhase.DIG, engine.currentPhase)
     }
 
     @Test

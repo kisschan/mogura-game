@@ -97,6 +97,53 @@ class GameEngineTest {
     }
 
     @Test
+    fun `セットアップでモグラと巣と先手を自由選択できる`() {
+        val customEngine = GameEngine(
+            playerCount = 3,
+            diceRoller = diceRoller,
+            shuffler = shuffler,
+        )
+        val configs = listOf(
+            PlayerConfig("モグカ", Position(5, 4), playerId = 3),
+            PlayerConfig("モグオ", Position(0, 1), playerId = 0),
+            PlayerConfig("モグミ", Position(0, 4), playerId = 2),
+        )
+
+        customEngine.setupGame(configs, startPlayerIndex = 2)
+
+        assertEquals(listOf(3, 0, 2), customEngine.players.map { it.id })
+        assertEquals(listOf("モグカ", "モグオ", "モグミ"), customEngine.players.map { it.name })
+        assertEquals(listOf(Position(5, 4), Position(0, 1), Position(0, 4)), customEngine.players.map { it.nestPosition })
+        assertEquals(listOf(Position(5, 4), Position(0, 1), Position(0, 4)), customEngine.players.map { it.position })
+        assertEquals(2, customEngine.currentPlayerIndex)
+        assertEquals("モグミ", customEngine.players[customEngine.currentPlayerIndex].name)
+    }
+
+    @Test
+    fun `セットアップで同じ巣は選べない`() {
+        val configs = listOf(
+            PlayerConfig("モグオ", Position(0, 1), playerId = 0),
+            PlayerConfig("モグタ", Position(0, 1), playerId = 1),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            engine.setupGame(configs)
+        }
+    }
+
+    @Test
+    fun `セットアップで同じモグラは選べない`() {
+        val configs = listOf(
+            PlayerConfig("モグオ", Position(0, 1), playerId = 0),
+            PlayerConfig("モグオ", Position(5, 1), playerId = 0),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            engine.setupGame(configs)
+        }
+    }
+
+    @Test
     fun `フェーズはDIGからMOVE CAPTURE ENDへ遷移する`() {
         setupDefaultGame()
 
@@ -643,7 +690,7 @@ class GameEngineTest {
     }
 
     @Test
-    fun `escape into ground cell without tile path is captured`() {
+    fun `escape into ground cell through an open underground edge succeeds without ground tile`() {
         val escapeEngine = GameEngine(
             playerCount = 2,
             diceRoller = FixedDiceRoller(listOf(1)),
@@ -659,7 +706,29 @@ class GameEngineTest {
 
         val result = escapeEngine.attemptCaptureAt(foodPosition)
 
-        assertTrue(result is CaptureResult.Success, "escape into a ground cell without a tile path should be captured")
+        assertTrue(result is CaptureResult.Escaped, "escape into a connected ground cell should succeed")
+        assertNull(escapeEngine.foodPositions[foodPosition], "food should leave the capture source")
+        assertNotNull(escapeEngine.foodPositions[escapeTo], "food should move into the ground cell")
+    }
+
+    @Test
+    fun `escape into ground cell without an open underground edge is captured`() {
+        val escapeEngine = GameEngine(
+            playerCount = 2,
+            diceRoller = FixedDiceRoller(listOf(1)),
+            shuffler = shuffler,
+        )
+        escapeEngine.setupGame(defaultConfigs())
+
+        val foodPosition = Position(1, 1)
+        val escapeTo = Position(1, 0)
+        val food = FoodCard(FoodType.EARTHWORM, mapOf(1 to EscapeDirection.TOP), isFaceDown = false)
+        placeFaceUpTile(escapeEngine, foodPosition, Direction.RIGHT)
+        replaceFoodAt(escapeEngine, foodPosition, food)
+
+        val result = escapeEngine.attemptCaptureAt(foodPosition)
+
+        assertTrue(result is CaptureResult.Success, "escape into ground without an open underground edge should be captured")
         assertNotNull(escapeEngine.foodPositions[foodPosition], "food should remain at the capture source")
         assertNull(escapeEngine.foodPositions[escapeTo], "food should not move into an unreachable ground cell")
     }

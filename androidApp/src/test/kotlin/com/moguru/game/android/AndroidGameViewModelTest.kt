@@ -2,6 +2,7 @@ package com.moguru.game.android
 
 import com.moguru.game.engine.GameEngine
 import com.moguru.game.engine.TurnPhase
+import com.moguru.game.model.Direction
 import com.moguru.game.model.FoodCard
 import com.moguru.game.model.FoodType
 import com.moguru.game.model.HoleTile
@@ -10,6 +11,7 @@ import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
 import com.moguru.game.model.TileShape
 import com.moguru.game.presenter.FoodDecisionSource
+import com.moguru.game.presenter.CaptureOutcomeKind
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.util.FixedDiceRoller
 import com.moguru.game.util.FixedShuffler
@@ -49,6 +51,55 @@ class AndroidGameViewModelTest {
     }
 
     @Test
+    fun `setup selections choose moles nests and start player`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+
+        viewModel.selectPlayerCount(3)
+        viewModel.selectPlayerMole(0, 3)
+        viewModel.selectPlayerNest(0, Position(5, 4))
+        viewModel.selectStartPlayer(2)
+        viewModel.startSelectedGame()
+
+        val engine = controller.engine!!
+        assertEquals(3, viewModel.uiState.value.selectedPlayerCount)
+        assertEquals(listOf(3, 1, 2), engine.players.map { it.id })
+        assertEquals(listOf(Position(5, 4), Position(5, 1), Position(0, 4)), engine.players.map { it.nestPosition })
+        assertEquals(2, engine.currentPlayerIndex)
+        assertEquals("モグミ", controller.currentPlayer?.name)
+    }
+
+    @Test
+    fun `setup swaps duplicate mole and nest selections`() {
+        val viewModel = testViewModel()
+
+        viewModel.selectPlayerMole(1, 0)
+        viewModel.selectPlayerNest(1, Position(0, 1))
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(1, 0), state.setupPlayers.map { it.playerId })
+        assertEquals(listOf(Position(5, 1), Position(0, 1)), state.setupPlayers.map { it.nestPosition })
+        assertTrue(state.canStartGame)
+    }
+
+    @Test
+    fun `four player setup can swap occupied mole and nest choices`() {
+        val viewModel = testViewModel()
+
+        viewModel.selectPlayerCount(4)
+        viewModel.selectPlayerMole(0, 3)
+        viewModel.selectPlayerNest(0, Position(5, 4))
+
+        val state = viewModel.uiState.value
+        assertEquals(listOf(3, 1, 2, 0), state.setupPlayers.map { it.playerId })
+        assertEquals(
+            listOf(Position(5, 4), Position(5, 1), Position(0, 4), Position(0, 1)),
+            state.setupPlayers.map { it.nestPosition },
+        )
+        assertTrue(state.canStartGame)
+    }
+
+    @Test
     fun `dig controls only appear while a dig placement is pending`() {
         val viewModel = testViewModel()
         viewModel.startNewGame(2)
@@ -79,6 +130,35 @@ class AndroidGameViewModelTest {
             listOf(AndroidVisibleAction.SKIP, AndroidVisibleAction.END_TURN),
             viewModel.uiState.value.visibleActions,
         )
+    }
+
+    @Test
+    fun `pending dig placement can be confirmed without tapping the board again`() {
+        val viewModel = testViewModel()
+        val target = Position(1, 1)
+        viewModel.startNewGame(2)
+
+        viewModel.onCellClicked(target)
+        viewModel.selectRotation(Rotation.DEG_90)
+        viewModel.confirmDigPlacement()
+
+        val state = viewModel.uiState.value
+        assertEquals(TurnPhase.MOVE, state.playState.actionAvailability.activePhase)
+        assertFalse(state.showDigControls)
+        assertEquals("タイルを置きました。", state.lastMessage)
+    }
+
+    @Test
+    fun `candidate outside the active board choices gives feedback without advancing`() {
+        val viewModel = testViewModel()
+        viewModel.startNewGame(2)
+
+        viewModel.onCellClicked(Position(5, 4))
+
+        val state = viewModel.uiState.value
+        assertEquals(TurnPhase.DIG, state.playState.actionAvailability.activePhase)
+        assertEquals(0, state.playState.currentPlayer.playerId)
+        assertEquals("現在のプレイヤーに隣接する掘れる穴タイルを選んでください。", state.lastMessage)
     }
 
     @Test
@@ -170,6 +250,27 @@ class AndroidGameViewModelTest {
     }
 
     @Test
+    fun `board state exposes current cell and connection edges without visible player names`() {
+        val viewModel = testViewModel()
+        val target = Position(1, 1)
+        viewModel.startNewGame(2)
+
+        viewModel.onCellClicked(target)
+        viewModel.selectRotation(Rotation.DEG_90)
+        viewModel.confirmDigPlacement()
+
+        val boardCells = viewModel.uiState.value.boardState.cells
+        val currentCell = boardCells.single { it.isCurrentPlayerCell }
+        assertTrue(currentCell.players.single().accessibilityLabel.contains("モグオ"))
+        assertTrue(currentCell.players.single().accessibilityLabel.contains("現在の手番"))
+
+        val targetCell = boardCells.single { it.position == target }
+        assertEquals(setOf(Direction.LEFT, Direction.RIGHT), targetCell.tile?.openSides)
+        assertTrue(targetCell.connectionEdges.any { it.direction == Direction.LEFT })
+        assertTrue(targetCell.connectionEdges.any { it.direction == Direction.RIGHT })
+    }
+
+    @Test
     fun `beetle larva food resource uses beetle larva asset`() {
         assertEquals(R.drawable.food_beetle_larva, foodRes(FoodType.BEETLE_LARVA))
     }
@@ -208,10 +309,51 @@ class AndroidGameViewModelTest {
         assertFalse(state.diceRouletteActive)
         assertEquals(6, state.lastDiceRoll)
         assertEquals(TurnPhase.DECIDE, state.actionAvailability.activePhase)
+        assertEquals(CaptureOutcomeKind.CAPTURED, state.captureOutcome?.kind)
+        assertTrue(
+            resultBannerText(state.captureOutcome)
+                ?.contains("ダイス: 6") == true,
+        )
         assertEquals(
             listOf(AndroidVisibleAction.EAT, AndroidVisibleAction.CARRY),
             viewModel.uiState.value.visibleActions,
         )
+
+        viewModel.eat()
+
+        assertNull(viewModel.uiState.value.playState.captureOutcome)
+    }
+
+    @Test
+    fun `escaped capture result remains visible after auto advance logs`() {
+        val controller = MoguraGameController(
+            diceRoller = FixedDiceRoller(listOf(1)),
+            shuffler = FixedShuffler(),
+        )
+        val viewModel = AndroidGameViewModel(controller)
+        viewModel.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.CENTIPEDE).first())
+        engine.advancePhase()
+        engine.advancePhase()
+
+        viewModel.capture()
+        viewModel.stopDiceRoulette()
+        viewModel.finishDiceRoulette()
+
+        val state = viewModel.uiState.value.playState
+        val outcome = state.captureOutcome
+        val text = resultBannerText(outcome)
+        assertEquals(1, state.lastDiceRoll)
+        assertEquals(CaptureOutcomeKind.ESCAPED, outcome?.kind)
+        assertEquals(1, outcome?.diceRoll)
+        assertTrue(text?.contains("ダイス: 1") == true)
+        assertTrue(text?.contains("逃げました") == true)
+
+        viewModel.finishTurn()
+
+        assertNull(viewModel.uiState.value.playState.captureOutcome)
     }
 
     @Test
@@ -238,9 +380,55 @@ class AndroidGameViewModelTest {
         state = viewModel.uiState.value.playState
         assertFalse(state.diceRouletteActive)
         assertEquals(TurnPhase.DECIDE, state.actionAvailability.activePhase)
+        assertTrue(
+            resultBannerText(state.captureOutcome)
+                ?.startsWith("逃走なし") == true,
+        )
         assertEquals(
             listOf(AndroidVisibleAction.EAT, AndroidVisibleAction.CARRY),
             viewModel.uiState.value.visibleActions,
+        )
+
+        viewModel.carry()
+
+        assertNull(viewModel.uiState.value.playState.captureOutcome)
+    }
+
+    @Test
+    fun `capture reveal guidance does not depend on tap wording`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+        viewModel.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        placeFoodForCapture(engine, player, FoodCard.createDummyCards(FoodType.EARTHWORM).first())
+        engine.advancePhase()
+        engine.advancePhase()
+
+        viewModel.capture()
+
+        assertFalse(
+            viewModel.uiState.value.logs.any { it.contains("タップ") || it.contains("クリック") },
+            "shared capture guidance should stay neutral across Android and Desktop",
+        )
+    }
+
+    @Test
+    fun `capture reveal guidance without escape dice does not depend on tap wording`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+        viewModel.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        placeFoodForCapture(engine, player, FoodCard(FoodType.BEETLE_LARVA, emptyMap()))
+        engine.advancePhase()
+        engine.advancePhase()
+
+        viewModel.capture()
+
+        assertFalse(
+            viewModel.uiState.value.logs.any { it.contains("タップ") || it.contains("クリック") },
+            "no-escape capture guidance should stay neutral across Android and Desktop",
         )
     }
 
