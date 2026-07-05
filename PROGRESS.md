@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-最終更新: 2026-07-04
+最終更新: 2026-07-05
 
 ## 現在の状況
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
@@ -55,8 +55,16 @@
 - [x] 新規AABリリース用にAndroid `versionCode` / `versionName` を `4` に更新し、release bundleを作成
 - [x] 2026-07-04共有写真の追加ルールを `moguru_requirements_v2(3).txt` / `AGENT.md` / `CLAUDE.md` に反映し、旧 `12-2` と強奪関連の要確認を解消
 - [x] 自分の巣に戻った手番で、巣に保存済みのエサを1匹タベられるよう修正
+- [x] Phase 6: 要件7.1に合わせ、表向き既存穴タイルも掘る置き換え対象として補助APIとテストを整理
+- [x] Phase 6: 要件12-1の未確定エサカード個別データを、コード上もID付きTODOとして明示
 
 ## テスト結果
+- 最終実行日: 2026-07-05
+- 実行コマンド: `cmd /c gradlew :core:test`
+- 結果: `BUILD SUCCESSFUL`（Phase 6 要件7.1差異整理、未確定12-1 TODO明示後）
+- 最終実行日: 2026-07-05
+- 実行コマンド: `cmd /c gradlew :androidApp:testDebugUnitTest :desktop:test`
+- 結果: `BUILD SUCCESSFUL`（Phase 6 core変更後のAndroid/Swing回帰確認）
 - 最終実行日: 2026-07-04
 - 実行コマンド: `$env:JAVA_HOME='C:\Program Files\Android\Android Studio\jbr'; .\gradlew.bat :core:test`
 - 結果: `BUILD SUCCESSFUL`（共有写真ルール反映、自分の巣エサのタベる処理追加後）
@@ -160,15 +168,28 @@
 ## TODO / 未確定・要確認
 - `moguru_requirements_v2(3).txt`: `12-1` 各エサカード13枚の具体的な逃走ダイス目と矢印方向
 
-## 2026-06-20 コードレビューで起票した未実装 issue
-- [#16](https://github.com/kisschan/mogura-game/issues/16) セットアップでモグラ・巣・先手をプレイヤーが自由に選べるようにする
-- [#17](https://github.com/kisschan/mogura-game/issues/17) 逃走先に別のエサがある場合でも逃走できるようにする
-- [#18](https://github.com/kisschan/mogura-game/issues/18) エサの逃走先が巣マスの場合は逃走失敗として捕獲成功にする
-- [#19](https://github.com/kisschan/mogura-game/issues/19) 巣マスを通過不可にし、防衛中の巣へ侵入できないようにする
-- [#20](https://github.com/kisschan/mogura-game/issues/20) 巣ごとの固定追い出し先マスを定義して追い出し処理に使う
-- [#21](https://github.com/kisschan/mogura-game/issues/21) 強奪を移動時自動発動ではなく④強奪選択として実行する
-- [#22](https://github.com/kisschan/mogura-game/issues/22) 強奪UIと強奪後の食べる/レンコウ結果を実装する
-- [#23](https://github.com/kisschan/mogura-game/issues/23) エサカード13枚の逃走ダイス目と方向を確定し実装データを更新する
+## Issue 整理
+### 完了済み
+- [x] [#16](https://github.com/kisschan/mogura-game/issues/16) セットアップでモグラ・巣・先手をプレイヤーが自由に選べるようにする（2026-07-04 closed）
+- [x] [#17](https://github.com/kisschan/mogura-game/issues/17) 逃走先に別のエサがある場合でも逃走できるようにする（2026-07-04 closed）
+- [x] [#18](https://github.com/kisschan/mogura-game/issues/18) エサの逃走先が巣マスの場合は逃走失敗として捕獲成功にする（2026-07-04 closed）
+- [x] [#19](https://github.com/kisschan/mogura-game/issues/19) 巣マスを通過不可にし、防衛中の巣へ侵入できないようにする（2026-07-04 closed）
+- [x] [#20](https://github.com/kisschan/mogura-game/issues/20) 巣ごとの固定追い出し先マスを定義して追い出し処理に使う（2026-07-04 closed）
+- [x] [#21](https://github.com/kisschan/mogura-game/issues/21) 強奪を移動時自動発動ではなく④強奪選択として実行する（2026-07-04 closed）
+- [x] [#22](https://github.com/kisschan/mogura-game/issues/22) 強奪UIと強奪後の食べる/レンコウ結果を実装する（2026-07-04 closed）
+
+### 未完了・Phase 6 対象
+- [ ] [#23](https://github.com/kisschan/mogura-game/issues/23) エサカード13枚の逃走ダイス目と方向を確定し実装データを更新する
+- [ ] [#34](https://github.com/kisschan/mogura-game/issues/34) Phase 6: 要件・実装差異の解消とリリース品質確認
+
+### UI/UX 改善候補
+- [ ] [#12](https://github.com/kisschan/mogura-game/issues/12) UIで文字が切れる問題を修正する
+- [ ] [#13](https://github.com/kisschan/mogura-game/issues/13) ダンゴムシの幼虫になっている問題を修正する
+- [ ] [#29](https://github.com/kisschan/mogura-game/issues/29) Android UIの色セマンティクスをトークン化しセットアップ選択表示を統一する
+- [ ] [#30](https://github.com/kisschan/mogura-game/issues/30) Androidプレイ画面の手番・フェーズ認知をコンパクトHUD内で強化する
+- [ ] [#31](https://github.com/kisschan/mogura-game/issues/31) Android盤面ハイライトの色・形状を掘る/移動/捕獲で明確に分離する
+- [ ] [#32](https://github.com/kisschan/mogura-game/issues/32) Androidの不可逆操作に確認または明確な確定導線を追加する
+- [ ] [#33](https://github.com/kisschan/mogura-game/issues/33) Androidプレイ画面に短時間のトークン移動フィードバックを追加する
 
 ## 未実装解消ロードマップ
 ### Phase 1: 盤面ルールの土台を先に直す
@@ -211,6 +232,17 @@
 - [x] `:desktop:test` でSwing表示ロジックと共通presenter利用箇所を確認する。
 - [x] `PROGRESS.md` とコード内TODOを、解消した issue 番号に合わせて整理する。
 
+### Phase 6: 要件・実装差異の解消とリリース品質確認
+- [ ] [#34](https://github.com/kisschan/mogura-game/issues/34) を親 issue として、差異の棚卸しと対応範囲を管理する。
+- [x] 要件定義書、`AGENT.md`、`CLAUDE.md`、`PROGRESS.md` と実装の差異を棚卸しする。
+  - 要件7.1の旧「表向きタイル不可」テスト差異を解消済み。
+  - coreロジックで確認できた実装可能な残差異はなし。`12-1` は要件定義書上の未確定事項として継続。
+- [ ] core、Android、Swing の挙動差異と表示差異を確認し、要件に照らして修正対象を決める。
+- [ ] 実プレイ上わかりにくい操作を洗い出し、要件変更が必要なものと表示補助で済むものを分ける。
+- [ ] [#23](https://github.com/kisschan/mogura-game/issues/23) エサカード13枚の確定逃走目・方向データを反映し、テストで固定する。
+- [ ] 差異解消後に `:core:test :androidApp:testDebugUnitTest :desktop:test` と、必要に応じて `:androidApp:bundleRelease` を実行する。
+
 ## 次の作業
+- Android/Swing の実プレイ表示差異を要件に照らして確認し、必要な表示補助だけを実装する
 - エサカード13枚の確定逃走目・方向データを入手したら [#23](https://github.com/kisschan/mogura-game/issues/23) を実装する
 - 生成AAB/APKはGitHubへ上げず、Play Consoleへ直接アップロードする
