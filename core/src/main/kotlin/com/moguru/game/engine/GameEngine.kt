@@ -376,7 +376,7 @@ class GameEngine(
         return movementEngine.isConnected(from, to, boardState)
     }
 
-    /** 要確認フェーズの効果で、捕獲後選択へ直接入る。 */
+    /** 捕獲フェーズから、タベる/レンコウまたは強奪を選ぶフェーズへ直接入る。 */
     fun enterDecisionPhase() {
         currentPhase = TurnPhase.DECIDE
     }
