@@ -93,15 +93,22 @@ class TilePlacementEngineTest {
     }
 
     @Test
-    fun `配置可能なマスはモグラの隣接マスのみ`() {
-        // TODO: 【要確認】3-2 配置先ルールは仮実装。
+    fun `配置可能なマスはモグラに隣接する既存穴タイルのみ`() {
         val state = BoardState(board)
         val engine = TilePlacementEngine(shuffler)
         val molePosition = Position(1, 1)
+        val leftNest = Position(0, 1)
+        val rightUnderground = Position(2, 1)
+        val bottomUnderground = Position(1, 2)
+        val ground = Position(1, 0)
 
+        state.placeTile(leftNest, HoleTile(TileShape.CROSS))
+        state.placeTile(rightUnderground, HoleTile(TileShape.STRAIGHT).flip())
+        state.placeTile(bottomUnderground, HoleTile(TileShape.L_SHAPE))
+        state.placeTile(ground, HoleTile(TileShape.T_SHAPE))
         val placeable = engine.getPlaceablePositions(molePosition, state, board)
-        val expected = board.getValidNeighbors(molePosition).filter { it.row != 0 }
-        assertTrue(placeable.all { it in expected })
+
+        assertEquals(setOf(rightUnderground, bottomUnderground), placeable.toSet())
     }
 
     @Test
@@ -118,14 +125,15 @@ class TilePlacementEngineTest {
     }
 
     @Test
-    fun `既に表向きタイルが配置済みのマスには置けない`() {
+    fun `既に表向きタイルが配置済みのマスも置き換え対象にできる`() {
         val state = BoardState(board)
         val engine = TilePlacementEngine(shuffler)
         val molePosition = Position(2, 2)
+        val target = Position(3, 2)
 
-        state.placeTile(Position(3, 2), HoleTile(TileShape.STRAIGHT).flip())
+        state.placeTile(target, HoleTile(TileShape.STRAIGHT).flip())
 
         val placeable = engine.getPlaceablePositions(molePosition, state, board)
-        assertFalse(Position(3, 2) in placeable)
+        assertTrue(target in placeable)
     }
 }

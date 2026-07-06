@@ -41,7 +41,7 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
         board: Board,
     ): List<Pair<Position, HoleTile>> {
         return board.getValidNeighbors(molePosition).mapNotNull { position ->
-            if (board.getCell(position)?.type == CellType.GROUND) return@mapNotNull null
+            if (!board.isHoleTileCell(position)) return@mapNotNull null
             val tile = boardState.getTile(position)
             if (tile != null && tile.isFaceDown) position to tile else null
         }
@@ -54,7 +54,7 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
         board: Board,
     ): List<Pair<Position, HoleTile>> {
         return board.getValidNeighbors(molePosition).mapNotNull { position ->
-            if (board.getCell(position)?.type == CellType.GROUND) return@mapNotNull null
+            if (!board.isHoleTileCell(position)) return@mapNotNull null
             boardState.getTile(position)?.let { tile -> position to tile }
         }
     }
@@ -66,15 +66,15 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
     ): List<Position> {
         return board.getValidNeighbors(molePosition).filter { position ->
             val tile = boardState.getTile(position)
-            val cell = board.getCell(position)
-            cell?.type != CellType.GROUND && tile != null
+            board.isHoleTileCell(position) && tile != null
         }
     }
 
     /**
      * タイルを配置可能なマスを返す。
      *
-     * 配置先はモグラに隣接する、既存穴タイルのある地中マスに限る。
+     * 配置先はモグラに隣接する、既存穴タイルのある地下・ホットゾーンに限る。
+     * 既存穴タイルは裏向きでも表向きでも置き換え対象にできる。
      */
     fun getPlaceablePositions(
         molePosition: Position,
@@ -82,8 +82,7 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
         board: Board,
     ): List<Position> {
         return board.getValidNeighbors(molePosition).filter { position ->
-            board.getCell(position)?.type != CellType.GROUND &&
-                (!boardState.hasTile(position) || boardState.isFaceDown(position))
+            board.isHoleTileCell(position) && boardState.hasTile(position)
         }
     }
 
@@ -103,3 +102,11 @@ class TilePlacementEngine(private val shuffler: Shuffler) {
         discardPile.add(HoleTile(tile.shape))
     }
 }
+
+private fun Board.isHoleTileCell(position: Position): Boolean =
+    when (getCell(position)?.type) {
+        CellType.UNDERGROUND,
+        CellType.HOT_ZONE,
+        -> true
+        else -> false
+    }

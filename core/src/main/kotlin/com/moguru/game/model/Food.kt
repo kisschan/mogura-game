@@ -47,9 +47,12 @@ data class FoodCard(
         /**
          * 指定タイプのダミーカードを生成する。
          *
-         * 逃走ダイス目と方向は `assets/images/foods` のカード画像から読める情報を使う。
+         * 逃走ダイス目と方向は、確定一覧が届くまで `assets/images/foods` の
+         * カード画像から読める情報を使う。
          */
         fun createDummyCards(type: FoodType): List<FoodCard> {
+            // TODO: 【未確定】2-1 要件定義書12-1:
+            //  13枚それぞれの逃走ダイス目と矢印方向を確定データへ更新する。
             val escapeMap = when (type) {
                 FoodType.BEETLE_LARVA -> emptyMap()
                 FoodType.EARTHWORM -> mapOf(
