@@ -1,6 +1,7 @@
 package com.moguru.game.android
 
 import androidx.lifecycle.ViewModel
+import com.moguru.game.engine.GameState
 import com.moguru.game.engine.PlayerConfig
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Board
@@ -8,6 +9,7 @@ import com.moguru.game.model.CellType
 import com.moguru.game.model.Direction
 import com.moguru.game.model.FoodType
 import com.moguru.game.model.HoleTile
+import com.moguru.game.model.Player
 import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
 import com.moguru.game.model.TileShape
@@ -32,6 +34,23 @@ data class AndroidGameUiState(
     val showDigControls: Boolean,
     val logs: List<String>,
     val lastMessage: String?,
+    val gameResult: AndroidGameResultUiState?,
+    val showGameResultOverlay: Boolean,
+)
+
+data class AndroidGameResultUiState(
+    val winnerPlayerId: Int?,
+    val winnerName: String?,
+    val players: List<AndroidGameResultPlayerUiState>,
+)
+
+data class AndroidGameResultPlayerUiState(
+    val playerId: Int,
+    val name: String,
+    val score: Int,
+    val health: Int,
+    val isEliminated: Boolean,
+    val isWinner: Boolean,
 )
 
 data class AndroidSetupPlayerUiState(
@@ -115,6 +134,7 @@ class AndroidGameViewModel(
     private var setupPlayerIds = defaultSetupPlayerIds(selectedPlayerCount)
     private var setupNestPositions = defaultSetupNestPositions(selectedPlayerCount)
     private var selectedStartPlayerIndex = 0
+    private var gameResultOverlayDismissed = false
 
     private val _uiState = MutableStateFlow(
         snapshot(
@@ -157,6 +177,7 @@ class AndroidGameViewModel(
     }
 
     fun startSelectedGame() {
+        gameResultOverlayDismissed = false
         val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
         _uiState.value = snapshot(
             isGameStarted = true,
@@ -165,6 +186,7 @@ class AndroidGameViewModel(
     }
 
     fun startNewGame(playerCount: Int) {
+        gameResultOverlayDismissed = false
         resetSetupDefaults(playerCount)
         val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
         _uiState.value = snapshot(
@@ -174,10 +196,17 @@ class AndroidGameViewModel(
     }
 
     fun returnToSetup() {
+        gameResultOverlayDismissed = false
         _uiState.value = snapshot(
             isGameStarted = false,
             lastMessage = null,
         )
+    }
+
+    fun dismissGameResultOverlay() {
+        if (_uiState.value.gameResult == null) return
+        gameResultOverlayDismissed = true
+        refresh(_uiState.value.lastMessage)
     }
 
     fun onCellClicked(position: Position) {
@@ -295,6 +324,7 @@ class AndroidGameViewModel(
         lastMessage: String?,
     ): AndroidGameUiState {
         val playState = controller.playScreenUiState()
+        val gameResult = buildGameResult(isGameStarted)
         return AndroidGameUiState(
             isGameStarted = isGameStarted,
             selectedPlayerCount = selectedPlayerCount,
@@ -310,6 +340,22 @@ class AndroidGameViewModel(
             showDigControls = isGameStarted && playState.digCandidates.any { it.enabled },
             logs = if (isGameStarted) controller.logs.takeLast(5) else emptyList(),
             lastMessage = lastMessage,
+            gameResult = gameResult,
+            showGameResultOverlay = gameResult != null && !gameResultOverlayDismissed,
+        )
+    }
+
+    private fun buildGameResult(isGameStarted: Boolean): AndroidGameResultUiState? {
+        val engine = controller.engine ?: return null
+        if (!isGameStarted || engine.gameState != GameState.FINISHED) return null
+
+        val winner = engine.checkWinCondition()
+        return AndroidGameResultUiState(
+            winnerPlayerId = winner?.id,
+            winnerName = winner?.name,
+            players = engine.players.map { player ->
+                player.toAndroidGameResultPlayerUiState(winnerPlayerId = winner?.id)
+            },
         )
     }
 
@@ -470,6 +516,16 @@ class AndroidGameViewModel(
             rotation = rotationFor(this),
             isFaceDown = isFaceDown,
             openSides = androidTileOpenSides(shape, rotationFor(this), isFaceDown),
+        )
+
+    private fun Player.toAndroidGameResultPlayerUiState(winnerPlayerId: Int?): AndroidGameResultPlayerUiState =
+        AndroidGameResultPlayerUiState(
+            playerId = id,
+            name = name,
+            score = score,
+            health = health,
+            isEliminated = isEliminated,
+            isWinner = id == winnerPlayerId,
         )
 
     private fun rotationFor(tile: HoleTile): Rotation =
