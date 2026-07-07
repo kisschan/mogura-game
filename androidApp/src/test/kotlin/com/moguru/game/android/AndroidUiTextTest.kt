@@ -200,6 +200,20 @@ class AndroidUiTextTest {
     }
 
     @Test
+    fun `dig candidate visual tile resource follows candidate shape`() {
+        val candidate = DigCandidateDisplay(
+            choice = DigTileChoice.DRAWN,
+            label = "山札",
+            shape = TileShape.T_SHAPE,
+            selected = false,
+            enabled = true,
+        )
+
+        assertEquals(R.drawable.tile_t_shape, digCandidateTileRes(candidate))
+        assertNull(digCandidateTileRes(candidate.copy(shape = null)))
+    }
+
+    @Test
     fun `capture target accessibility labels describe action and target`() {
         val target = CaptureTargetDisplay(
             index = 1,
