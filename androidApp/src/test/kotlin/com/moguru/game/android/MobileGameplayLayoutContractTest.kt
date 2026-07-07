@@ -83,4 +83,9 @@ class MobileGameplayLayoutContractTest {
     fun `log drawer has a bounded overlay height`() {
         assertTrue(LOG_HISTORY_POPUP_MAX_HEIGHT <= 220.dp)
     }
+
+    @Test
+    fun `dice roulette overlay blocks input to the back layer`() {
+        assertTrue(DICE_ROULETTE_OVERLAY_CONSUMES_BACK_LAYER_INPUT)
+    }
 }

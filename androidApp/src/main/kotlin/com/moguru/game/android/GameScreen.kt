@@ -715,6 +715,7 @@ private fun GameplayActionBar(
             ) {
                 EventStrip(
                     text = latestEventText(state),
+                    captureOutcome = state.playState.captureOutcome,
                     hasHistory = state.logs.isNotEmpty(),
                     onHistoryClick = { showLogHistory = true },
                 )
@@ -779,26 +780,42 @@ private fun GameplayActionBar(
 @Composable
 private fun EventStrip(
     text: String?,
+    captureOutcome: CaptureOutcomeDisplay?,
     hasHistory: Boolean,
     onHistoryClick: () -> Unit,
 ) {
+    val presentation = eventStripPresentation(captureOutcome)
+    val containerColor = presentation.containerArgb?.let(::Color) ?: Color.Transparent
+    val border = presentation.borderArgb?.let { BorderStroke(1.dp, Color(it)) }
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(
-            text = text.orEmpty(),
+        Surface(
             modifier = Modifier
                 .weight(1f)
                 .height(EVENT_STRIP_HEIGHT),
-            color = Color(0xFF4B3826),
-            fontSize = 11.sp,
-            lineHeight = 12.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = EVENT_STRIP_MAX_LINES,
-            overflow = TextOverflow.Ellipsis,
-        )
+            shape = RoundedCornerShape(6.dp),
+            color = containerColor,
+            border = border,
+        ) {
+            Text(
+                text = text.orEmpty(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(
+                        horizontal = if (captureOutcome == null) 0.dp else 6.dp,
+                        vertical = 2.dp,
+                    ),
+                color = Color(presentation.contentArgb),
+                fontSize = if (captureOutcome == null) 11.sp else 10.sp,
+                lineHeight = if (captureOutcome == null) 12.sp else 10.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = presentation.maxLines,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         if (hasHistory) {
             TextButton(
                 onClick = onHistoryClick,
@@ -1998,7 +2015,30 @@ internal data class ResultBannerColors(
     val contentArgb: Int,
 )
 
+internal data class EventStripPresentation(
+    val containerArgb: Int?,
+    val borderArgb: Int?,
+    val contentArgb: Int,
+    val maxLines: Int,
+)
+
 internal const val RESULT_BANNER_MAX_LINES = 4
+
+internal fun eventStripPresentation(outcome: CaptureOutcomeDisplay?): EventStripPresentation =
+    outcome?.let {
+        val colors = resultBannerColors(it.kind)
+        EventStripPresentation(
+            containerArgb = colors.containerArgb,
+            borderArgb = colors.borderArgb,
+            contentArgb = colors.contentArgb,
+            maxLines = RESULT_BANNER_MAX_LINES,
+        )
+    } ?: EventStripPresentation(
+        containerArgb = null,
+        borderArgb = null,
+        contentArgb = 0xFF4B3826.toInt(),
+        maxLines = EVENT_STRIP_MAX_LINES,
+    )
 
 internal fun resultBannerColors(kind: CaptureOutcomeKind): ResultBannerColors =
     when (kind) {
