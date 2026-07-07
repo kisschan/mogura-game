@@ -1033,7 +1033,26 @@ private fun CompactDigPlacementControls(
                         contentColor = Color(0xFF2E2115),
                     ),
                 ) {
-                    Text(digCandidateShortLabel(candidate.choice), fontSize = 11.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        digCandidateTileRes(candidate)?.let { res ->
+                            Image(
+                                painter = painterResource(res),
+                                contentDescription = null,
+                                modifier = Modifier.size(22.dp),
+                                contentScale = ContentScale.Fit,
+                            )
+                        }
+                        Text(
+                            digCandidateShortLabel(candidate.choice),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
         }
@@ -1988,6 +2007,9 @@ internal fun digCandidateSemanticLabel(candidate: DigCandidateDisplay): String {
     val state = if (candidate.selected) "選択中" else "未選択"
     return "${digCandidateShortLabel(candidate.choice)}、$tileName、$state"
 }
+
+internal fun digCandidateTileRes(candidate: DigCandidateDisplay): Int? =
+    candidate.shape?.let(::tileRes)
 
 internal fun digCandidateActionLabel(candidate: DigCandidateDisplay): String =
     "${digCandidateShortLabel(candidate.choice)}を選ぶ"
