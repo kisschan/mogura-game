@@ -150,6 +150,14 @@ fun MoguraGameScreen(viewModel: AndroidGameViewModel = viewModel()) {
                         onFinished = viewModel::finishDiceRoulette,
                     )
                 }
+                val gameResult = state.gameResult
+                if (state.showGameResultOverlay && gameResult != null) {
+                    GameResultOverlay(
+                        result = gameResult,
+                        onViewBoard = viewModel::dismissGameResultOverlay,
+                        onNewGame = viewModel::returnToSetup,
+                    )
+                }
             }
         }
     }
@@ -856,6 +864,125 @@ private fun LogHistoryPopup(
 }
 
 @Composable
+private fun GameResultOverlay(
+    result: AndroidGameResultUiState,
+    onViewBoard: () -> Unit,
+    onNewGame: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onViewBoard,
+        modifier = Modifier.testTag("game-result-overlay"),
+        shape = RoundedCornerShape(8.dp),
+        containerColor = Color(0xFFFFFBF0),
+        titleContentColor = Color(0xFF2E2115),
+        textContentColor = Color(0xFF4B3826),
+        title = {
+            Text(
+                text = gameResultTitle(result),
+                fontSize = 20.sp,
+                lineHeight = 23.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    text = "全員の成績",
+                    color = Color(0xFF4B3826),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Black,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    result.players.forEach { player ->
+                        GameResultPlayerRow(player)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onNewGame,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF35BC67),
+                    contentColor = Color(0xFF102F1B),
+                ),
+                shape = RoundedCornerShape(8.dp),
+            ) {
+                Text("もう一度", fontWeight = FontWeight.Black)
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onViewBoard,
+                colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF2E2115)),
+            ) {
+                Text("盤面を見る", fontWeight = FontWeight.Black)
+            }
+        },
+    )
+}
+
+@Composable
+private fun GameResultPlayerRow(player: AndroidGameResultPlayerUiState) {
+    val rowColor = if (player.isWinner) Color(0xFFE8FFF0) else Color.Transparent
+    val textColor = if (player.isEliminated) Color(0xFF7A4A36) else Color(0xFF2E2115)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .background(rowColor)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            text = player.name,
+            modifier = Modifier.weight(1f),
+            color = textColor,
+            fontSize = 13.sp,
+            lineHeight = 15.sp,
+            fontWeight = if (player.isWinner) FontWeight.Black else FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = "${player.score}点",
+            modifier = Modifier.width(42.dp),
+            color = textColor,
+            fontSize = 12.sp,
+            lineHeight = 14.sp,
+            fontWeight = FontWeight.Black,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+        )
+        Text(
+            text = "HP ${player.health}",
+            modifier = Modifier.width(50.dp),
+            color = textColor,
+            fontSize = 12.sp,
+            lineHeight = 14.sp,
+            fontWeight = FontWeight.Black,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+        )
+        Text(
+            text = gameResultPlayerStatus(player),
+            modifier = Modifier.width(36.dp),
+            color = textColor,
+            fontSize = 12.sp,
+            lineHeight = 14.sp,
+            fontWeight = FontWeight.Black,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
 private fun CompactDigPlacementControls(
     state: AndroidGameUiState,
     onChoice: (DigTileChoice) -> Unit,
@@ -1488,20 +1615,39 @@ private fun compactScoreText(text: String): String =
     text.replace("点: ", "点 ")
 
 private fun latestEventText(state: AndroidGameUiState): String? =
-    resultBannerText(state.playState.captureOutcome)
+    state.gameResult?.let(::gameResultEventText)
+        ?: resultBannerText(state.playState.captureOutcome)
         ?: state.lastMessage
         ?: state.logs.lastOrNull()
         ?: phaseInstruction(state.playState.actionAvailability.activePhase)
 
 private fun actionBarInstruction(state: AndroidGameUiState): String =
-    if (state.boardState.cells.any { isBoardPrimaryActionCell(it, state.playState.actionAvailability.activePhase) }) {
-        phaseInstruction(state.playState.actionAvailability.activePhase)
-    } else {
-        when (state.playState.actionAvailability.activePhase) {
-            TurnPhase.DIG -> "掘れる隣接タイルなし"
-            TurnPhase.MOVE -> "移動できるマスなし"
-            else -> phaseInstruction(state.playState.actionAvailability.activePhase)
+    state.gameResult?.let { gameResultActionInstruction() }
+        ?: if (state.boardState.cells.any { isBoardPrimaryActionCell(it, state.playState.actionAvailability.activePhase) }) {
+            phaseInstruction(state.playState.actionAvailability.activePhase)
+        } else {
+            when (state.playState.actionAvailability.activePhase) {
+                TurnPhase.DIG -> "掘れる隣接タイルなし"
+                TurnPhase.MOVE -> "移動できるマスなし"
+                else -> phaseInstruction(state.playState.actionAvailability.activePhase)
+            }
         }
+
+internal fun gameResultTitle(result: AndroidGameResultUiState): String =
+    result.winnerName?.let { "$it の勝利" } ?: "ゲーム終了"
+
+internal fun gameResultEventText(result: AndroidGameResultUiState): String =
+    result.winnerName?.let { "$it の勝利。全員の成績を確認してください。" }
+        ?: "ゲーム終了。全員の成績を確認してください。"
+
+internal fun gameResultActionInstruction(): String =
+    "ゲーム終了。新規から再戦できます。"
+
+internal fun gameResultPlayerStatus(player: AndroidGameResultPlayerUiState): String =
+    when {
+        player.isWinner -> "勝者"
+        player.isEliminated -> "脱落"
+        else -> "継続"
     }
 
 private data class BoardRectSpec(

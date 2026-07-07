@@ -245,6 +245,39 @@ class AndroidUiTextTest {
     }
 
     @Test
+    fun `game result copy names winner and avoids impossible turn action`() {
+        val result = AndroidGameResultUiState(
+            winnerPlayerId = 0,
+            winnerName = "モグオ",
+            players = listOf(
+                AndroidGameResultPlayerUiState(
+                    playerId = 0,
+                    name = "モグオ",
+                    score = 4,
+                    health = 12,
+                    isEliminated = false,
+                    isWinner = true,
+                ),
+                AndroidGameResultPlayerUiState(
+                    playerId = 1,
+                    name = "モグタ",
+                    score = 0,
+                    health = 0,
+                    isEliminated = true,
+                    isWinner = false,
+                ),
+            ),
+        )
+
+        assertEquals("モグオ の勝利", gameResultTitle(result))
+        assertEquals("モグオ の勝利。全員の成績を確認してください。", gameResultEventText(result))
+        assertEquals("ゲーム終了。新規から再戦できます。", gameResultActionInstruction())
+        assertEquals("勝者", gameResultPlayerStatus(result.players[0]))
+        assertEquals("脱落", gameResultPlayerStatus(result.players[1]))
+        assertFalse(gameResultActionInstruction().contains("ターン終了"))
+    }
+
+    @Test
     fun `result banner keeps capture result even when later logs arrive`() {
         val colors = resultBannerColors(CaptureOutcomeKind.ESCAPED)
         val text = resultBannerText(
