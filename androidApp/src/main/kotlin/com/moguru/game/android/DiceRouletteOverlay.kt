@@ -24,6 +24,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -40,6 +42,8 @@ private val LANDING_FRAME_MILLIS = listOf(90L, 130L, 190L, 270L, 380L)
 
 /** 着地した出目を見せておく時間。 */
 private const val RESULT_PAUSE_MILLIS = 700L
+
+internal const val DICE_ROULETTE_OVERLAY_CONSUMES_BACK_LAYER_INPUT = true
 
 /**
  * 捕獲ダイスのルーレット演出オーバーレイ。
@@ -97,6 +101,7 @@ fun DiceRouletteOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .consumeBackLayerInput()
             .background(Color(0xB3000000)),
         contentAlignment = Alignment.Center,
     ) {
@@ -107,6 +112,20 @@ fun DiceRouletteOverlay(
         }
     }
 }
+
+private fun Modifier.consumeBackLayerInput(): Modifier =
+    if (!DICE_ROULETTE_OVERLAY_CONSUMES_BACK_LAYER_INPUT) {
+        this
+    } else {
+        pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Final)
+                    event.changes.forEach { it.consume() }
+                }
+            }
+        }
+    }
 
 /** 公開フェーズ: 見つけたエサカードを大きく見せる。 */
 @Composable

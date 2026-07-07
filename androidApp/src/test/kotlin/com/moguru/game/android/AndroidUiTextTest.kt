@@ -242,6 +242,32 @@ class AndroidUiTextTest {
     }
 
     @Test
+    fun `event strip presentation uses result banner styling for capture outcomes`() {
+        val outcome = CaptureOutcomeDisplay(
+            kind = CaptureOutcomeKind.CAPTURED,
+            diceRoll = 6,
+            message = "モグオ が ミミズ を捕獲しました。",
+        )
+        val colors = resultBannerColors(CaptureOutcomeKind.CAPTURED)
+        val presentation = eventStripPresentation(outcome)
+
+        assertEquals(colors.containerArgb, presentation.containerArgb)
+        assertEquals(colors.borderArgb, presentation.borderArgb)
+        assertEquals(colors.contentArgb, presentation.contentArgb)
+        assertEquals(RESULT_BANNER_MAX_LINES, presentation.maxLines)
+    }
+
+    @Test
+    fun `event strip presentation keeps normal events compact`() {
+        val presentation = eventStripPresentation(null)
+
+        assertNull(presentation.containerArgb)
+        assertNull(presentation.borderArgb)
+        assertEquals(0xFF4B3826.toInt(), presentation.contentArgb)
+        assertEquals(EVENT_STRIP_MAX_LINES, presentation.maxLines)
+    }
+
+    @Test
     fun `result banner supports no escape captures`() {
         val text = resultBannerText(
             CaptureOutcomeDisplay(
