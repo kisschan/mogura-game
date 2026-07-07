@@ -48,6 +48,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
@@ -104,6 +105,12 @@ internal val ACTION_BAR_CONTENT_GAP = 4.dp
 internal val EVENT_STRIP_HEIGHT = 40.dp
 internal val COMPACT_ACTION_BUTTON_HEIGHT = 44.dp
 internal val COMPACT_DIG_BUTTON_HEIGHT = 44.dp
+internal val RESULT_EVENT_STRIP_HEIGHT = 52.dp
+internal val MOBILE_PLAY_RESULT_ACTION_BAR_HEIGHT =
+    ACTION_BAR_VERTICAL_PADDING * 2f +
+        RESULT_EVENT_STRIP_HEIGHT +
+        ACTION_BAR_CONTENT_GAP +
+        COMPACT_ACTION_BUTTON_HEIGHT
 internal val LOG_HISTORY_POPUP_MAX_HEIGHT = 220.dp
 internal const val COMPACT_ACTION_CONTROL_MAX_ROWS = 1
 internal const val ACTIVE_GAMEPLAY_USES_VERTICAL_SCROLL = false
@@ -520,10 +527,11 @@ private fun PlayScreen(
             .fillMaxSize()
             .safeDrawingPadding(),
     ) {
+        val fontScale = LocalDensity.current.fontScale
         val layout = mobileGameplayLayoutSpec(
             viewportWidth = maxWidth,
             viewportHeight = maxHeight,
-            actionBarHeight = actionBarHeightForState(state),
+            actionBarHeight = actionBarHeightForState(state, fontScale),
         )
         Column(
             modifier = Modifier
@@ -786,7 +794,10 @@ private fun EventStrip(
     hasHistory: Boolean,
     onHistoryClick: () -> Unit,
 ) {
-    val presentation = eventStripPresentation(captureOutcome)
+    val presentation = eventStripPresentation(
+        outcome = captureOutcome,
+        fontScale = LocalDensity.current.fontScale,
+    )
     val containerColor = presentation.containerArgb?.let(::Color) ?: Color.Transparent
     val border = presentation.borderArgb?.let { BorderStroke(1.dp, Color(it)) }
     Row(
@@ -797,7 +808,7 @@ private fun EventStrip(
         Surface(
             modifier = Modifier
                 .weight(1f)
-                .height(EVENT_STRIP_HEIGHT),
+                .height(presentation.stripHeight),
             shape = RoundedCornerShape(6.dp),
             color = containerColor,
             border = border,
@@ -808,11 +819,11 @@ private fun EventStrip(
                     .fillMaxSize()
                     .padding(
                         horizontal = if (captureOutcome == null) 0.dp else 6.dp,
-                        vertical = 2.dp,
+                        vertical = if (captureOutcome == null) 2.dp else RESULT_EVENT_STRIP_VERTICAL_PADDING,
                     ),
                 color = Color(presentation.contentArgb),
                 fontSize = if (captureOutcome == null) 11.sp else 10.sp,
-                lineHeight = if (captureOutcome == null) 12.sp else 10.sp,
+                lineHeight = if (captureOutcome == null) 12.sp else RESULT_BANNER_LINE_HEIGHT_SP.sp,
                 fontWeight = FontWeight.Bold,
                 maxLines = presentation.maxLines,
                 overflow = TextOverflow.Ellipsis,
@@ -821,7 +832,7 @@ private fun EventStrip(
         if (hasHistory) {
             TextButton(
                 onClick = onHistoryClick,
-                modifier = Modifier.height(EVENT_STRIP_HEIGHT),
+                modifier = Modifier.height(presentation.stripHeight),
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
             ) {
                 Text("履歴", fontSize = 10.sp, fontWeight = FontWeight.Black, maxLines = 1)
@@ -1616,17 +1627,42 @@ internal fun mobileGameplayLayoutSpec(
     )
 }
 
-private fun actionBarHeightForState(state: AndroidGameUiState): Dp =
-    if (state.showDigControls) MOBILE_PLAY_DIG_ACTION_BAR_HEIGHT else MOBILE_PLAY_ACTION_BAR_HEIGHT
+private fun actionBarHeightForState(state: AndroidGameUiState, fontScale: Float): Dp {
+    val mode = if (state.showDigControls) {
+        ActionBarContentMode.DIG_PLACEMENT
+    } else {
+        ActionBarContentMode.STANDARD
+    }
+    val eventStripHeight = if (state.playState.captureOutcome == null) {
+        EVENT_STRIP_HEIGHT
+    } else {
+        resultEventStripHeight(fontScale)
+    }
+    return compactActionBarHeight(mode, eventStripHeight)
+}
 
-internal fun compactActionBarContentHeight(mode: ActionBarContentMode): Dp =
+internal fun compactActionBarContentHeight(
+    mode: ActionBarContentMode,
+    eventStripHeight: Dp = EVENT_STRIP_HEIGHT,
+): Dp =
     ACTION_BAR_VERTICAL_PADDING * 2 +
-        EVENT_STRIP_HEIGHT +
+        eventStripHeight +
         ACTION_BAR_CONTENT_GAP +
         when (mode) {
             ActionBarContentMode.STANDARD -> COMPACT_ACTION_BUTTON_HEIGHT
             ActionBarContentMode.DIG_PLACEMENT -> COMPACT_DIG_BUTTON_HEIGHT
         }
+
+internal fun compactActionBarHeight(
+    mode: ActionBarContentMode,
+    eventStripHeight: Dp = EVENT_STRIP_HEIGHT,
+): Dp {
+    val baseHeight = when (mode) {
+        ActionBarContentMode.STANDARD -> MOBILE_PLAY_ACTION_BAR_HEIGHT
+        ActionBarContentMode.DIG_PLACEMENT -> MOBILE_PLAY_DIG_ACTION_BAR_HEIGHT
+    }
+    return maxOf(baseHeight, compactActionBarContentHeight(mode, eventStripHeight))
+}
 
 internal fun compactTargetActionSlotCount(targetCount: Int): Int =
     if (targetCount > 1) 2 else 1
@@ -2057,11 +2093,23 @@ internal data class EventStripPresentation(
     val borderArgb: Int?,
     val contentArgb: Int,
     val maxLines: Int,
+    val stripHeight: Dp,
 )
 
 internal const val RESULT_BANNER_MAX_LINES = 4
+private const val RESULT_BANNER_LINE_HEIGHT_SP = 10
+private val RESULT_EVENT_STRIP_VERTICAL_PADDING = 2.dp
 
-internal fun eventStripPresentation(outcome: CaptureOutcomeDisplay?): EventStripPresentation =
+internal fun resultEventStripHeight(fontScale: Float = 1f): Dp {
+    val textHeight = RESULT_BANNER_LINE_HEIGHT_SP.dp * RESULT_BANNER_MAX_LINES.toFloat() * fontScale
+    val paddedHeight = textHeight + RESULT_EVENT_STRIP_VERTICAL_PADDING * 2f
+    return maxOf(RESULT_EVENT_STRIP_HEIGHT, paddedHeight)
+}
+
+internal fun eventStripPresentation(
+    outcome: CaptureOutcomeDisplay?,
+    fontScale: Float = 1f,
+): EventStripPresentation =
     outcome?.let {
         val colors = resultBannerColors(it.kind)
         EventStripPresentation(
@@ -2069,12 +2117,14 @@ internal fun eventStripPresentation(outcome: CaptureOutcomeDisplay?): EventStrip
             borderArgb = colors.borderArgb,
             contentArgb = colors.contentArgb,
             maxLines = RESULT_BANNER_MAX_LINES,
+            stripHeight = resultEventStripHeight(fontScale),
         )
     } ?: EventStripPresentation(
         containerArgb = null,
         borderArgb = null,
         contentArgb = 0xFF4B3826.toInt(),
         maxLines = EVENT_STRIP_MAX_LINES,
+        stripHeight = EVENT_STRIP_HEIGHT,
     )
 
 internal fun resultBannerColors(kind: CaptureOutcomeKind): ResultBannerColors =

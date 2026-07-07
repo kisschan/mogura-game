@@ -280,6 +280,7 @@ class AndroidUiTextTest {
         assertEquals(colors.borderArgb, presentation.borderArgb)
         assertEquals(colors.contentArgb, presentation.contentArgb)
         assertEquals(RESULT_BANNER_MAX_LINES, presentation.maxLines)
+        assertEquals(RESULT_EVENT_STRIP_HEIGHT, presentation.stripHeight)
     }
 
     @Test
@@ -290,6 +291,7 @@ class AndroidUiTextTest {
         assertNull(presentation.borderArgb)
         assertEquals(0xFF4B3826.toInt(), presentation.contentArgb)
         assertEquals(EVENT_STRIP_MAX_LINES, presentation.maxLines)
+        assertEquals(EVENT_STRIP_HEIGHT, presentation.stripHeight)
     }
 
     @Test
