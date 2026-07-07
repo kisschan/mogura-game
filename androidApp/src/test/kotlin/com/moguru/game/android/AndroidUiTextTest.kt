@@ -41,6 +41,16 @@ class AndroidUiTextTest {
     }
 
     @Test
+    fun `setup choice state matches selectable swap behavior`() {
+        assertEquals("選択中", setupChoiceStateDescription(selected = true, usedByLabel = null))
+        assertEquals("未選択", setupChoiceStateDescription(selected = false, usedByLabel = null))
+        assertEquals(
+            "P2使用中。選ぶと担当を入れ替えます",
+            setupChoiceStateDescription(selected = false, usedByLabel = "P2使用中"),
+        )
+    }
+
+    @Test
     fun `start player semantics include seat name and state`() {
         assertEquals(
             "P1 モグタを先手にする、選択中",

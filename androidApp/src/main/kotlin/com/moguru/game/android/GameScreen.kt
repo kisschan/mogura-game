@@ -1930,10 +1930,10 @@ internal fun nestChoiceVisualLines(position: Position, usedByLabel: String?): Li
 internal fun startPlayerSemanticsLabel(seatIndex: Int, name: String, selected: Boolean): String =
     "P${seatIndex + 1} ${name}を先手にする、${if (selected) "選択中" else "未選択"}"
 
-private fun setupChoiceStateDescription(selected: Boolean, usedByLabel: String?): String =
+internal fun setupChoiceStateDescription(selected: Boolean, usedByLabel: String?): String =
     when {
         selected -> "選択中"
-        usedByLabel != null -> "$usedByLabel のため選択不可"
+        usedByLabel != null -> "$usedByLabel。選ぶと担当を入れ替えます"
         else -> "未選択"
     }
 
