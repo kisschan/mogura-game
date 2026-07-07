@@ -1,6 +1,7 @@
 package com.moguru.game.android
 
 import com.moguru.game.engine.GameEngine
+import com.moguru.game.engine.GameState
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Direction
 import com.moguru.game.model.FoodCard
@@ -34,6 +35,7 @@ class AndroidGameViewModelTest {
         assertTrue(state.boardState.cells.isEmpty())
         assertTrue(state.visibleActions.isEmpty())
         assertFalse(state.showDigControls)
+        assertNull(state.gameResult)
     }
 
     @Test
@@ -488,6 +490,65 @@ class AndroidGameViewModelTest {
         viewModel.finishDiceRoulette()
 
         assertEquals(TurnPhase.DECIDE, viewModel.uiState.value.playState.actionAvailability.activePhase)
+    }
+
+    @Test
+    fun `score win exposes winner and every player result`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+        viewModel.startNewGame(2)
+        val engine = controller.engine!!
+        val winner = engine.players[0]
+
+        winner.carryFood(FoodCard(FoodType.FROG, emptyMap(), isFaceDown = false))
+        winner.storeFood()
+        repeat(3) { engine.advancePhase() }
+
+        viewModel.finishTurn()
+
+        val state = viewModel.uiState.value
+        val result = state.gameResult!!
+        assertEquals(GameState.FINISHED, engine.gameState)
+        assertEquals("ゲーム終了です。", state.lastMessage)
+        assertTrue(state.showGameResultOverlay)
+        assertEquals(winner.id, result.winnerPlayerId)
+        assertEquals("モグオ", result.winnerName)
+        assertEquals(listOf(0, 1), result.players.map { it.playerId })
+        assertEquals(4, result.players.single { it.playerId == 0 }.score)
+        assertEquals(Player.MAX_HEALTH - 1, result.players.single { it.playerId == 0 }.health)
+        assertTrue(result.players.single { it.playerId == 0 }.isWinner)
+        assertFalse(result.players.single { it.playerId == 1 }.isWinner)
+        assertTrue(state.visibleActions.isEmpty())
+        assertFalse(state.showDigControls)
+
+        viewModel.dismissGameResultOverlay()
+
+        val dismissedState = viewModel.uiState.value
+        assertEquals(result, dismissedState.gameResult)
+        assertFalse(dismissedState.showGameResultOverlay)
+    }
+
+    @Test
+    fun `elimination win exposes eliminated player result`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+        viewModel.startNewGame(2)
+        val engine = controller.engine!!
+        val eliminated = engine.players[1]
+        repeat(Player.MAX_HEALTH) { eliminated.reduceHealth(isOnSurface = false) }
+        repeat(3) { engine.advancePhase() }
+
+        viewModel.finishTurn()
+
+        val result = viewModel.uiState.value.gameResult!!
+        val winnerResult = result.players.single { it.playerId == 0 }
+        val eliminatedResult = result.players.single { it.playerId == 1 }
+        assertEquals(GameState.FINISHED, engine.gameState)
+        assertEquals("モグオ", result.winnerName)
+        assertTrue(winnerResult.isWinner)
+        assertEquals(0, eliminatedResult.health)
+        assertTrue(eliminatedResult.isEliminated)
+        assertFalse(eliminatedResult.isWinner)
     }
 
     private fun testViewModel(): AndroidGameViewModel =
