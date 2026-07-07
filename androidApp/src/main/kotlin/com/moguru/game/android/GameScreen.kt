@@ -357,6 +357,7 @@ private fun MoleChoiceButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val selectedColors = setupSelectedChoiceColors()
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
@@ -368,13 +369,13 @@ private fun MoleChoiceButton(
             },
         shape = RoundedCornerShape(8.dp),
         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-        border = BorderStroke(2.dp, if (selected) Color(0xFF158A45) else Color(0xFF9A7A52)),
+        border = BorderStroke(2.dp, if (selected) Color(selectedColors.borderArgb) else Color(0xFF9A7A52)),
         colors = if (selected) {
             ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF35BC67),
-                contentColor = Color(0xFF102F1B),
-                disabledContainerColor = Color(0xFF35BC67),
-                disabledContentColor = Color(0xFF102F1B),
+                containerColor = Color(selectedColors.containerArgb),
+                contentColor = Color(selectedColors.contentArgb),
+                disabledContainerColor = Color(selectedColors.containerArgb),
+                disabledContentColor = Color(selectedColors.contentArgb),
             )
         } else {
             ButtonDefaults.outlinedButtonColors(
@@ -424,6 +425,7 @@ private fun NestChoiceButton(
     modifier: Modifier = Modifier,
 ) {
     val label = nestDisplayLabel(position)
+    val selectedColors = setupSelectedChoiceColors()
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
@@ -438,13 +440,13 @@ private fun NestChoiceButton(
             },
         shape = RoundedCornerShape(8.dp),
         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 3.dp),
-        border = BorderStroke(2.dp, if (selected) Color(0xFFE64B3F) else Color(0xFF9A7A52)),
+        border = BorderStroke(2.dp, if (selected) Color(selectedColors.borderArgb) else Color(0xFF9A7A52)),
         colors = if (selected) {
             ButtonDefaults.buttonColors(
-                containerColor = Color(0xFFFFD9D3),
-                contentColor = Color(0xFF2E2115),
-                disabledContainerColor = Color(0xFFFFD9D3),
-                disabledContentColor = Color(0xFF2E2115),
+                containerColor = Color(selectedColors.containerArgb),
+                contentColor = Color(selectedColors.contentArgb),
+                disabledContainerColor = Color(selectedColors.containerArgb),
+                disabledContentColor = Color(selectedColors.contentArgb),
             )
         } else {
             ButtonDefaults.outlinedButtonColors(
@@ -1935,6 +1937,19 @@ internal fun nestDisplayLabel(position: Position): NestDisplayLabel = when (posi
 private fun nestLabel(position: Position): String = nestDisplayLabel(position).name
 
 internal fun setupUsedByLabel(seatIndex: Int): String = "P${seatIndex + 1}使用中"
+
+internal data class SetupChoiceColors(
+    val borderArgb: Int,
+    val containerArgb: Int,
+    val contentArgb: Int,
+)
+
+internal fun setupSelectedChoiceColors(): SetupChoiceColors =
+    SetupChoiceColors(
+        borderArgb = 0xFF158A45.toInt(),
+        containerArgb = 0xFF35BC67.toInt(),
+        contentArgb = 0xFF102F1B.toInt(),
+    )
 
 internal fun nestChoiceVisualLines(position: Position, usedByLabel: String?): List<String> =
     buildList {
