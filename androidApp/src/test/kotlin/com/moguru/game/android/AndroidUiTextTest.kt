@@ -51,6 +51,17 @@ class AndroidUiTextTest {
     }
 
     @Test
+    fun `setup selected palette is shared and not danger red`() {
+        val colors = setupSelectedChoiceColors()
+
+        assertEquals(0xFF158A45.toInt(), colors.borderArgb)
+        assertEquals(0xFF35BC67.toInt(), colors.containerArgb)
+        assertEquals(0xFF102F1B.toInt(), colors.contentArgb)
+        assertFalse(colors.borderArgb == 0xFFE64B3F.toInt())
+        assertFalse(colors.containerArgb == 0xFFFFD9D3.toInt())
+    }
+
+    @Test
     fun `start player semantics include seat name and state`() {
         assertEquals(
             "P1 モグタを先手にする、選択中",
