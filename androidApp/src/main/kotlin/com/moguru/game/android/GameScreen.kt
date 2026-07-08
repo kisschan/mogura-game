@@ -35,6 +35,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -133,8 +134,15 @@ internal data class MobileGameplayLayoutSpec(
 )
 
 @Composable
-fun MoguraGameScreen(viewModel: AndroidGameViewModel = viewModel()) {
+fun MoguraGameScreen(
+    viewModel: AndroidGameViewModel = viewModel(),
+    onGameStartedChanged: (Boolean) -> Unit = {},
+) {
     val state by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(state.isGameStarted) {
+        onGameStartedChanged(state.isGameStarted)
+    }
 
     MaterialTheme {
         Surface(
