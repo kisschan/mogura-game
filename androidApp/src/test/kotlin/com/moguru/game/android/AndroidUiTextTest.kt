@@ -41,6 +41,27 @@ class AndroidUiTextTest {
     }
 
     @Test
+    fun `setup choice state matches selectable swap behavior`() {
+        assertEquals("選択中", setupChoiceStateDescription(selected = true, usedByLabel = null))
+        assertEquals("未選択", setupChoiceStateDescription(selected = false, usedByLabel = null))
+        assertEquals(
+            "P2使用中。選ぶと担当を入れ替えます",
+            setupChoiceStateDescription(selected = false, usedByLabel = "P2使用中"),
+        )
+    }
+
+    @Test
+    fun `setup selected palette is shared and not danger red`() {
+        val colors = setupSelectedChoiceColors()
+
+        assertEquals(0xFF158A45.toInt(), colors.borderArgb)
+        assertEquals(0xFF35BC67.toInt(), colors.containerArgb)
+        assertEquals(0xFF102F1B.toInt(), colors.contentArgb)
+        assertFalse(colors.borderArgb == 0xFFE64B3F.toInt())
+        assertFalse(colors.containerArgb == 0xFFFFD9D3.toInt())
+    }
+
+    @Test
     fun `start player semantics include seat name and state`() {
         assertEquals(
             "P1 モグタを先手にする、選択中",
@@ -179,6 +200,20 @@ class AndroidUiTextTest {
     }
 
     @Test
+    fun `dig candidate visual tile resource follows candidate shape`() {
+        val candidate = DigCandidateDisplay(
+            choice = DigTileChoice.DRAWN,
+            label = "山札",
+            shape = TileShape.T_SHAPE,
+            selected = false,
+            enabled = true,
+        )
+
+        assertEquals(R.drawable.tile_t_shape, digCandidateTileRes(candidate))
+        assertNull(digCandidateTileRes(candidate.copy(shape = null)))
+    }
+
+    @Test
     fun `capture target accessibility labels describe action and target`() {
         val target = CaptureTargetDisplay(
             index = 1,
@@ -229,6 +264,34 @@ class AndroidUiTextTest {
     @Test
     fun `result banner does not cap lines because outcome and next action are critical`() {
         assertEquals(4, RESULT_BANNER_MAX_LINES)
+    }
+
+    @Test
+    fun `event strip presentation uses result banner styling for capture outcomes`() {
+        val outcome = CaptureOutcomeDisplay(
+            kind = CaptureOutcomeKind.CAPTURED,
+            diceRoll = 6,
+            message = "モグオ が ミミズ を捕獲しました。",
+        )
+        val colors = resultBannerColors(CaptureOutcomeKind.CAPTURED)
+        val presentation = eventStripPresentation(outcome)
+
+        assertEquals(colors.containerArgb, presentation.containerArgb)
+        assertEquals(colors.borderArgb, presentation.borderArgb)
+        assertEquals(colors.contentArgb, presentation.contentArgb)
+        assertEquals(RESULT_BANNER_MAX_LINES, presentation.maxLines)
+        assertEquals(RESULT_EVENT_STRIP_HEIGHT, presentation.stripHeight)
+    }
+
+    @Test
+    fun `event strip presentation keeps normal events compact`() {
+        val presentation = eventStripPresentation(null)
+
+        assertNull(presentation.containerArgb)
+        assertNull(presentation.borderArgb)
+        assertEquals(0xFF4B3826.toInt(), presentation.contentArgb)
+        assertEquals(EVENT_STRIP_MAX_LINES, presentation.maxLines)
+        assertEquals(EVENT_STRIP_HEIGHT, presentation.stripHeight)
     }
 
     @Test

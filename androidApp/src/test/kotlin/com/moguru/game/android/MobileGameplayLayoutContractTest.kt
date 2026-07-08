@@ -57,6 +57,45 @@ class MobileGameplayLayoutContractTest {
     }
 
     @Test
+    fun `result banners get enough strip and action bar height for four lines`() {
+        assertTrue(RESULT_EVENT_STRIP_HEIGHT > EVENT_STRIP_HEIGHT)
+        assertTrue(RESULT_EVENT_STRIP_HEIGHT >= 44.dp)
+        assertTrue(
+            compactActionBarContentHeight(ActionBarContentMode.STANDARD, RESULT_EVENT_STRIP_HEIGHT) <=
+                MOBILE_PLAY_RESULT_ACTION_BAR_HEIGHT,
+            "result banners must not overflow the expanded action bar",
+        )
+    }
+
+    @Test
+    fun `result banner heights scale with accessibility font size`() {
+        val scaledStripHeight = resultEventStripHeight(fontScale = 1.5f)
+        val scaledActionBarHeight = compactActionBarHeight(
+            mode = ActionBarContentMode.STANDARD,
+            eventStripHeight = scaledStripHeight,
+        )
+
+        assertTrue(scaledStripHeight > RESULT_EVENT_STRIP_HEIGHT)
+        assertTrue(scaledActionBarHeight > MOBILE_PLAY_RESULT_ACTION_BAR_HEIGHT)
+        assertTrue(
+            compactActionBarContentHeight(ActionBarContentMode.STANDARD, scaledStripHeight) <=
+                scaledActionBarHeight,
+        )
+    }
+
+    @Test
+    fun `result banner action bar still fits the smallest supported viewport`() {
+        val spec = mobileGameplayLayoutSpec(
+            viewportWidth = 360.dp,
+            viewportHeight = 740.dp,
+            actionBarHeight = MOBILE_PLAY_RESULT_ACTION_BAR_HEIGHT,
+        )
+
+        assertTrue(spec.fitsWithoutScroll)
+        assertTrue(spec.usedHeight <= 740.dp)
+    }
+
+    @Test
     fun `mobile action controls are single row only`() {
         assertEquals(1, COMPACT_ACTION_CONTROL_MAX_ROWS)
     }
@@ -82,5 +121,10 @@ class MobileGameplayLayoutContractTest {
     @Test
     fun `log drawer has a bounded overlay height`() {
         assertTrue(LOG_HISTORY_POPUP_MAX_HEIGHT <= 220.dp)
+    }
+
+    @Test
+    fun `dice roulette overlay blocks input to the back layer`() {
+        assertTrue(DICE_ROULETTE_OVERLAY_CONSUMES_BACK_LAYER_INPUT)
     }
 }
