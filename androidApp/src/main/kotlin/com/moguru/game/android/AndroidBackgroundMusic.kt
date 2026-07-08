@@ -84,11 +84,15 @@ internal class AudioFocusBackgroundMusicPlayer(
     private val mediaPlayer: AndroidLoopingMediaPlayer,
     private val audioFocus: AndroidAudioFocus,
 ) : AndroidBackgroundMusicPlayer {
+    private var playbackRequested = false
     private var hasFocus = false
     private var isClosed = false
 
     override fun playLooping() {
-        if (isClosed || mediaPlayer.isPlaying) return
+        if (isClosed) return
+
+        playbackRequested = true
+        if (mediaPlayer.isPlaying) return
         if (!hasFocus && !audioFocus.request()) return
 
         hasFocus = true
@@ -98,25 +102,41 @@ internal class AudioFocusBackgroundMusicPlayer(
     override fun pause() {
         if (isClosed) return
 
+        playbackRequested = false
         if (mediaPlayer.isPlaying) {
             mediaPlayer.pause()
         }
         abandonFocusIfHeld()
     }
 
-    fun onAudioFocusLoss() {
+    fun onPermanentAudioFocusLoss() {
         if (isClosed) return
 
+        playbackRequested = false
         if (mediaPlayer.isPlaying) {
             mediaPlayer.pause()
         }
         abandonFocusIfHeld()
+    }
+
+    fun onTransientAudioFocusLoss() {
+        if (isClosed || !mediaPlayer.isPlaying) return
+
+        mediaPlayer.pause()
+    }
+
+    fun onAudioFocusGain() {
+        if (isClosed || !playbackRequested || mediaPlayer.isPlaying) return
+
+        hasFocus = true
+        mediaPlayer.start()
     }
 
     override fun close() {
         if (isClosed) return
 
         isClosed = true
+        playbackRequested = false
         abandonFocusIfHeld()
         mediaPlayer.close()
     }
@@ -137,8 +157,12 @@ private class MediaPlayerBackgroundMusicPlayer(
 
     init {
         lateinit var focusAwarePlayer: AudioFocusBackgroundMusicPlayer
-        val audioFocus = AudioManagerAudioFocus(context) {
-            focusAwarePlayer.onAudioFocusLoss()
+        val audioFocus = AudioManagerAudioFocus(context) { focusChange ->
+            when (focusChange) {
+                AndroidAudioFocusChange.GAIN -> focusAwarePlayer.onAudioFocusGain()
+                AndroidAudioFocusChange.LOSS -> focusAwarePlayer.onPermanentAudioFocusLoss()
+                AndroidAudioFocusChange.TRANSIENT_LOSS -> focusAwarePlayer.onTransientAudioFocusLoss()
+            }
         }
         focusAwarePlayer = AudioFocusBackgroundMusicPlayer(
             mediaPlayer = AndroidMediaPlayer(context, resourceId),
@@ -187,7 +211,7 @@ private class AndroidMediaPlayer(
 
 private class AudioManagerAudioFocus(
     context: Context,
-    onFocusLoss: () -> Unit,
+    onFocusChange: (AndroidAudioFocusChange) -> Unit,
 ) : AndroidAudioFocus {
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val focusRequest = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
@@ -198,9 +222,7 @@ private class AudioManagerAudioFocus(
                 .build(),
         )
         .setOnAudioFocusChangeListener { focusChange ->
-            if (focusChange.isFocusLoss()) {
-                onFocusLoss()
-            }
+            focusChange.asAndroidAudioFocusChange()?.let(onFocusChange)
         }
         .build()
 
@@ -212,7 +234,18 @@ private class AudioManagerAudioFocus(
     }
 }
 
-private fun Int.isFocusLoss(): Boolean =
-    this == AudioManager.AUDIOFOCUS_LOSS ||
-        this == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ||
-        this == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK
+private enum class AndroidAudioFocusChange {
+    GAIN,
+    LOSS,
+    TRANSIENT_LOSS,
+}
+
+private fun Int.asAndroidAudioFocusChange(): AndroidAudioFocusChange? =
+    when (this) {
+        AudioManager.AUDIOFOCUS_GAIN -> AndroidAudioFocusChange.GAIN
+        AudioManager.AUDIOFOCUS_LOSS -> AndroidAudioFocusChange.LOSS
+        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
+        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK,
+        -> AndroidAudioFocusChange.TRANSIENT_LOSS
+        else -> null
+    }

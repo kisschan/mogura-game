@@ -43,7 +43,7 @@ class AndroidBackgroundMusicPlayerAudioFocusTest {
     }
 
     @Test
-    fun `audio focus loss pauses playback and abandons focus`() {
+    fun `permanent audio focus loss pauses playback and abandons focus`() {
         val events = mutableListOf<String>()
         val mediaPlayer = FakeLoopingMediaPlayer(events)
         val audioFocus = FakeAndroidAudioFocus(events)
@@ -51,9 +51,54 @@ class AndroidBackgroundMusicPlayerAudioFocusTest {
         player.playLooping()
         events.clear()
 
-        player.onAudioFocusLoss()
+        player.onPermanentAudioFocusLoss()
 
         assertEquals(listOf("media.pause", "focus.abandon"), events)
+    }
+
+    @Test
+    fun `transient audio focus loss pauses playback without abandoning focus`() {
+        val events = mutableListOf<String>()
+        val mediaPlayer = FakeLoopingMediaPlayer(events)
+        val audioFocus = FakeAndroidAudioFocus(events)
+        val player = AudioFocusBackgroundMusicPlayer(mediaPlayer, audioFocus)
+        player.playLooping()
+        events.clear()
+
+        player.onTransientAudioFocusLoss()
+
+        assertEquals(listOf("media.pause"), events)
+    }
+
+    @Test
+    fun `audio focus gain resumes playback after transient loss`() {
+        val events = mutableListOf<String>()
+        val mediaPlayer = FakeLoopingMediaPlayer(events)
+        val audioFocus = FakeAndroidAudioFocus(events)
+        val player = AudioFocusBackgroundMusicPlayer(mediaPlayer, audioFocus)
+        player.playLooping()
+        player.onTransientAudioFocusLoss()
+        events.clear()
+
+        player.onAudioFocusGain()
+
+        assertEquals(listOf("media.start"), events)
+    }
+
+    @Test
+    fun `audio focus gain does not resume after user requested pause`() {
+        val events = mutableListOf<String>()
+        val mediaPlayer = FakeLoopingMediaPlayer(events)
+        val audioFocus = FakeAndroidAudioFocus(events)
+        val player = AudioFocusBackgroundMusicPlayer(mediaPlayer, audioFocus)
+        player.playLooping()
+        player.onTransientAudioFocusLoss()
+        player.pause()
+        events.clear()
+
+        player.onAudioFocusGain()
+
+        assertEquals(emptyList<String>(), events)
     }
 
     @Test
