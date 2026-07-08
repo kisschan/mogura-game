@@ -712,7 +712,7 @@ class GameEngineTest {
     }
 
     @Test
-    fun `escape into ground cell without an open underground edge is captured`() {
+    fun `escape into ground cell without an open underground edge succeeds`() {
         val escapeEngine = GameEngine(
             playerCount = 2,
             diceRoller = FixedDiceRoller(listOf(1)),
@@ -728,13 +728,13 @@ class GameEngineTest {
 
         val result = escapeEngine.attemptCaptureAt(foodPosition)
 
-        assertTrue(result is CaptureResult.Success, "escape into ground without an open underground edge should be captured")
-        assertNotNull(escapeEngine.foodPositions[foodPosition], "food should remain at the capture source")
-        assertNull(escapeEngine.foodPositions[escapeTo], "food should not move into an unreachable ground cell")
+        assertTrue(result is CaptureResult.Escaped, "escape into ground should not require an open underground edge")
+        assertNull(escapeEngine.foodPositions[foodPosition], "food should leave the capture source")
+        assertNotNull(escapeEngine.foodPositions[escapeTo], "food should move into the ground cell")
     }
 
     @Test
-    fun `escape into face-up tile without connected openings is captured`() {
+    fun `escape into face-up tile without connected openings succeeds`() {
         val escapeEngine = GameEngine(
             playerCount = 2,
             diceRoller = FixedDiceRoller(listOf(1)),
@@ -752,9 +752,31 @@ class GameEngineTest {
 
         val result = escapeEngine.attemptCaptureAt(foodPosition)
 
-        assertTrue(result is CaptureResult.Success, "escape without connected tile openings should be captured")
-        assertNotNull(escapeEngine.foodPositions[foodPosition], "food should remain at the capture source")
-        assertNull(escapeEngine.foodPositions[escapeTo], "food should not move into an unreachable tile")
+        assertTrue(result is CaptureResult.Escaped, "escape should not require connected tile openings")
+        assertNull(escapeEngine.foodPositions[foodPosition], "food should leave the capture source")
+        assertNotNull(escapeEngine.foodPositions[escapeTo], "food should move into the escape tile")
+    }
+
+    @Test
+    fun `frog can escape to ground without an open underground edge`() {
+        val escapeEngine = GameEngine(
+            playerCount = 2,
+            diceRoller = FixedDiceRoller(listOf(3)),
+            shuffler = shuffler,
+        )
+        escapeEngine.setupGame(defaultConfigs())
+
+        val foodPosition = Position(1, 1)
+        val escapeTo = Position(1, 0)
+        val food = FoodCard(FoodType.FROG, mapOf(3 to EscapeDirection.TOP), isFaceDown = false)
+        placeFaceUpTile(escapeEngine, foodPosition, Direction.RIGHT)
+        replaceFoodAt(escapeEngine, foodPosition, food)
+
+        val result = escapeEngine.attemptCaptureAt(foodPosition)
+
+        assertTrue(result is CaptureResult.Escaped, "frog escape should follow the same no-path rule")
+        assertNull(escapeEngine.foodPositions[foodPosition], "food should leave the capture source")
+        assertNotNull(escapeEngine.foodPositions[escapeTo], "frog should move into the ground cell")
     }
 
     @Test
