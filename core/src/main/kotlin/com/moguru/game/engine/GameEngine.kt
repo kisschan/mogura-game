@@ -211,7 +211,7 @@ class GameEngine(
     /**
      * 盤面上のエサに対する捕獲判定。
      *
-     * 逃走先が盤外・無効マス・巣マス・道なしの場合は捕獲成功とする。
+     * 逃走先が盤外・無効マス・巣マスの場合は捕獲成功とする。
      * 逃走先に別エサがいる場合は同じマスに重ねて配置する。
      */
     fun attemptCaptureAt(foodPosition: Position): CaptureResult {
@@ -261,8 +261,7 @@ class GameEngine(
         if (
             escapeCell == null ||
             escapeCell.type == CellType.INVALID ||
-            escapeCell.type == CellType.NEST ||
-            !hasValidEscapePath(foodPosition, escapeTo, escapeDirection)
+            escapeCell.type == CellType.NEST
         ) {
             lastCaptureSuccess = true
             return CaptureResult.Success(roll)
@@ -371,11 +370,6 @@ class GameEngine(
         }
     }
 
-    private fun hasValidEscapePath(from: Position, to: Position, direction: EscapeDirection): Boolean {
-        if (!direction.isOrthogonal()) return true
-        return movementEngine.isConnected(from, to, boardState)
-    }
-
     /** 捕獲フェーズから、タベる/レンコウまたは強奪を選ぶフェーズへ直接入る。 */
     fun enterDecisionPhase() {
         currentPhase = TurnPhase.DECIDE
@@ -449,4 +443,3 @@ class GameEngine(
     }
 }
 
-private fun EscapeDirection.isOrthogonal(): Boolean = dc == 0 || dr == 0
