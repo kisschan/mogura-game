@@ -8,11 +8,15 @@ class MainActivity : ComponentActivity() {
     private val backgroundMusic by lazy {
         AndroidBackgroundMusicController(defaultAndroidBackgroundMusicPlayer(this))
     }
+    private val soundEffects by lazy {
+        defaultAndroidSoundEffectPlayer(this)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MoguraGameScreen(
+                soundEffects = soundEffects,
                 onGameStartedChanged = backgroundMusic::onGameStartedChanged,
             )
         }
@@ -29,6 +33,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        soundEffects.close()
         backgroundMusic.close()
         super.onDestroy()
     }
