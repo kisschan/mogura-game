@@ -35,12 +35,14 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -133,10 +135,15 @@ internal data class MobileGameplayLayoutSpec(
     val fitsWithoutScroll: Boolean,
 )
 
+private val LocalAndroidSoundEffectPlayer = staticCompositionLocalOf<AndroidSoundEffectPlayer> {
+    NoOpAndroidSoundEffectPlayer
+}
+
 @Composable
 fun MoguraGameScreen(
     viewModel: AndroidGameViewModel = viewModel(),
     onGameStartedChanged: (Boolean) -> Unit = {},
+    soundEffects: AndroidSoundEffectPlayer = NoOpAndroidSoundEffectPlayer,
 ) {
     val state by viewModel.uiState.collectAsState()
 
@@ -145,36 +152,50 @@ fun MoguraGameScreen(
     }
 
     MaterialTheme {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = Color(0xFFFFF7E4),
-        ) {
-            Box {
-                if (state.isGameStarted) {
-                    PlayScreen(state = state, viewModel = viewModel)
-                } else {
-                    SetupScreen(state = state, viewModel = viewModel)
-                }
-                val rouletteFood = state.playState.diceRouletteFood
-                if (state.playState.diceRouletteActive && rouletteFood != null) {
-                    DiceRouletteOverlay(
-                        foodType = rouletteFood,
-                        escapeRolls = state.playState.diceRouletteEscapeRolls,
-                        targetFace = state.playState.diceRouletteResult,
-                        onTap = viewModel::stopDiceRoulette,
-                        onFinished = viewModel::finishDiceRoulette,
-                    )
-                }
-                val gameResult = state.gameResult
-                if (state.showGameResultOverlay && gameResult != null) {
-                    GameResultOverlay(
-                        result = gameResult,
-                        onViewBoard = viewModel::dismissGameResultOverlay,
-                        onNewGame = viewModel::returnToSetup,
-                    )
+        CompositionLocalProvider(LocalAndroidSoundEffectPlayer provides soundEffects) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = Color(0xFFFFF7E4),
+            ) {
+                Box {
+                    if (state.isGameStarted) {
+                        PlayScreen(state = state, viewModel = viewModel)
+                    } else {
+                        SetupScreen(state = state, viewModel = viewModel)
+                    }
+                    val rouletteFood = state.playState.diceRouletteFood
+                    if (state.playState.diceRouletteActive && rouletteFood != null) {
+                        DiceRouletteOverlay(
+                            foodType = rouletteFood,
+                            escapeRolls = state.playState.diceRouletteEscapeRolls,
+                            targetFace = state.playState.diceRouletteResult,
+                            onTap = viewModel::stopDiceRoulette,
+                            onFinished = viewModel::finishDiceRoulette,
+                        )
+                    }
+                    val gameResult = state.gameResult
+                    if (state.showGameResultOverlay && gameResult != null) {
+                        GameResultOverlay(
+                            result = gameResult,
+                            onViewBoard = viewModel::dismissGameResultOverlay,
+                            onNewGame = viewModel::returnToSetup,
+                        )
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun soundEffectClick(
+    effect: AndroidSoundEffect = AndroidSoundEffect.BUTTON_PRESS,
+    onClick: () -> Unit,
+): () -> Unit {
+    val soundEffects = LocalAndroidSoundEffectPlayer.current
+    return {
+        soundEffects.play(effect)
+        onClick()
     }
 }
 
@@ -210,7 +231,7 @@ private fun SetupScreen(
                 PlayerCountButton(
                     count = count,
                     selected = state.selectedPlayerCount == count,
-                    onClick = { viewModel.selectPlayerCount(count) },
+                    onClick = soundEffectClick { viewModel.selectPlayerCount(count) },
                 )
             }
         }
@@ -236,7 +257,7 @@ private fun SetupScreen(
             }
         }
         Button(
-            onClick = viewModel::startSelectedGame,
+            onClick = soundEffectClick(onClick = viewModel::startSelectedGame),
             enabled = state.canStartGame,
             modifier = Modifier
                 .padding(top = 24.dp)
@@ -287,7 +308,7 @@ private fun SetupPlayerRow(
                 maxLines = 2,
             )
             OutlinedButton(
-                onClick = { onStartSelected(player.seatIndex) },
+                onClick = soundEffectClick { onStartSelected(player.seatIndex) },
                 modifier = Modifier
                     .widthIn(min = 84.dp)
                     .heightIn(min = 48.dp)
@@ -332,7 +353,7 @@ private fun SetupPlayerRow(
                     selected = selected,
                     usedByLabel = usedByOther?.let { setupUsedByLabel(it.seatIndex) },
                     enabled = true,
-                    onClick = { onMoleSelected(player.seatIndex, option.playerId) },
+                    onClick = soundEffectClick { onMoleSelected(player.seatIndex, option.playerId) },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -354,7 +375,7 @@ private fun SetupPlayerRow(
                     selected = selected,
                     usedByLabel = usedByOther?.let { setupUsedByLabel(it.seatIndex) },
                     enabled = true,
-                    onClick = { onNestSelected(player.seatIndex, nest) },
+                    onClick = soundEffectClick { onNestSelected(player.seatIndex, nest) },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -625,7 +646,7 @@ private fun CompactPlayHud(
             HudChip(compactScoreText(current.scoreText), accent = Color(0xFF56A3E8))
         }
         OutlinedButton(
-            onClick = { showNewGameConfirmation = true },
+            onClick = soundEffectClick { showNewGameConfirmation = true },
             modifier = Modifier
                 .widthIn(min = 48.dp)
                 .heightIn(min = 40.dp),
@@ -648,7 +669,7 @@ private fun CompactPlayHud(
             },
             confirmButton = {
                 TextButton(
-                    onClick = {
+                    onClick = soundEffectClick {
                         showNewGameConfirmation = false
                         onNewGame()
                     },
@@ -657,7 +678,7 @@ private fun CompactPlayHud(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showNewGameConfirmation = false }) {
+                TextButton(onClick = soundEffectClick { showNewGameConfirmation = false }) {
                     Text("続ける")
                 }
             },
@@ -839,7 +860,7 @@ private fun EventStrip(
         }
         if (hasHistory) {
             TextButton(
-                onClick = onHistoryClick,
+                onClick = soundEffectClick(onClick = onHistoryClick),
                 modifier = Modifier.height(presentation.stripHeight),
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
             ) {
@@ -890,7 +911,7 @@ private fun LogHistoryPopup(
                     )
                 }
                 TextButton(
-                    onClick = onDismiss,
+                    onClick = soundEffectClick(onClick = onDismiss),
                     modifier = Modifier.align(Alignment.End),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                 ) {
@@ -943,7 +964,7 @@ private fun GameResultOverlay(
         },
         confirmButton = {
             Button(
-                onClick = onNewGame,
+                onClick = soundEffectClick(onClick = onNewGame),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFF35BC67),
                     contentColor = Color(0xFF102F1B),
@@ -955,7 +976,7 @@ private fun GameResultOverlay(
         },
         dismissButton = {
             TextButton(
-                onClick = onViewBoard,
+                onClick = soundEffectClick(onClick = onViewBoard),
                 colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF2E2115)),
             ) {
                 Text("盤面を見る", fontWeight = FontWeight.Black)
@@ -1037,7 +1058,7 @@ private fun CompactDigPlacementControls(
         if (enabledCandidates.size > 1) {
             enabledCandidates.forEach { candidate ->
                 OutlinedButton(
-                    onClick = { onChoice(candidate.choice) },
+                    onClick = soundEffectClick { onChoice(candidate.choice) },
                     modifier = Modifier
                         .weight(0.72f)
                         .height(COMPACT_DIG_BUTTON_HEIGHT),
@@ -1076,7 +1097,9 @@ private fun CompactDigPlacementControls(
             }
         }
         OutlinedButton(
-            onClick = { onRotation(state.playState.selectedRotation.nextClockwise()) },
+            onClick = soundEffectClick(AndroidSoundEffect.TILE_ROTATE) {
+                onRotation(state.playState.selectedRotation.nextClockwise())
+            },
             modifier = Modifier
                 .weight(0.9f)
                 .height(COMPACT_DIG_BUTTON_HEIGHT),
@@ -1121,7 +1144,7 @@ private fun CompactDigPlacementControls(
             }
         }
         Button(
-            onClick = onConfirm,
+            onClick = soundEffectClick(onClick = onConfirm),
             modifier = Modifier
                 .weight(1.05f)
                 .height(COMPACT_DIG_BUTTON_HEIGHT),
@@ -1157,7 +1180,7 @@ private fun CompactTargetActionRow(
     ) {
         if (showTargetCycler) {
             OutlinedButton(
-                onClick = { onSelect(next) },
+                onClick = soundEffectClick { onSelect(next) },
                 modifier = Modifier
                     .weight(1.35f)
                     .height(COMPACT_ACTION_BUTTON_HEIGHT),
@@ -1212,7 +1235,7 @@ private fun CompactBoardActionRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Button(
-            onClick = onBoardAction,
+            onClick = soundEffectClick(onClick = onBoardAction),
             modifier = Modifier
                 .weight(1.2f)
                 .testTag("primary-action")
@@ -1551,7 +1574,7 @@ private fun ActionButton(
     }
     val taggedModifier = testTag?.let { modifier.testTag(it) } ?: modifier
     Button(
-        onClick = onClick,
+        onClick = soundEffectClick(onClick = onClick),
         modifier = taggedModifier
             .height(COMPACT_ACTION_BUTTON_HEIGHT)
             .semantics {
