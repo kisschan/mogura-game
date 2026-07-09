@@ -101,6 +101,20 @@ class AndroidUiTextTest {
     }
 
     @Test
+    fun `music settings labels expose volume and mute state`() {
+        assertEquals("35%", musicVolumePercentLabel(AndroidMusicSettings()))
+        assertEquals("BGM設定: 35%", musicSettingsButtonContentDescription(AndroidMusicSettings()))
+        assertEquals(
+            "BGM設定: ミュート",
+            musicSettingsButtonContentDescription(AndroidMusicSettings(volume = 0.8f, muted = true)),
+        )
+        assertEquals(
+            "BGM設定: ミュート",
+            musicSettingsButtonContentDescription(AndroidMusicSettings(volume = 0f, muted = false)),
+        )
+    }
+
+    @Test
     fun `board player token keeps accessibility name without visible board label`() {
         assertNull(boardPlayerVisibleLabel("モグタ"))
         assertEquals("モグタの駒", boardPlayerContentDescription("モグタ", isCurrent = false))
