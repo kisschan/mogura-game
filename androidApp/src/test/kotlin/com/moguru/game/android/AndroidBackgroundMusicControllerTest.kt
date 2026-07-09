@@ -5,6 +5,15 @@ import org.junit.jupiter.api.Test
 
 class AndroidBackgroundMusicControllerTest {
     @Test
+    fun `sets default quiet volume on creation`() {
+        val player = FakeBackgroundMusicPlayer()
+
+        AndroidBackgroundMusicController(player)
+
+        assertEquals(listOf(DEFAULT_ANDROID_BGM_VOLUME), player.volumeEvents)
+    }
+
+    @Test
     fun `does not play before game starts`() {
         val player = FakeBackgroundMusicPlayer()
         val controller = AndroidBackgroundMusicController(player)
@@ -59,6 +68,52 @@ class AndroidBackgroundMusicControllerTest {
     }
 
     @Test
+    fun `pauses and drops volume when muted`() {
+        val player = FakeBackgroundMusicPlayer()
+        val controller = AndroidBackgroundMusicController(player)
+        controller.onForegrounded()
+        controller.onGameStartedChanged(true)
+        player.resetCounts()
+
+        controller.onMusicSettingsChanged(AndroidMusicSettings(muted = true))
+
+        assertEquals(listOf(0f), player.volumeEvents)
+        assertEquals(0, player.playCount)
+        assertEquals(1, player.pauseCount)
+    }
+
+    @Test
+    fun `does not start when volume is zero`() {
+        val player = FakeBackgroundMusicPlayer()
+        val controller = AndroidBackgroundMusicController(
+            player = player,
+            initialSettings = AndroidMusicSettings(volume = 0f),
+        )
+        player.resetCounts()
+
+        controller.onForegrounded()
+        controller.onGameStartedChanged(true)
+
+        assertEquals(0, player.playCount)
+    }
+
+    @Test
+    fun `resumes a started foreground game after unmuting`() {
+        val player = FakeBackgroundMusicPlayer()
+        val controller = AndroidBackgroundMusicController(player)
+        controller.onForegrounded()
+        controller.onGameStartedChanged(true)
+        controller.onMusicSettingsChanged(AndroidMusicSettings(muted = true))
+        player.resetCounts()
+
+        controller.onMusicSettingsChanged(AndroidMusicSettings(volume = 0.2f, muted = false))
+
+        assertEquals(listOf(0.2f), player.volumeEvents)
+        assertEquals(1, player.playCount)
+        assertEquals(0, player.pauseCount)
+    }
+
+    @Test
     fun `closes player once`() {
         val player = FakeBackgroundMusicPlayer()
         val controller = AndroidBackgroundMusicController(player)
@@ -76,6 +131,7 @@ class AndroidBackgroundMusicControllerTest {
             private set
         var closeCount = 0
             private set
+        val volumeEvents = mutableListOf<Float>()
 
         override fun playLooping() {
             playCount += 1
@@ -83,6 +139,10 @@ class AndroidBackgroundMusicControllerTest {
 
         override fun pause() {
             pauseCount += 1
+        }
+
+        override fun setVolume(volume: Float) {
+            volumeEvents += volume
         }
 
         override fun close() {
@@ -93,6 +153,7 @@ class AndroidBackgroundMusicControllerTest {
             playCount = 0
             pauseCount = 0
             closeCount = 0
+            volumeEvents.clear()
         }
     }
 }

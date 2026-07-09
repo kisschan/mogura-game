@@ -31,7 +31,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -140,12 +142,15 @@ private val LocalAndroidSoundEffectPlayer = staticCompositionLocalOf<AndroidSoun
 }
 
 @Composable
-fun MoguraGameScreen(
+internal fun MoguraGameScreen(
     viewModel: AndroidGameViewModel = viewModel(),
     onGameStartedChanged: (Boolean) -> Unit = {},
     soundEffects: AndroidSoundEffectPlayer = NoOpAndroidSoundEffectPlayer,
+    musicSettings: AndroidMusicSettings = AndroidMusicSettings(),
+    onMusicSettingsChanged: (AndroidMusicSettings) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
+    var showMusicSettings by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.isGameStarted) {
         onGameStartedChanged(state.isGameStarted)
@@ -159,9 +164,19 @@ fun MoguraGameScreen(
             ) {
                 Box {
                     if (state.isGameStarted) {
-                        PlayScreen(state = state, viewModel = viewModel)
+                        PlayScreen(
+                            state = state,
+                            viewModel = viewModel,
+                            musicSettings = musicSettings,
+                            onMusicSettingsClick = { showMusicSettings = true },
+                        )
                     } else {
-                        SetupScreen(state = state, viewModel = viewModel)
+                        SetupScreen(
+                            state = state,
+                            viewModel = viewModel,
+                            musicSettings = musicSettings,
+                            onMusicSettingsClick = { showMusicSettings = true },
+                        )
                     }
                     val rouletteFood = state.playState.diceRouletteFood
                     if (state.playState.diceRouletteActive && rouletteFood != null) {
@@ -179,6 +194,13 @@ fun MoguraGameScreen(
                             result = gameResult,
                             onViewBoard = viewModel::dismissGameResultOverlay,
                             onNewGame = viewModel::returnToSetup,
+                        )
+                    }
+                    if (showMusicSettings) {
+                        MusicSettingsDialog(
+                            settings = musicSettings,
+                            onSettingsChanged = onMusicSettingsChanged,
+                            onDismiss = { showMusicSettings = false },
                         )
                     }
                 }
@@ -200,9 +222,109 @@ private fun soundEffectClick(
 }
 
 @Composable
+private fun MusicSettingsButton(
+    settings: AndroidMusicSettings,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedButton(
+        onClick = soundEffectClick(onClick = onClick),
+        modifier = modifier
+            .widthIn(min = 44.dp)
+            .heightIn(min = 40.dp)
+            .semantics {
+                contentDescription = musicSettingsButtonContentDescription(settings)
+            },
+        shape = RoundedCornerShape(8.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+        border = BorderStroke(2.dp, Color(0xFF9A7A52)),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2E2115)),
+    ) {
+        Text(
+            text = "BGM",
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Black,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun MusicSettingsDialog(
+    settings: AndroidMusicSettings,
+    onSettingsChanged: (AndroidMusicSettings) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val normalizedSettings = settings.normalized()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("音楽設定", fontWeight = FontWeight.Black)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = "BGMミュート",
+                        color = Color(0xFF2E2115),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Switch(
+                        checked = normalizedSettings.muted,
+                        onCheckedChange = { muted ->
+                            onSettingsChanged(normalizedSettings.copy(muted = muted).normalized())
+                        },
+                    )
+                }
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = "BGM音量",
+                            color = Color(0xFF2E2115),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = musicVolumePercentLabel(normalizedSettings),
+                            color = Color(0xFF4B3826),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Black,
+                        )
+                    }
+                    Slider(
+                        value = normalizedSettings.normalizedVolume,
+                        onValueChange = { volume ->
+                            onSettingsChanged(normalizedSettings.copy(volume = volume).normalized())
+                        },
+                        valueRange = AndroidMusicSettings.MIN_VOLUME..AndroidMusicSettings.MAX_VOLUME,
+                        steps = 19,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = soundEffectClick(onClick = onDismiss)) {
+                Text("閉じる", fontWeight = FontWeight.Black)
+            }
+        },
+    )
+}
+
+@Composable
 private fun SetupScreen(
     state: AndroidGameUiState,
     viewModel: AndroidGameViewModel,
+    musicSettings: AndroidMusicSettings,
+    onMusicSettingsClick: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -213,12 +335,20 @@ private fun SetupScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(
-            text = "モグラゲーム",
-            color = Color(0xFF2E2115),
-            fontSize = 30.sp,
-            fontWeight = FontWeight.Black,
-        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = "モグラゲーム",
+                modifier = Modifier.align(Alignment.Center),
+                color = Color(0xFF2E2115),
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Black,
+            )
+            MusicSettingsButton(
+                settings = musicSettings,
+                onClick = onMusicSettingsClick,
+                modifier = Modifier.align(Alignment.CenterEnd),
+            )
+        }
         Text(
             text = "プレイヤー人数",
             modifier = Modifier.padding(top = 28.dp, bottom = 10.dp),
@@ -550,6 +680,8 @@ private fun PlayerCountButton(
 private fun PlayScreen(
     state: AndroidGameUiState,
     viewModel: AndroidGameViewModel,
+    musicSettings: AndroidMusicSettings,
+    onMusicSettingsClick: () -> Unit,
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -576,6 +708,8 @@ private fun PlayScreen(
             CompactPlayHud(
                 state = state,
                 onNewGame = viewModel::returnToSetup,
+                musicSettings = musicSettings,
+                onMusicSettingsClick = onMusicSettingsClick,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("top-hud")
@@ -606,6 +740,8 @@ private fun PlayScreen(
 private fun CompactPlayHud(
     state: AndroidGameUiState,
     onNewGame: () -> Unit,
+    musicSettings: AndroidMusicSettings,
+    onMusicSettingsClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val current = state.playState.currentPlayer
@@ -645,6 +781,10 @@ private fun CompactPlayHud(
             HudChip(compactHealthText(current.healthText), accent = Color(0xFF35BC67))
             HudChip(compactScoreText(current.scoreText), accent = Color(0xFF56A3E8))
         }
+        MusicSettingsButton(
+            settings = musicSettings,
+            onClick = onMusicSettingsClick,
+        )
         OutlinedButton(
             onClick = soundEffectClick { showNewGameConfirmation = true },
             modifier = Modifier
@@ -1609,6 +1749,16 @@ internal fun AndroidVisibleAction.accessibilityLabel(): String = when (this) {
     AndroidVisibleAction.CARRY -> "レンコウ（巣へ持ち帰る）"
     else -> displayLabel()
 }
+
+internal fun musicVolumePercentLabel(settings: AndroidMusicSettings): String =
+    "${settings.normalized().volumePercent}%"
+
+internal fun musicSettingsButtonContentDescription(settings: AndroidMusicSettings): String =
+    if (settings.normalized().effectiveVolume <= AndroidMusicSettings.MIN_VOLUME) {
+        "BGM設定: ミュート"
+    } else {
+        "BGM設定: ${musicVolumePercentLabel(settings)}"
+    }
 
 private fun phaseInstruction(phase: TurnPhase?): String = when (phase) {
     TurnPhase.DIG -> "ハイライトされた隣の穴タイルを選んで掘る"
