@@ -97,7 +97,7 @@ class PlayerTest {
         player.storeFood()
 
         assertEquals(2, player.storedFoods.size)
-        assertEquals(3, player.score)
+        assertEquals(2, player.score)
     }
 
     @Test

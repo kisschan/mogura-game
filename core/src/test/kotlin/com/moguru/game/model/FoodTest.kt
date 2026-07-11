@@ -26,9 +26,9 @@ class FoodTest {
     }
 
     @Test
-    fun `ミミズは得点2回復2`() {
+    fun `ミミズは得点1回復2`() {
         val type = FoodType.EARTHWORM
-        assertEquals(2, type.points)
+        assertEquals(1, type.points)
         assertEquals(2, type.recovery)
     }
 
@@ -72,11 +72,25 @@ class FoodTest {
     }
 
     @Test
-    fun `ケラは確認済みの2面逃走で3右上4右下へ逃走`() {
+    fun `ケラは正本通り2左上4右上へ逃走`() {
         val card = FoodCard.createDummyCards(FoodType.MOLE_CRICKET).first()
         assertEquals(
             mapOf(
-                3 to EscapeDirection.TOP_RIGHT,
+                2 to EscapeDirection.TOP_LEFT,
+                4 to EscapeDirection.TOP_RIGHT,
+            ),
+            card.escapeMap,
+        )
+    }
+
+    @Test
+    fun `ムカデは正本通り1左上2右上3左下4右下へ逃走`() {
+        val card = FoodCard.createDummyCards(FoodType.CENTIPEDE).first()
+        assertEquals(
+            mapOf(
+                1 to EscapeDirection.TOP_LEFT,
+                2 to EscapeDirection.TOP_RIGHT,
+                3 to EscapeDirection.BOTTOM_LEFT,
                 4 to EscapeDirection.BOTTOM_RIGHT,
             ),
             card.escapeMap,
@@ -84,29 +98,15 @@ class FoodTest {
     }
 
     @Test
-    fun `ムカデは画像通り1右上2右下3左下4左上へ逃走`() {
-        val card = FoodCard.createDummyCards(FoodType.CENTIPEDE).first()
-        assertEquals(
-            mapOf(
-                1 to EscapeDirection.TOP_RIGHT,
-                2 to EscapeDirection.BOTTOM_RIGHT,
-                3 to EscapeDirection.BOTTOM_LEFT,
-                4 to EscapeDirection.TOP_LEFT,
-            ),
-            card.escapeMap,
-        )
-    }
-
-    @Test
-    fun `カエルは画像通り1と2左3上4と5右へ逃走`() {
+    fun `カエルは正本通り1と2左上3上4と5右上へ逃走`() {
         val card = FoodCard.createDummyCards(FoodType.FROG).first()
         assertEquals(
             mapOf(
-                1 to EscapeDirection.LEFT,
-                2 to EscapeDirection.LEFT,
+                1 to EscapeDirection.TOP_LEFT,
+                2 to EscapeDirection.TOP_LEFT,
                 3 to EscapeDirection.TOP,
-                4 to EscapeDirection.RIGHT,
-                5 to EscapeDirection.RIGHT,
+                4 to EscapeDirection.TOP_RIGHT,
+                5 to EscapeDirection.TOP_RIGHT,
             ),
             card.escapeMap,
         )

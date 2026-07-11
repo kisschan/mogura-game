@@ -1406,11 +1406,11 @@ private fun playerTokenOffsets(playerCount: Int, stackOffset: Int): List<Point> 
     }
 
 internal fun foodImagePath(type: FoodType): String = when (type) {
-    FoodType.BEETLE_LARVA -> "assets/images/foods/food_beetle_larva.png"
-    FoodType.EARTHWORM -> "assets/images/foods/food_earthworm.png"
-    FoodType.MOLE_CRICKET -> "assets/images/foods/food_mole_cricket.png"
-    FoodType.CENTIPEDE -> "assets/images/foods/food_centipede.png"
-    FoodType.FROG -> "assets/images/foods/food_frog.png"
+    FoodType.BEETLE_LARVA -> "assets/images/foods/food_beetle_larva.jpg"
+    FoodType.EARTHWORM -> "assets/images/foods/food_earthworm.jpg"
+    FoodType.MOLE_CRICKET -> "assets/images/foods/food_mole_cricket.jpg"
+    FoodType.CENTIPEDE -> "assets/images/foods/food_centipede.jpg"
+    FoodType.FROG -> "assets/images/foods/food_frog.jpg"
 }
 
 class GuiAssets {
