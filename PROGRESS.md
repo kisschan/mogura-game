@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-最終更新: 2026-07-05
+最終更新: 2026-07-11
 
 ## 現在の状況
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
@@ -10,6 +10,8 @@
 - [x] 要件定義書 `moguru_requirements_v2(3).txt` に合わせた捕獲後選択・地上移動・補充ルールの修正
 - [x] 強奪後も即連行せず `タベる / レンコウ` 選択に入るよう修正
 - [x] エサ画像から読める逃走ダイス目と8方向逃走を実装
+- [x] 2026-07-11共有の正式版エサタイル5画像を正本として、得点・回復・逃走方向・表面意匠の要件を確定
+- [x] 正式版エサタイル要件をモデル、テスト、Android/Swing画像へ反映
 - [x] 掘る操作を「めくってから回転して確定」する2段階操作に修正
 - [x] DIGで掘れる方向の矢印表示と、掘れるタイルがない場合の「移動へ進む」を追加
 - [x] DIGでめくったタイルと山札タイルを選んで配置できるように修正
@@ -166,7 +168,8 @@
 - `keystore.properties.example`
 
 ## TODO / 未確定・要確認
-- `moguru_requirements_v2(3).txt`: `12-1` 各エサカード13枚の具体的な逃走ダイス目と矢印方向
+- 未確定・要確認事項はなし。旧 `12-1` は2026-07-11共有の正本画像5枚により解決済み。
+- 正式版エサタイルの得点、逃走方向、表面画像、関連テストは確定要件へ反映済み。
 
 ## Issue 整理
 ### 完了済み
@@ -177,9 +180,9 @@
 - [x] [#20](https://github.com/kisschan/mogura-game/issues/20) 巣ごとの固定追い出し先マスを定義して追い出し処理に使う（2026-07-04 closed）
 - [x] [#21](https://github.com/kisschan/mogura-game/issues/21) 強奪を移動時自動発動ではなく④強奪選択として実行する（2026-07-04 closed）
 - [x] [#22](https://github.com/kisschan/mogura-game/issues/22) 強奪UIと強奪後の食べる/レンコウ結果を実装する（2026-07-04 closed）
+- [x] [#23](https://github.com/kisschan/mogura-game/issues/23) 正本で確定したエサ5種の得点・逃走方向・表面画像を実装とテストへ反映（2026-07-11実装完了）
 
 ### 未完了・Phase 6 対象
-- [ ] [#23](https://github.com/kisschan/mogura-game/issues/23) エサカード13枚の逃走ダイス目と方向を確定し実装データを更新する
 - [ ] [#34](https://github.com/kisschan/mogura-game/issues/34) Phase 6: 要件・実装差異の解消とリリース品質確認
 
 ### UI/UX 改善候補
@@ -222,9 +225,11 @@
 - [x] [#16](https://github.com/kisschan/mogura-game/issues/16) セットアップ自由選択を実装する。
   - モグラ選択、巣選択、スタートプレイヤー選択を core/presenter/UI に通す。
   - 固定配置・固定先手の仮実装をテストから外す。
-- [ ] [#23](https://github.com/kisschan/mogura-game/issues/23) エサカード個別データを確定後に更新する。
-  - 設計者確認が必要なため、確定データ入手後に実装する。
-  - 13枚それぞれの逃走目・方向をテストで固定する。
+- [x] [#23](https://github.com/kisschan/mogura-game/issues/23) 正本から確定したエサ5種のデータと表面画像を更新する。
+  - ミミズの得点を1点へ修正する。
+  - ミミズ、ケラ、ムカデ、カエルの確定逃走表を盤面絶対方向で実装する。
+  - 同種カードへ同一仕様を適用し、5種の得点・回復・逃走目・方向をテストで固定する。
+  - Android/Swingの旧PNGを正式版表面画像へ差し替え、全体表示を確認する。
 
 ### Phase 5: 回帰確認
 - [x] `:core:test` で盤面ルール、捕獲、強奪、巣防衛の回帰を確認する。
@@ -236,13 +241,13 @@
 - [ ] [#34](https://github.com/kisschan/mogura-game/issues/34) を親 issue として、差異の棚卸しと対応範囲を管理する。
 - [x] 要件定義書、`AGENT.md`、`CLAUDE.md`、`PROGRESS.md` と実装の差異を棚卸しする。
   - 要件7.1の旧「表向きタイル不可」テスト差異を解消済み。
-  - coreロジックで確認できた実装可能な残差異はなし。`12-1` は要件定義書上の未確定事項として継続。
+  - 旧 `12-1` は正本画像5枚により解決済み。
+  - 正本との差異だったミミズ得点、逃走表、旧PNG、関連テストを更新済み。
 - [ ] core、Android、Swing の挙動差異と表示差異を確認し、要件に照らして修正対象を決める。
 - [ ] 実プレイ上わかりにくい操作を洗い出し、要件変更が必要なものと表示補助で済むものを分ける。
-- [ ] [#23](https://github.com/kisschan/mogura-game/issues/23) エサカード13枚の確定逃走目・方向データを反映し、テストで固定する。
+- [x] [#23](https://github.com/kisschan/mogura-game/issues/23) エサ5種の確定得点・回復・逃走目・絶対方向と正式版表面画像を反映し、テストで固定する。
 - [ ] 差異解消後に `:core:test :androidApp:testDebugUnitTest :desktop:test` と、必要に応じて `:androidApp:bundleRelease` を実行する。
 
 ## 次の作業
 - Android/Swing の実プレイ表示差異を要件に照らして確認し、必要な表示補助だけを実装する
-- エサカード13枚の確定逃走目・方向データを入手したら [#23](https://github.com/kisschan/mogura-game/issues/23) を実装する
 - 生成AAB/APKはGitHubへ上げず、Play Consoleへ直接アップロードする

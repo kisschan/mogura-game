@@ -811,7 +811,7 @@ class GameEngineTest {
         )
 
         val cases = listOf(
-            DiagonalEscapeCase(FoodType.MOLE_CRICKET, 3, EscapeDirection.TOP_RIGHT, Position(2, 2), Position(3, 1)),
+            DiagonalEscapeCase(FoodType.MOLE_CRICKET, 2, EscapeDirection.TOP_LEFT, Position(2, 2), Position(1, 1)),
             DiagonalEscapeCase(FoodType.CENTIPEDE, 3, EscapeDirection.BOTTOM_LEFT, Position(3, 2), Position(2, 3)),
         )
 
