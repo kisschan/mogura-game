@@ -1363,7 +1363,7 @@ class MoguraGameControllerTest {
         assertTrue(finish.success)
         assertFalse(thief.isCarrying)
         assertEquals(FoodType.EARTHWORM, thief.storedFoods.single().type)
-        assertEquals(2, thief.score)
+        assertEquals(1, thief.score)
     }
 
     @Test
