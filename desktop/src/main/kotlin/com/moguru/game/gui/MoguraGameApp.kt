@@ -55,6 +55,8 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+private const val APP_TITLE = "モグる・タベる・イキのこる"
+
 fun main() {
     SwingUtilities.invokeLater {
         MoguraGameFrame(MoguraGameController()).isVisible = true
@@ -88,7 +90,7 @@ internal const val DESKTOP_SHOW_BUTTON_FOCUS = true
 class MoguraGameFrame(
     private val controller: MoguraGameController,
     private val backgroundMusic: BackgroundMusicPlayer = defaultBackgroundMusicPlayer(BACKGROUND_MUSIC_PATH),
-) : JFrame("モグラゲーム") {
+) : JFrame(APP_TITLE) {
     private val assets = GuiAssets()
     private val boardPanel = BoardPanel(controller, assets, ::handleBoardClick)
     private val currentPlayerPanel = CurrentPlayerPanel(assets)
@@ -169,7 +171,7 @@ class MoguraGameFrame(
         top.preferredSize = Dimension(0, 52)
         top.background = Color(0xFFF7E4)
 
-        val title = JLabel("モグラゲーム")
+        val title = JLabel(APP_TITLE)
         title.font = title.font.deriveFont(Font.BOLD, 30f)
         title.foreground = Color(0x2E2115)
 
