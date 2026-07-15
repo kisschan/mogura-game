@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -193,7 +194,7 @@ private fun SetupScreen(
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "モグラゲーム",
+            text = stringResource(R.string.app_name),
             color = Color(0xFF2E2115),
             fontSize = 30.sp,
             fontWeight = FontWeight.Black,
