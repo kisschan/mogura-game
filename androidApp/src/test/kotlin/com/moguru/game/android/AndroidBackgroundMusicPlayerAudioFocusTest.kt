@@ -29,6 +29,19 @@ class AndroidBackgroundMusicPlayerAudioFocusTest {
     }
 
     @Test
+    fun `forwards clamped volume to media player`() {
+        val events = mutableListOf<String>()
+        val mediaPlayer = FakeLoopingMediaPlayer(events)
+        val audioFocus = FakeAndroidAudioFocus(events)
+        val player = AudioFocusBackgroundMusicPlayer(mediaPlayer, audioFocus)
+
+        player.setVolume(1.5f)
+        player.setVolume(-0.25f)
+
+        assertEquals(listOf("media.volume:1.0", "media.volume:0.0"), events)
+    }
+
+    @Test
     fun `pause abandons audio focus after pausing playback`() {
         val events = mutableListOf<String>()
         val mediaPlayer = FakeLoopingMediaPlayer(events)
@@ -86,6 +99,22 @@ class AndroidBackgroundMusicPlayerAudioFocusTest {
     }
 
     @Test
+    fun `play request during transient focus loss waits for focus gain`() {
+        val events = mutableListOf<String>()
+        val mediaPlayer = FakeLoopingMediaPlayer(events)
+        val audioFocus = FakeAndroidAudioFocus(events)
+        val player = AudioFocusBackgroundMusicPlayer(mediaPlayer, audioFocus)
+        player.playLooping()
+        player.onTransientAudioFocusLoss()
+        events.clear()
+
+        player.playLooping()
+        player.onAudioFocusGain()
+
+        assertEquals(listOf("media.start"), events)
+    }
+
+    @Test
     fun `audio focus gain does not resume after user requested pause`() {
         val events = mutableListOf<String>()
         val mediaPlayer = FakeLoopingMediaPlayer(events)
@@ -130,6 +159,10 @@ class AndroidBackgroundMusicPlayerAudioFocusTest {
         override fun pause() {
             events += "media.pause"
             isPlaying = false
+        }
+
+        override fun setVolume(volume: Float) {
+            events += "media.volume:$volume"
         }
 
         override fun close() {

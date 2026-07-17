@@ -119,6 +119,12 @@ class MobileGameplayLayoutContractTest {
     }
 
     @Test
+    fun `audio settings button keeps a full touch target`() {
+        assertTrue(AUDIO_SETTINGS_BUTTON_SIZE >= 44.dp)
+        assertTrue(AUDIO_SETTINGS_BUTTON_SIZE <= MOBILE_PLAY_HUD_HEIGHT)
+    }
+
+    @Test
     fun `log drawer has a bounded overlay height`() {
         assertTrue(LOG_HISTORY_POPUP_MAX_HEIGHT <= 220.dp)
     }

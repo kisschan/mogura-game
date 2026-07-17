@@ -11,6 +11,8 @@ internal interface AndroidBackgroundMusicPlayer : AutoCloseable {
 
     fun pause()
 
+    fun setVolume(volume: Float)
+
     override fun close()
 }
 
@@ -27,6 +29,8 @@ internal interface AndroidLoopingMediaPlayer : AutoCloseable {
 
     fun pause()
 
+    fun setVolume(volume: Float)
+
     override fun close()
 }
 
@@ -38,10 +42,16 @@ internal interface AndroidAudioFocus {
 
 internal class AndroidBackgroundMusicController(
     private val player: AndroidBackgroundMusicPlayer,
+    initialSettings: AndroidAudioSettings = AndroidAudioSettings(),
 ) : AutoCloseable {
     private var isGameStarted = false
     private var isForeground = false
     private var isClosed = false
+    private var audioSettings = initialSettings.normalized()
+
+    init {
+        player.setVolume(audioSettings.normalizedBgmVolume)
+    }
 
     fun onGameStartedChanged(started: Boolean) {
         if (isClosed) return
@@ -64,8 +74,17 @@ internal class AndroidBackgroundMusicController(
         player.pause()
     }
 
+    fun onAudioSettingsChanged(settings: AndroidAudioSettings) {
+        if (isClosed) return
+
+        audioSettings = settings.normalized()
+        syncPlayback()
+    }
+
     private fun syncPlayback() {
-        if (isForeground && isGameStarted) {
+        val volume = audioSettings.normalizedBgmVolume
+        player.setVolume(volume)
+        if (isForeground && isGameStarted && volume > AndroidAudioSettings.MIN_VOLUME) {
             player.playLooping()
         } else {
             player.pause()
@@ -86,6 +105,7 @@ internal class AudioFocusBackgroundMusicPlayer(
 ) : AndroidBackgroundMusicPlayer {
     private var playbackRequested = false
     private var hasFocus = false
+    private var temporarilyPausedForFocus = false
     private var isClosed = false
 
     override fun playLooping() {
@@ -93,6 +113,7 @@ internal class AudioFocusBackgroundMusicPlayer(
 
         playbackRequested = true
         if (mediaPlayer.isPlaying) return
+        if (temporarilyPausedForFocus) return
         if (!hasFocus && !audioFocus.request()) return
 
         hasFocus = true
@@ -103,16 +124,24 @@ internal class AudioFocusBackgroundMusicPlayer(
         if (isClosed) return
 
         playbackRequested = false
+        temporarilyPausedForFocus = false
         if (mediaPlayer.isPlaying) {
             mediaPlayer.pause()
         }
         abandonFocusIfHeld()
     }
 
+    override fun setVolume(volume: Float) {
+        if (isClosed) return
+
+        mediaPlayer.setVolume(normalizeAndroidAudioVolume(volume))
+    }
+
     fun onPermanentAudioFocusLoss() {
         if (isClosed) return
 
         playbackRequested = false
+        temporarilyPausedForFocus = false
         if (mediaPlayer.isPlaying) {
             mediaPlayer.pause()
         }
@@ -120,13 +149,19 @@ internal class AudioFocusBackgroundMusicPlayer(
     }
 
     fun onTransientAudioFocusLoss() {
-        if (isClosed || !mediaPlayer.isPlaying) return
+        if (isClosed) return
 
-        mediaPlayer.pause()
+        temporarilyPausedForFocus = true
+        if (mediaPlayer.isPlaying) {
+            mediaPlayer.pause()
+        }
     }
 
     fun onAudioFocusGain() {
-        if (isClosed || !playbackRequested || mediaPlayer.isPlaying) return
+        if (isClosed) return
+
+        temporarilyPausedForFocus = false
+        if (!playbackRequested || mediaPlayer.isPlaying) return
 
         hasFocus = true
         mediaPlayer.start()
@@ -137,6 +172,7 @@ internal class AudioFocusBackgroundMusicPlayer(
 
         isClosed = true
         playbackRequested = false
+        temporarilyPausedForFocus = false
         abandonFocusIfHeld()
         mediaPlayer.close()
     }
@@ -175,6 +211,8 @@ private class MediaPlayerBackgroundMusicPlayer(
 
     override fun pause() = player.pause()
 
+    override fun setVolume(volume: Float) = player.setVolume(volume)
+
     override fun close() = player.close()
 }
 
@@ -199,6 +237,13 @@ private class AndroidMediaPlayer(
         if (isClosed || !mediaPlayer.isPlaying) return
 
         mediaPlayer.pause()
+    }
+
+    override fun setVolume(volume: Float) {
+        if (isClosed) return
+
+        val normalizedVolume = normalizeAndroidAudioVolume(volume)
+        mediaPlayer.setVolume(normalizedVolume, normalizedVolume)
     }
 
     override fun close() {
