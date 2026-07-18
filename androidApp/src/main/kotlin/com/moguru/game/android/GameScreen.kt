@@ -29,18 +29,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -85,6 +89,7 @@ import com.moguru.game.presenter.DigTileChoice
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.presenter.RobberyTargetDisplay
 import com.moguru.game.presenter.displayName
+import kotlin.math.roundToInt
 
 internal const val BOARD_HIGHLIGHT_Z = 15f
 internal const val BOARD_TILE_Z = 20f
@@ -118,6 +123,10 @@ internal const val COMPACT_ACTION_CONTROL_MAX_ROWS = 1
 internal const val ACTIVE_GAMEPLAY_USES_VERTICAL_SCROLL = false
 internal const val EVENT_STRIP_MAX_LINES = 1
 internal const val LOG_HISTORY_COLLAPSED_BY_DEFAULT = true
+internal const val AUDIO_SETTINGS_BUTTON_TEST_TAG = "audio-settings-button"
+internal const val BGM_VOLUME_SLIDER_TEST_TAG = "bgm-volume-slider"
+internal const val SOUND_EFFECT_VOLUME_SLIDER_TEST_TAG = "sound-effect-volume-slider"
+internal val AUDIO_SETTINGS_BUTTON_SIZE = 44.dp
 
 internal enum class ActionBarContentMode {
     STANDARD,
@@ -134,45 +143,78 @@ internal data class MobileGameplayLayoutSpec(
     val fitsWithoutScroll: Boolean,
 )
 
+private val LocalAndroidSoundEffectPlayer = staticCompositionLocalOf<AndroidSoundEffectPlayer> {
+    NoOpAndroidSoundEffectPlayer
+}
+
 @Composable
-fun MoguraGameScreen(
+internal fun MoguraGameScreen(
     viewModel: AndroidGameViewModel = viewModel(),
     onGameStartedChanged: (Boolean) -> Unit = {},
+    soundEffects: AndroidSoundEffectPlayer = NoOpAndroidSoundEffectPlayer,
+    audioSettings: AndroidAudioSettings = AndroidAudioSettings(),
+    onAudioSettingsChanged: (AndroidAudioSettings) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
+    var showAudioSettings by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.isGameStarted) {
         onGameStartedChanged(state.isGameStarted)
     }
 
     MaterialTheme {
-        Surface(
-            modifier = Modifier.fillMaxSize(),
-            color = Color(0xFFFFF7E4),
-        ) {
-            Box {
-                if (state.isGameStarted) {
-                    PlayScreen(state = state, viewModel = viewModel)
-                } else {
-                    SetupScreen(state = state, viewModel = viewModel)
-                }
-                val rouletteFood = state.playState.diceRouletteFood
-                if (state.playState.diceRouletteActive && rouletteFood != null) {
-                    DiceRouletteOverlay(
-                        foodType = rouletteFood,
-                        escapeRolls = state.playState.diceRouletteEscapeRolls,
-                        targetFace = state.playState.diceRouletteResult,
-                        onTap = viewModel::stopDiceRoulette,
-                        onFinished = viewModel::finishDiceRoulette,
-                    )
-                }
-                val gameResult = state.gameResult
-                if (state.showGameResultOverlay && gameResult != null) {
-                    GameResultOverlay(
-                        result = gameResult,
-                        onViewBoard = viewModel::dismissGameResultOverlay,
-                        onNewGame = viewModel::returnToSetup,
-                    )
+        CompositionLocalProvider(LocalAndroidSoundEffectPlayer provides soundEffects) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = Color(0xFFFFF7E4),
+            ) {
+                Box {
+                    if (state.isGameStarted) {
+                        PlayScreen(
+                            state = state,
+                            viewModel = viewModel,
+                            audioSettings = audioSettings,
+                            onAudioSettingsClick = { showAudioSettings = true },
+                        )
+                    } else {
+                        SetupScreen(
+                            state = state,
+                            viewModel = viewModel,
+                            audioSettings = audioSettings,
+                            onAudioSettingsClick = { showAudioSettings = true },
+                        )
+                    }
+                    val rouletteFood = state.playState.diceRouletteFood
+                    if (state.playState.diceRouletteActive && rouletteFood != null) {
+                        DiceRouletteOverlay(
+                            foodType = rouletteFood,
+                            escapeRolls = state.playState.diceRouletteEscapeRolls,
+                            targetFace = state.playState.diceRouletteResult,
+                            onTap = soundEffectClick(onClick = viewModel::stopDiceRoulette),
+                            onFinished = viewModel::finishDiceRoulette,
+                        )
+                    }
+                    val gameResult = state.gameResult
+                    if (state.showGameResultOverlay && gameResult != null) {
+                        GameResultOverlay(
+                            result = gameResult,
+                            onViewBoard = viewModel::dismissGameResultOverlay,
+                            onNewGame = viewModel::returnToSetup,
+                        )
+                    }
+                    if (showAudioSettings) {
+                        AudioSettingsDialog(
+                            settings = audioSettings,
+                            onSettingsChanged = { updatedSettings ->
+                                soundEffects.setVolume(updatedSettings.normalizedSoundEffectVolume)
+                                onAudioSettingsChanged(updatedSettings)
+                            },
+                            onSoundEffectPreview = {
+                                soundEffects.play(AndroidSoundEffect.BUTTON_PRESS)
+                            },
+                            onDismiss = { showAudioSettings = false },
+                        )
+                    }
                 }
             }
         }
@@ -180,9 +222,139 @@ fun MoguraGameScreen(
 }
 
 @Composable
+private fun soundEffectClick(
+    effect: AndroidSoundEffect = AndroidSoundEffect.BUTTON_PRESS,
+    onClick: () -> Unit,
+): () -> Unit {
+    val soundEffects = LocalAndroidSoundEffectPlayer.current
+    return {
+        soundEffects.play(effect)
+        onClick()
+    }
+}
+
+@Composable
+private fun AudioSettingsButton(
+    settings: AndroidAudioSettings,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedButton(
+        onClick = soundEffectClick(onClick = onClick),
+        modifier = modifier
+            .size(AUDIO_SETTINGS_BUTTON_SIZE)
+            .testTag(AUDIO_SETTINGS_BUTTON_TEST_TAG)
+            .semantics {
+                contentDescription = audioSettingsButtonContentDescription(settings)
+            },
+        shape = RoundedCornerShape(8.dp),
+        contentPadding = PaddingValues(0.dp),
+        border = BorderStroke(2.dp, Color(0xFF9A7A52)),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2E2115)),
+    ) {
+        Text(
+            text = "⚙️",
+            fontSize = 20.sp,
+            lineHeight = 20.sp,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun AudioSettingsDialog(
+    settings: AndroidAudioSettings,
+    onSettingsChanged: (AndroidAudioSettings) -> Unit,
+    onSoundEffectPreview: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val normalizedSettings = settings.normalized()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("音量設定", fontWeight = FontWeight.Black)
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(18.dp)) {
+                AudioVolumeControl(
+                    label = "BGM",
+                    volume = normalizedSettings.normalizedBgmVolume,
+                    testTag = BGM_VOLUME_SLIDER_TEST_TAG,
+                    onValueChange = { volume ->
+                        onSettingsChanged(normalizedSettings.copy(bgmVolume = volume).normalized())
+                    },
+                )
+                AudioVolumeControl(
+                    label = "効果音",
+                    volume = normalizedSettings.normalizedSoundEffectVolume,
+                    testTag = SOUND_EFFECT_VOLUME_SLIDER_TEST_TAG,
+                    onValueChange = { volume ->
+                        onSettingsChanged(normalizedSettings.copy(soundEffectVolume = volume).normalized())
+                    },
+                    onValueChangeFinished = onSoundEffectPreview,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = soundEffectClick(onClick = onDismiss)) {
+                Text("閉じる", fontWeight = FontWeight.Black)
+            }
+        },
+    )
+}
+
+@Composable
+private fun AudioVolumeControl(
+    label: String,
+    volume: Float,
+    testTag: String,
+    onValueChange: (Float) -> Unit,
+    onValueChangeFinished: (() -> Unit)? = null,
+) {
+    val percentLabel = audioVolumePercentLabel(volume)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = label,
+                color = Color(0xFF2E2115),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = percentLabel,
+                color = Color(0xFF4B3826),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Black,
+                style = LocalTextStyle.current.copy(fontFeatureSettings = "tnum"),
+            )
+        }
+        Slider(
+            value = volume,
+            onValueChange = onValueChange,
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(testTag)
+                .semantics {
+                    contentDescription = "${label}音量"
+                    stateDescription = percentLabel
+                },
+            onValueChangeFinished = onValueChangeFinished,
+            valueRange = AndroidAudioSettings.MIN_VOLUME..AndroidAudioSettings.MAX_VOLUME,
+            steps = 19,
+        )
+    }
+}
+
+@Composable
 private fun SetupScreen(
     state: AndroidGameUiState,
     viewModel: AndroidGameViewModel,
+    audioSettings: AndroidAudioSettings,
+    onAudioSettingsClick: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -193,12 +365,25 @@ private fun SetupScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(
-            text = stringResource(R.string.app_name),
-            color = Color(0xFF2E2115),
-            fontSize = 30.sp,
-            fontWeight = FontWeight.Black,
-        )
+        Box(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = stringResource(R.string.app_name),
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .padding(horizontal = 48.dp),
+                color = Color(0xFF2E2115),
+                fontSize = 30.sp,
+                lineHeight = 32.sp,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+            )
+            AudioSettingsButton(
+                settings = audioSettings,
+                onClick = onAudioSettingsClick,
+                modifier = Modifier.align(Alignment.CenterEnd),
+            )
+        }
         Text(
             text = "プレイヤー人数",
             modifier = Modifier.padding(top = 28.dp, bottom = 10.dp),
@@ -211,7 +396,7 @@ private fun SetupScreen(
                 PlayerCountButton(
                     count = count,
                     selected = state.selectedPlayerCount == count,
-                    onClick = { viewModel.selectPlayerCount(count) },
+                    onClick = soundEffectClick { viewModel.selectPlayerCount(count) },
                 )
             }
         }
@@ -237,7 +422,7 @@ private fun SetupScreen(
             }
         }
         Button(
-            onClick = viewModel::startSelectedGame,
+            onClick = soundEffectClick(onClick = viewModel::startSelectedGame),
             enabled = state.canStartGame,
             modifier = Modifier
                 .padding(top = 24.dp)
@@ -288,7 +473,7 @@ private fun SetupPlayerRow(
                 maxLines = 2,
             )
             OutlinedButton(
-                onClick = { onStartSelected(player.seatIndex) },
+                onClick = soundEffectClick { onStartSelected(player.seatIndex) },
                 modifier = Modifier
                     .widthIn(min = 84.dp)
                     .heightIn(min = 48.dp)
@@ -333,7 +518,7 @@ private fun SetupPlayerRow(
                     selected = selected,
                     usedByLabel = usedByOther?.let { setupUsedByLabel(it.seatIndex) },
                     enabled = true,
-                    onClick = { onMoleSelected(player.seatIndex, option.playerId) },
+                    onClick = soundEffectClick { onMoleSelected(player.seatIndex, option.playerId) },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -355,7 +540,7 @@ private fun SetupPlayerRow(
                     selected = selected,
                     usedByLabel = usedByOther?.let { setupUsedByLabel(it.seatIndex) },
                     enabled = true,
-                    onClick = { onNestSelected(player.seatIndex, nest) },
+                    onClick = soundEffectClick { onNestSelected(player.seatIndex, nest) },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -530,6 +715,8 @@ private fun PlayerCountButton(
 private fun PlayScreen(
     state: AndroidGameUiState,
     viewModel: AndroidGameViewModel,
+    audioSettings: AndroidAudioSettings,
+    onAudioSettingsClick: () -> Unit,
 ) {
     BoxWithConstraints(
         modifier = Modifier
@@ -556,6 +743,8 @@ private fun PlayScreen(
             CompactPlayHud(
                 state = state,
                 onNewGame = viewModel::returnToSetup,
+                audioSettings = audioSettings,
+                onAudioSettingsClick = onAudioSettingsClick,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("top-hud")
@@ -586,6 +775,8 @@ private fun PlayScreen(
 private fun CompactPlayHud(
     state: AndroidGameUiState,
     onNewGame: () -> Unit,
+    audioSettings: AndroidAudioSettings,
+    onAudioSettingsClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val current = state.playState.currentPlayer
@@ -625,8 +816,12 @@ private fun CompactPlayHud(
             HudChip(compactHealthText(current.healthText), accent = Color(0xFF35BC67))
             HudChip(compactScoreText(current.scoreText), accent = Color(0xFF56A3E8))
         }
+        AudioSettingsButton(
+            settings = audioSettings,
+            onClick = onAudioSettingsClick,
+        )
         OutlinedButton(
-            onClick = { showNewGameConfirmation = true },
+            onClick = soundEffectClick { showNewGameConfirmation = true },
             modifier = Modifier
                 .widthIn(min = 48.dp)
                 .heightIn(min = 40.dp),
@@ -649,7 +844,7 @@ private fun CompactPlayHud(
             },
             confirmButton = {
                 TextButton(
-                    onClick = {
+                    onClick = soundEffectClick {
                         showNewGameConfirmation = false
                         onNewGame()
                     },
@@ -658,7 +853,7 @@ private fun CompactPlayHud(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showNewGameConfirmation = false }) {
+                TextButton(onClick = soundEffectClick { showNewGameConfirmation = false }) {
                     Text("続ける")
                 }
             },
@@ -840,7 +1035,7 @@ private fun EventStrip(
         }
         if (hasHistory) {
             TextButton(
-                onClick = onHistoryClick,
+                onClick = soundEffectClick(onClick = onHistoryClick),
                 modifier = Modifier.height(presentation.stripHeight),
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
             ) {
@@ -891,7 +1086,7 @@ private fun LogHistoryPopup(
                     )
                 }
                 TextButton(
-                    onClick = onDismiss,
+                    onClick = soundEffectClick(onClick = onDismiss),
                     modifier = Modifier.align(Alignment.End),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                 ) {
@@ -944,7 +1139,7 @@ private fun GameResultOverlay(
         },
         confirmButton = {
             Button(
-                onClick = onNewGame,
+                onClick = soundEffectClick(onClick = onNewGame),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color(0xFF35BC67),
                     contentColor = Color(0xFF102F1B),
@@ -956,7 +1151,7 @@ private fun GameResultOverlay(
         },
         dismissButton = {
             TextButton(
-                onClick = onViewBoard,
+                onClick = soundEffectClick(onClick = onViewBoard),
                 colors = ButtonDefaults.textButtonColors(contentColor = Color(0xFF2E2115)),
             ) {
                 Text("盤面を見る", fontWeight = FontWeight.Black)
@@ -1038,7 +1233,7 @@ private fun CompactDigPlacementControls(
         if (enabledCandidates.size > 1) {
             enabledCandidates.forEach { candidate ->
                 OutlinedButton(
-                    onClick = { onChoice(candidate.choice) },
+                    onClick = soundEffectClick { onChoice(candidate.choice) },
                     modifier = Modifier
                         .weight(0.72f)
                         .height(COMPACT_DIG_BUTTON_HEIGHT),
@@ -1077,7 +1272,9 @@ private fun CompactDigPlacementControls(
             }
         }
         OutlinedButton(
-            onClick = { onRotation(state.playState.selectedRotation.nextClockwise()) },
+            onClick = soundEffectClick(AndroidSoundEffect.TILE_ROTATE) {
+                onRotation(state.playState.selectedRotation.nextClockwise())
+            },
             modifier = Modifier
                 .weight(0.9f)
                 .height(COMPACT_DIG_BUTTON_HEIGHT),
@@ -1122,7 +1319,7 @@ private fun CompactDigPlacementControls(
             }
         }
         Button(
-            onClick = onConfirm,
+            onClick = soundEffectClick(onClick = onConfirm),
             modifier = Modifier
                 .weight(1.05f)
                 .height(COMPACT_DIG_BUTTON_HEIGHT),
@@ -1158,7 +1355,7 @@ private fun CompactTargetActionRow(
     ) {
         if (showTargetCycler) {
             OutlinedButton(
-                onClick = { onSelect(next) },
+                onClick = soundEffectClick { onSelect(next) },
                 modifier = Modifier
                     .weight(1.35f)
                     .height(COMPACT_ACTION_BUTTON_HEIGHT),
@@ -1213,7 +1410,7 @@ private fun CompactBoardActionRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Button(
-            onClick = onBoardAction,
+            onClick = soundEffectClick(onClick = onBoardAction),
             modifier = Modifier
                 .weight(1.2f)
                 .testTag("primary-action")
@@ -1552,7 +1749,7 @@ private fun ActionButton(
     }
     val taggedModifier = testTag?.let { modifier.testTag(it) } ?: modifier
     Button(
-        onClick = onClick,
+        onClick = soundEffectClick(onClick = onClick),
         modifier = taggedModifier
             .height(COMPACT_ACTION_BUTTON_HEIGHT)
             .semantics {
@@ -1586,6 +1783,22 @@ internal fun AndroidVisibleAction.accessibilityLabel(): String = when (this) {
     AndroidVisibleAction.EAT -> "タベる（食べる）"
     AndroidVisibleAction.CARRY -> "レンコウ（巣へ持ち帰る）"
     else -> displayLabel()
+}
+
+internal fun audioVolumePercentLabel(volume: Float): String =
+    "${(normalizeAndroidAudioVolume(volume) * 100).roundToInt()}%"
+
+internal fun audioVolumeSummaryLabel(volume: Float): String =
+    if (normalizeAndroidAudioVolume(volume) <= AndroidAudioSettings.MIN_VOLUME) {
+        "ミュート"
+    } else {
+        audioVolumePercentLabel(volume)
+    }
+
+internal fun audioSettingsButtonContentDescription(settings: AndroidAudioSettings): String {
+    val normalized = settings.normalized()
+    return "音量設定: BGM ${audioVolumeSummaryLabel(normalized.bgmVolume)}、" +
+        "効果音 ${audioVolumeSummaryLabel(normalized.soundEffectVolume)}"
 }
 
 private fun phaseInstruction(phase: TurnPhase?): String = when (phase) {
