@@ -251,6 +251,14 @@
 - [ ] core、Android、Swing の挙動差異と表示差異を確認し、要件に照らして修正対象を決める。
 - [ ] 実プレイ上わかりにくい操作を洗い出し、要件変更が必要なものと表示補助で済むものを分ける。
 - [x] [#23](https://github.com/kisschan/mogura-game/issues/23) エサ5種の確定得点・回復・逃走目・絶対方向と正式版表面画像を反映し、テストで固定する。
+- [x] 2026-07-15: versionCode / versionName 5 の署名付きリリースAABを生成する。
+  - `.\gradlew.bat test bundleRelease --stacktrace` は `BUILD SUCCESSFUL`。
+  - 出力: `androidApp/build/outputs/bundle/release/androidApp-release.aab`
+  - SHA-256: `F98BB6A56F0C116AF2758483904D6144F33A23F9AD9899A75462FE98CA4DD289`
+- [x] 2026-07-17: versionCode / versionName 6 の署名付きリリースAABを生成する。
+  - `.\gradlew.bat test bundleRelease --stacktrace` は `BUILD SUCCESSFUL`。
+  - 出力: `androidApp/build/outputs/bundle/release/mogura-game-v6-release.aab`
+  - SHA-256: `B7696EC66EF199B94AD90F9262DE6A396609820376C158E1CCB117909829E599`
 - [ ] 差異解消後に `:core:test :androidApp:testDebugUnitTest :desktop:test` と、必要に応じて `:androidApp:bundleRelease` を実行する。
 
 ## 次の作業
