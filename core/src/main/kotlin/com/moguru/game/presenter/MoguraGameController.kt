@@ -189,6 +189,8 @@ class MoguraGameController(
     var pendingDigTileChoice: DigTileChoice? = null
         private set
 
+    private val pendingDigRotations = mutableMapOf<DigTileChoice, Rotation>()
+
     var selectedCaptureFoodIndex: Int? = null
         private set
 
@@ -283,6 +285,7 @@ class MoguraGameController(
         pendingDigPlacement = null
         pendingDigRotation = null
         pendingDigTileChoice = null
+        pendingDigRotations.clear()
         selectedCaptureFoodIndex = null
         selectedRobberyFoodIndex = null
         robberyVisits.clear()
@@ -357,8 +360,7 @@ class MoguraGameController(
             if (pending.position != position) {
                 return GameActionResult(false, "先にめくったタイルの配置を確定してください。")
             }
-            setPendingDigRotation(rotation)
-            return confirmPendingDig()
+            return GameActionResult(false, "操作バーの「置く」でタイルの配置を確定してください。")
         }
         return revealDigTile(position)
     }
@@ -385,6 +387,8 @@ class MoguraGameController(
                 drawnTile = HoleTile(drawnTile.shape),
             )
             pendingDigTileChoice = DigTileChoice.DRAWN
+            pendingDigRotations.clear()
+            pendingDigRotations[DigTileChoice.DRAWN] = Rotation.DEG_0
             setPendingDigRotation(Rotation.DEG_0)
             addLog("${currentPlayer?.name} が ${position.label()} に置く ${drawnTile.shape.displayName()} を山札から引きました。")
             return GameActionResult(true, "タイルを引きました。")
@@ -398,7 +402,12 @@ class MoguraGameController(
             drawnTile = drawn?.let { HoleTile(it.shape) },
         )
         pendingDigTileChoice = DigTileChoice.REVEALED
-        setPendingDigRotation(Rotation.DEG_0)
+        pendingDigRotations.clear()
+        pendingDigRotations[DigTileChoice.REVEALED] = revealed.canonicalRotation()
+        if (drawn != null) {
+            pendingDigRotations[DigTileChoice.DRAWN] = Rotation.DEG_0
+        }
+        setPendingDigRotation(pendingDigRotations.getValue(DigTileChoice.REVEALED))
         val drawnLabel = drawn?.shape?.displayName() ?: "なし"
         addLog("${currentPlayer?.name} が ${position.label()} の ${revealed.shape.displayName()} をめくりました。山札: $drawnLabel。配置するタイルと回転を選んでください。")
         return GameActionResult(true, "タイルをめくりました。")
@@ -416,7 +425,7 @@ class MoguraGameController(
         }
 
         pendingDigTileChoice = choice
-        val rotationResult = setPendingDigRotation(pendingDigRotation ?: Rotation.DEG_0)
+        val rotationResult = setPendingDigRotation(pendingDigRotations[choice] ?: Rotation.DEG_0)
         if (!rotationResult.success) return rotationResult
         return GameActionResult(true, "${choice.label()}を選びました。")
     }
@@ -431,6 +440,7 @@ class MoguraGameController(
         val previewTile = selectedTile.rotate(rotation).flip()
         current.boardState.placeTile(pending.position, previewTile)
         pendingDigRotation = rotation
+        pendingDigTileChoice?.let { choice -> pendingDigRotations[choice] = rotation }
         return GameActionResult(true, "タイルの向きを ${rotation.label()} にしました。")
     }
 
@@ -451,6 +461,7 @@ class MoguraGameController(
         pendingDigPlacement = null
         pendingDigRotation = null
         pendingDigTileChoice = null
+        pendingDigRotations.clear()
         val placedTile = current.boardState.getTile(pending.position)
         addLog("${currentPlayer?.name} が ${pending.position.label()} に ${choice.label()}の ${placedTile?.shape?.displayName() ?: "タイル"} を置きました（${rotation.label()}）。")
         current.advancePhase()

@@ -7,6 +7,7 @@ import java.awt.image.BufferedImage
 import com.moguru.game.presenter.CaptureOutcomeDisplay
 import com.moguru.game.presenter.CaptureOutcomeKind
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
@@ -115,6 +116,15 @@ class PlayerTokenLayoutTest {
         assertTrue(DESKTOP_ROTATION_BUTTON_SIZE.width >= 40)
         assertTrue(DESKTOP_ROTATION_BUTTON_SIZE.height >= 40)
         assertTrue(DESKTOP_SHOW_BUTTON_FOCUS)
+    }
+
+    @Test
+    fun `desktop pending dig exposes an explicit placement confirmation`() {
+        assertEquals("置く", DESKTOP_CONFIRM_DIG_LABEL)
+        assertTrue(canConfirmDesktopDig(hasPendingDig = true, phase = TurnPhase.DIG))
+        assertFalse(canConfirmDesktopDig(hasPendingDig = false, phase = TurnPhase.DIG))
+        assertFalse(canConfirmDesktopDig(hasPendingDig = true, phase = TurnPhase.MOVE))
+        assertTrue(desktopPendingDigStatus("めくったタイル", "L字").contains("「置く」"))
     }
 
     private companion object {
