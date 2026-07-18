@@ -972,7 +972,7 @@ class MoguraGameControllerTest {
     }
 
     @Test
-    fun `revealed face up dig tile rotation starts from canonical orientation`() {
+    fun `revealed face up dig tile keeps its current orientation until explicitly rotated`() {
         val controller = testController()
         controller.startNewGame(2)
         val engine = controller.engine!!
@@ -990,16 +990,47 @@ class MoguraGameControllerTest {
         )
 
         val revealResult = controller.revealDigTile(target)
-        val rotateResult = controller.setPendingDigRotation(Rotation.DEG_90)
+        val stateAfterReveal = controller.playScreenUiState()
         val confirmResult = controller.confirmPendingDig()
 
         assertTrue(revealResult.success)
-        assertTrue(rotateResult.success)
+        assertEquals(Rotation.DEG_90, stateAfterReveal.selectedRotation)
         assertTrue(confirmResult.success)
         val placedTile = engine.boardState.getTile(target)!!
         assertEquals(TileShape.L_SHAPE, placedTile.shape)
         assertFalse(placedTile.isFaceDown)
         assertEquals(HoleTile(TileShape.L_SHAPE).rotate(Rotation.DEG_90).openSides, placedTile.openSides)
+    }
+
+    @Test
+    fun `revealed and drawn dig candidates remember independent rotations`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val player = controller.currentPlayer!!
+        val currentPosition = Position(3, 1)
+        val target = Position(4, 1)
+        player.moveTo(currentPosition)
+        engine.boardState.placeTile(
+            currentPosition,
+            HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_90).flip(),
+        )
+        engine.boardState.placeTile(
+            target,
+            HoleTile(TileShape.L_SHAPE).rotate(Rotation.DEG_270).flip(),
+        )
+
+        assertTrue(controller.revealDigTile(target).success)
+        assertEquals(Rotation.DEG_270, controller.playScreenUiState().selectedRotation)
+
+        assertTrue(controller.selectPendingDigTile(DigTileChoice.DRAWN).success)
+        assertEquals(Rotation.DEG_0, controller.playScreenUiState().selectedRotation)
+        assertTrue(controller.setPendingDigRotation(Rotation.DEG_180).success)
+
+        assertTrue(controller.selectPendingDigTile(DigTileChoice.REVEALED).success)
+        assertEquals(Rotation.DEG_270, controller.playScreenUiState().selectedRotation)
+        assertTrue(controller.selectPendingDigTile(DigTileChoice.DRAWN).success)
+        assertEquals(Rotation.DEG_180, controller.playScreenUiState().selectedRotation)
     }
 
     @Test
@@ -1145,7 +1176,7 @@ class MoguraGameControllerTest {
     }
 
     @Test
-    fun `dig click confirms only the already revealed tile`() {
+    fun `repeated dig click never confirms a pending tile`() {
         val controller = testController()
         controller.startNewGame(2)
         val engine = controller.engine!!
@@ -1153,10 +1184,16 @@ class MoguraGameControllerTest {
 
         val reveal = controller.digAt(target, Rotation.DEG_0)
         val wrongTarget = controller.digAt(Position(2, 1), Rotation.DEG_90)
-        val confirm = controller.digAt(target, Rotation.DEG_90)
+        val repeatedTarget = controller.digAt(target, Rotation.DEG_90)
 
         assertTrue(reveal.success)
         assertFalse(wrongTarget.success)
+        assertFalse(repeatedTarget.success)
+        assertEquals(TurnPhase.DIG, engine.currentPhase)
+        assertNotNull(controller.pendingDigPlacement)
+
+        val confirm = controller.confirmPendingDig()
+
         assertTrue(confirm.success)
         assertEquals(TurnPhase.MOVE, engine.currentPhase)
     }

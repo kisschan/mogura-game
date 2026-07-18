@@ -1,5 +1,7 @@
 package com.moguru.game.android
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -43,13 +45,18 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
@@ -124,9 +131,25 @@ internal const val ACTIVE_GAMEPLAY_USES_VERTICAL_SCROLL = false
 internal const val EVENT_STRIP_MAX_LINES = 1
 internal const val LOG_HISTORY_COLLAPSED_BY_DEFAULT = true
 internal const val AUDIO_SETTINGS_BUTTON_TEST_TAG = "audio-settings-button"
+internal const val PLAYER_VISIBILITY_TOGGLE_TEST_TAG = "player-visibility-toggle"
 internal const val BGM_VOLUME_SLIDER_TEST_TAG = "bgm-volume-slider"
 internal const val SOUND_EFFECT_VOLUME_SLIDER_TEST_TAG = "sound-effect-volume-slider"
 internal val AUDIO_SETTINGS_BUTTON_SIZE = 44.dp
+internal val PLAYER_VISIBILITY_TOGGLE_SIZE = 44.dp
+internal const val PLAYER_TOKEN_TRANSPARENT_ALPHA = 0.22f
+
+internal enum class AndroidHighlightPattern {
+    DASHED,
+    SOLID,
+    DOUBLE,
+}
+
+internal data class AndroidBoardHighlightStyle(
+    val fillArgb: Int,
+    val strokeArgb: Int,
+    val strokeWidth: Dp,
+    val pattern: AndroidHighlightPattern,
+)
 
 internal enum class ActionBarContentMode {
     STANDARD,
@@ -256,6 +279,43 @@ private fun AudioSettingsButton(
             text = "⚙️",
             fontSize = 20.sp,
             lineHeight = 20.sp,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun PlayerVisibilityToggle(
+    isTransparent: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    OutlinedButton(
+        onClick = soundEffectClick(onClick = onToggle),
+        modifier = modifier
+            .size(PLAYER_VISIBILITY_TOGGLE_SIZE)
+            .testTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG)
+            .semantics {
+                contentDescription = "駒表示の切り替え"
+                selected = isTransparent
+                stateDescription = playerVisibilityStateDescription(isTransparent)
+            },
+        shape = RoundedCornerShape(8.dp),
+        contentPadding = PaddingValues(0.dp),
+        border = BorderStroke(
+            2.dp,
+            if (isTransparent) Color(0xFF158A45) else Color(0xFF9A7A52),
+        ),
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = if (isTransparent) Color(0xFFE8FFF0) else Color.Transparent,
+            contentColor = Color(0xFF2E2115),
+        ),
+    ) {
+        Text(
+            text = "駒透",
+            fontSize = 10.sp,
+            lineHeight = 11.sp,
+            fontWeight = FontWeight.Black,
             maxLines = 1,
         )
     }
@@ -718,6 +778,7 @@ private fun PlayScreen(
     audioSettings: AndroidAudioSettings,
     onAudioSettingsClick: () -> Unit,
 ) {
+    var playersTransparent by rememberSaveable { mutableStateOf(false) }
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -745,6 +806,8 @@ private fun PlayScreen(
                 onNewGame = viewModel::returnToSetup,
                 audioSettings = audioSettings,
                 onAudioSettingsClick = onAudioSettingsClick,
+                playersTransparent = playersTransparent,
+                onPlayersTransparentChange = { playersTransparent = !playersTransparent },
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("top-hud")
@@ -754,6 +817,7 @@ private fun PlayScreen(
                 state = state,
                 boardWidth = layout.boardWidth,
                 onCellClicked = viewModel::onCellClicked,
+                playersTransparent = playersTransparent,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("board-viewport")
@@ -777,6 +841,8 @@ private fun CompactPlayHud(
     onNewGame: () -> Unit,
     audioSettings: AndroidAudioSettings,
     onAudioSettingsClick: () -> Unit,
+    playersTransparent: Boolean,
+    onPlayersTransparentChange: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val current = state.playState.currentPlayer
@@ -786,9 +852,9 @@ private fun CompactPlayHud(
             .clip(RoundedCornerShape(8.dp))
             .background(Color(0xFFFFF6D8))
             .border(2.dp, Color(0xFFE8AD20), RoundedCornerShape(8.dp))
-            .padding(horizontal = 7.dp, vertical = 4.dp),
+            .padding(horizontal = 5.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         current.playerId?.let { playerId ->
             Box(
@@ -819,6 +885,10 @@ private fun CompactPlayHud(
         AudioSettingsButton(
             settings = audioSettings,
             onClick = onAudioSettingsClick,
+        )
+        PlayerVisibilityToggle(
+            isTransparent = playersTransparent,
+            onToggle = onPlayersTransparentChange,
         )
         OutlinedButton(
             onClick = soundEffectClick { showNewGameConfirmation = true },
@@ -889,6 +959,7 @@ private fun BoardViewport(
     state: AndroidGameUiState,
     boardWidth: Dp,
     onCellClicked: (Position) -> Unit,
+    playersTransparent: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -899,6 +970,7 @@ private fun BoardViewport(
             state = state,
             boardWidth = boardWidth,
             onCellClicked = onCellClicked,
+            playersTransparent = playersTransparent,
         )
     }
 }
@@ -1446,7 +1518,13 @@ private fun BoardView(
     state: AndroidGameUiState,
     boardWidth: Dp,
     onCellClicked: (Position) -> Unit,
+    playersTransparent: Boolean,
 ) {
+    val playerImageAlpha by animateFloatAsState(
+        targetValue = playerTokenImageAlpha(playersTransparent),
+        animationSpec = tween(durationMillis = 150),
+        label = "player-token-transparency",
+    )
     BoxWithConstraints(
         modifier = Modifier
             .width(boardWidth)
@@ -1470,8 +1548,7 @@ private fun BoardView(
                     modifier = Modifier
                         .boardRect(maxWidth, maxHeight, cellRect(cell.position, scale = 0.98f))
                         .zIndex(BOARD_HIGHLIGHT_Z)
-                        .background(highlightFill(tone))
-                        .border(3.dp, highlightStroke(tone)),
+                        .boardHighlight(boardHighlightStyle(tone)),
                 )
             }
         }
@@ -1535,7 +1612,9 @@ private fun BoardView(
                         BoardPlayerImage(
                             playerId = player.playerId,
                             contentDescription = player.accessibilityLabel,
-                            modifier = Modifier.fillMaxSize(),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer { alpha = playerImageAlpha },
                         )
                     }
                 }
@@ -2165,23 +2244,70 @@ private fun playerRect(position: Position, index: Int, count: Int): BoardRectSpe
     )
 }
 
-private fun highlightFill(tone: AndroidHighlightTone): Color = when (tone) {
-    AndroidHighlightTone.DIG -> Color(0x55F2C94C)
-    AndroidHighlightTone.MOVE -> Color(0x5535BC67)
-    AndroidHighlightTone.CAPTURE -> Color(0x55E64B3F)
+internal fun boardHighlightStyle(tone: AndroidHighlightTone): AndroidBoardHighlightStyle = when (tone) {
+    AndroidHighlightTone.DIG -> AndroidBoardHighlightStyle(
+        fillArgb = 0x33F2C94C,
+        strokeArgb = 0xFFE8AD20.toInt(),
+        strokeWidth = 3.dp,
+        pattern = AndroidHighlightPattern.DASHED,
+    )
+    AndroidHighlightTone.MOVE -> AndroidBoardHighlightStyle(
+        fillArgb = 0x3356A3E8,
+        strokeArgb = 0xFF1F6FB2.toInt(),
+        strokeWidth = 3.dp,
+        pattern = AndroidHighlightPattern.SOLID,
+    )
+    AndroidHighlightTone.CAPTURE -> AndroidBoardHighlightStyle(
+        fillArgb = 0x33E64B3F,
+        strokeArgb = 0xFFB3261E.toInt(),
+        strokeWidth = 4.dp,
+        pattern = AndroidHighlightPattern.DOUBLE,
+    )
 }
 
-private fun highlightStroke(tone: AndroidHighlightTone): Color = when (tone) {
-    AndroidHighlightTone.DIG -> Color(0xFFF2C94C)
-    AndroidHighlightTone.MOVE -> Color(0xFF158A45)
-    AndroidHighlightTone.CAPTURE -> Color(0xFFE64B3F)
+private fun Modifier.boardHighlight(style: AndroidBoardHighlightStyle): Modifier = drawWithCache {
+    val strokeWidth = style.strokeWidth.toPx()
+    val dashEffect = PathEffect.dashPathEffect(
+        intervals = floatArrayOf(7.dp.toPx(), 5.dp.toPx()),
+    )
+    onDrawBehind {
+        drawRect(Color(style.fillArgb))
+        when (style.pattern) {
+            AndroidHighlightPattern.DASHED -> drawRect(
+                color = Color(style.strokeArgb),
+                style = Stroke(width = strokeWidth, pathEffect = dashEffect),
+            )
+            AndroidHighlightPattern.SOLID -> drawRect(
+                color = Color(style.strokeArgb),
+                style = Stroke(width = strokeWidth),
+            )
+            AndroidHighlightPattern.DOUBLE -> {
+                drawRect(
+                    color = Color(style.strokeArgb),
+                    style = Stroke(width = strokeWidth),
+                )
+                inset(5.dp.toPx()) {
+                    drawRect(
+                        color = Color(style.strokeArgb),
+                        style = Stroke(width = 1.5.dp.toPx()),
+                    )
+                }
+            }
+        }
+    }
 }
 
-private fun AndroidHighlightTone.boardLabel(): String = when (this) {
+internal fun AndroidHighlightTone.boardLabel(): String = when (this) {
     AndroidHighlightTone.DIG -> "掘る候補"
     AndroidHighlightTone.MOVE -> "移動候補"
     AndroidHighlightTone.CAPTURE -> "捕獲候補"
 }
+
+internal fun playerTokenImageAlpha(isTransparent: Boolean): Float =
+    if (isTransparent) PLAYER_TOKEN_TRANSPARENT_ALPHA else 1f
+
+internal fun playerVisibilityStateDescription(isTransparent: Boolean): String =
+    if (isTransparent) "半透明表示" else "通常表示"
 
 private fun TileShape.boardLabel(): String = when (this) {
     TileShape.STRAIGHT -> "直線タイル"

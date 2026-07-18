@@ -125,6 +125,12 @@ class MobileGameplayLayoutContractTest {
     }
 
     @Test
+    fun `player visibility toggle keeps a full touch target inside the hud`() {
+        assertTrue(PLAYER_VISIBILITY_TOGGLE_SIZE >= 44.dp)
+        assertTrue(PLAYER_VISIBILITY_TOGGLE_SIZE <= MOBILE_PLAY_HUD_HEIGHT)
+    }
+
+    @Test
     fun `log drawer has a bounded overlay height`() {
         assertTrue(LOG_HISTORY_POPUP_MAX_HEIGHT <= 220.dp)
     }
