@@ -64,8 +64,15 @@
 - [x] [#52](https://github.com/kisschan/mogura-game/issues/52) 配置済みタイルの再掘削時に現在角度を引き継ぎ、候補ごとの角度を維持する
 - [x] [#31](https://github.com/kisschan/mogura-game/issues/31) Android盤面の掘る・移動・捕獲候補を色と線種の両方で区別する
 - [x] [#53](https://github.com/kisschan/mogura-game/issues/53) HUDに駒画像だけを半透明化する44dpの表示切り替えを追加する
+- [x] PR #54 レビュー対応として、Desktopの操作パネルにも明示的な「置く」を追加し、盤面再クリックなしでDIGを確定可能にする
 
 ## テスト結果
+- 最終実行日: 2026-07-18
+- 実行コマンド: `.\gradlew.bat :core:test :androidApp:testDebugUnitTest :desktop:test :androidApp:assembleDebug :androidApp:assembleDebugAndroidTest`
+- 結果: `BUILD SUCCESSFUL`（PR #54 レビュー修正後、357テスト・失敗0・スキップ0。通常APKと計測テストAPKの生成を確認）
+- 最終実行日: 2026-07-18
+- 実行コマンド: `.\gradlew.bat :desktop:test --tests com.moguru.game.gui.PlayerTokenLayoutTest`
+- 結果: `BUILD SUCCESSFUL`（PR #54 のDesktop DIG確定導線回帰テスト）
 - 最終実行日: 2026-07-18
 - 実行コマンド: `.\gradlew.bat :core:test :androidApp:testDebugUnitTest :desktop:test :androidApp:assembleDebug :androidApp:assembleDebugAndroidTest`
 - 結果: `BUILD SUCCESSFUL`（356テスト、失敗0・スキップ0。通常APKと計測テストAPKの生成を確認）

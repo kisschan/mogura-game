@@ -86,6 +86,7 @@ internal fun boardPaintRenderPlan(): List<BoardPaintLayer> = boardPaintLayerOrde
 internal const val BOARD_HIGHLIGHT_FILL_ALPHA = 52
 internal val DESKTOP_ROTATION_BUTTON_SIZE = Dimension(52, 40)
 internal const val DESKTOP_SHOW_BUTTON_FOCUS = true
+internal const val DESKTOP_CONFIRM_DIG_LABEL = "置く"
 
 class MoguraGameFrame(
     private val controller: MoguraGameController,
@@ -99,6 +100,7 @@ class MoguraGameFrame(
     private val diceLabel = JLabel("ダイス", SwingConstants.CENTER)
     private val logArea = JTextArea()
     private val digGuideButton = JButton("掘る候補")
+    private val confirmDigButton = JButton(DESKTOP_CONFIRM_DIG_LABEL)
     private val moveGuideButton = JButton("移動候補")
     private val captureButton = JButton("捕獲")
     private val robButton = JButton("強奪")
@@ -147,6 +149,7 @@ class MoguraGameFrame(
 
         newGameButton.addActionListener { promptNewGame() }
         digGuideButton.addActionListener { showCurrentPhaseHelp() }
+        confirmDigButton.addActionListener { runAction { controller.confirmPendingDig() } }
         moveGuideButton.addActionListener { showCurrentPhaseHelp() }
         captureButton.addActionListener { runAction { captureSelectedOrPromptImmediately() } }
         robButton.addActionListener { runAction { robSelectedOrPrompt() } }
@@ -318,6 +321,7 @@ class MoguraGameFrame(
         actionPanel.background = Color(0xFFF7E4)
 
         styleActionButton(digGuideButton, "ハイライトされた穴タイルをクリック")
+        styleActionButton(confirmDigButton, "選択中の穴タイルをこの向きで配置")
         styleActionButton(moveGuideButton, "ハイライトされた移動先マスをクリック")
         styleActionButton(captureButton, "現在地のエサを捕獲")
         styleActionButton(robButton, "相手の巣からエサを強奪")
@@ -327,6 +331,7 @@ class MoguraGameFrame(
         styleActionButton(endTurnButton, "現在のターンを終了")
 
         actionPanel.add(digGuideButton)
+        actionPanel.add(confirmDigButton)
         actionPanel.add(moveGuideButton)
         actionPanel.add(captureButton)
         actionPanel.add(robButton)
@@ -579,13 +584,17 @@ class MoguraGameFrame(
             val pending = controller.pendingDigPlacement!!
             val selected = controller.pendingDigTileChoice?.label() ?: DigTileChoice.REVEALED.label()
             val drawn = pending.drawnTile?.shape?.displayName() ?: "なし"
-            "${selected}を選択中。山札: ${drawn}。回転を選び、同じマスをもう一度クリックしてください。"
+            desktopPendingDigStatus(selected, drawn)
         } else {
             phaseHelp(current?.currentPhase)
         }
         showStatus(statusText)
 
         captureButton.isEnabled = actions.canCapture
+        confirmDigButton.isEnabled = canConfirmDesktopDig(
+            hasPendingDig = controller.pendingDigPlacement != null,
+            phase = actions.activePhase,
+        )
         robButton.isEnabled = actions.canRob
         eatButton.isEnabled = actions.canEat
         carryButton.isEnabled = actions.canCarry
@@ -631,6 +640,7 @@ class MoguraGameFrame(
     private fun refreshActionButtonStyles(actions: ActionAvailability) {
         val phase = actions.activePhase
         updateActionButtonStyle(digGuideButton, phase == TurnPhase.DIG)
+        updateActionButtonStyle(confirmDigButton, confirmDigButton.isEnabled, Color(0x158A45))
         updateActionButtonStyle(moveGuideButton, phase == TurnPhase.MOVE)
         updateActionButtonStyle(captureButton, phase == TurnPhase.CAPTURE, Color(0xEB5757))
         updateActionButtonStyle(robButton, actions.canRob, Color(0xBB6BD9))
@@ -671,6 +681,12 @@ internal fun desktopCaptureOutcomeStatus(outcome: CaptureOutcomeDisplay): String
 
 internal fun desktopGuideStatusText(outcome: CaptureOutcomeDisplay?, phase: TurnPhase?): String =
     outcome?.let(::desktopCaptureOutcomeStatus) ?: desktopPhaseHelp(phase)
+
+internal fun canConfirmDesktopDig(hasPendingDig: Boolean, phase: TurnPhase?): Boolean =
+    hasPendingDig && phase == TurnPhase.DIG
+
+internal fun desktopPendingDigStatus(selected: String, drawn: String): String =
+    "${selected}を選択中。山札: ${drawn}。回転を選び、操作パネルの「$DESKTOP_CONFIRM_DIG_LABEL」で配置してください。"
 
 internal fun desktopPhaseHelp(phase: TurnPhase?): String = when (phase) {
         TurnPhase.DIG -> "ハイライトされた穴タイルをクリックしてください。"
