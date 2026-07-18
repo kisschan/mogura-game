@@ -64,6 +64,23 @@ class MobileGameplayComposeTest {
     }
 
     @Test
+    fun playerVisibilityToggleSwitchesBetweenNormalAndTransparentBoardModes() {
+        composeRule.onNodeWithText("ゲームスタート").performClick()
+
+        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "通常表示"),
+        )
+        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "半透明表示"),
+        )
+        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "通常表示"),
+        )
+    }
+
+    @Test
     fun boardDoesNotRenderVisiblePlayerNamesInActiveGameplay() {
         composeRule.onNodeWithText("ゲームスタート").performClick()
 

@@ -70,6 +70,12 @@ data class HoleTile(
     /** タイルを表向きにする。 */
     fun flip(): HoleTile = copy(isFaceDown = false)
 
+    /** 現在の開口方向に一致する、基準形状からの正規化済み回転量を返す。 */
+    fun canonicalRotation(): Rotation =
+        Rotation.entries.firstOrNull { rotation ->
+            HoleTile(shape).rotate(rotation).openSides == openSides
+        } ?: Rotation.DEG_0
+
     companion object {
         /** 全26枚のタイルセットを生成する。 */
         fun createFullSet(): List<HoleTile> = TileShape.entries.flatMap { shape ->

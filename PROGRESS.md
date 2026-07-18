@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-最終更新: 2026-07-15
+最終更新: 2026-07-18
 
 ## 現在の状況
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
@@ -61,8 +61,14 @@
 - [x] 自分の巣に戻った手番で、巣に保存済みのエサを1匹タベられるよう修正
 - [x] Phase 6: 要件7.1に合わせ、表向き既存穴タイルも掘る置き換え対象として補助APIとテストを整理
 - [x] Phase 6: 要件12-1の未確定エサカード個別データを、コード上もID付きTODOとして明示
+- [x] [#52](https://github.com/kisschan/mogura-game/issues/52) 配置済みタイルの再掘削時に現在角度を引き継ぎ、候補ごとの角度を維持する
+- [x] [#31](https://github.com/kisschan/mogura-game/issues/31) Android盤面の掘る・移動・捕獲候補を色と線種の両方で区別する
+- [x] [#53](https://github.com/kisschan/mogura-game/issues/53) HUDに駒画像だけを半透明化する44dpの表示切り替えを追加する
 
 ## テスト結果
+- 最終実行日: 2026-07-18
+- 実行コマンド: `.\gradlew.bat :core:test :androidApp:testDebugUnitTest :desktop:test :androidApp:assembleDebug :androidApp:assembleDebugAndroidTest`
+- 結果: `BUILD SUCCESSFUL`（356テスト、失敗0・スキップ0。通常APKと計測テストAPKの生成を確認）
 - 最終実行日: 2026-07-15
 - 実行コマンド: `cmd /c gradlew.bat :androidApp:testDebugUnitTest :desktop:test :androidApp:assembleDebug`
 - 結果: `BUILD SUCCESSFUL`（アプリアイコン・正式タイトル反映後のAndroidリソースパッケージング・APK生成・Android/Swing回帰確認）
@@ -195,7 +201,9 @@
 - [ ] [#13](https://github.com/kisschan/mogura-game/issues/13) ダンゴムシの幼虫になっている問題を修正する
 - [ ] [#29](https://github.com/kisschan/mogura-game/issues/29) Android UIの色セマンティクスをトークン化しセットアップ選択表示を統一する
 - [ ] [#30](https://github.com/kisschan/mogura-game/issues/30) Androidプレイ画面の手番・フェーズ認知をコンパクトHUD内で強化する
-- [ ] [#31](https://github.com/kisschan/mogura-game/issues/31) Android盤面ハイライトの色・形状を掘る/移動/捕獲で明確に分離する
+- [x] [#31](https://github.com/kisschan/mogura-game/issues/31) Android盤面ハイライトの色・形状を掘る/移動/捕獲で明確に分離する（2026-07-18 実装完了、マージ待ち）
+- [x] [#52](https://github.com/kisschan/mogura-game/issues/52) 再掘削時のタイル角度を現在の向きから開始し、明示的な「置く」で確定する（2026-07-18 実装完了、マージ待ち）
+- [x] [#53](https://github.com/kisschan/mogura-game/issues/53) 駒の下のタイルを確認できる半透明表示切り替えを追加する（2026-07-18 実装完了、マージ待ち）
 - [ ] [#32](https://github.com/kisschan/mogura-game/issues/32) Androidの不可逆操作に確認または明確な確定導線を追加する
 - [ ] [#33](https://github.com/kisschan/mogura-game/issues/33) Androidプレイ画面に短時間のトークン移動フィードバックを追加する
 
@@ -260,7 +268,7 @@
   - 出力: `androidApp/build/outputs/bundle/release/mogura-game-v6-release.aab`
   - SHA-256: `B7696EC66EF199B94AD90F9262DE6A396609820376C158E1CCB117909829E599`
 - [x] 2026-07-18: BGM停止後の遅延した一時オーディオフォーカス喪失が次の再生を妨げないよう修正し、回帰テストを追加する。
-- [ ] 差異解消後に `:core:test :androidApp:testDebugUnitTest :desktop:test` と、必要に応じて `:androidApp:bundleRelease` を実行する。
+- [x] #31・#52・#53 の全回帰テストとAndroidテストAPKビルドを実行する。
 
 ## 次の作業
 - Android/Swing の実プレイ表示差異を要件に照らして確認し、必要な表示補助だけを実装する
