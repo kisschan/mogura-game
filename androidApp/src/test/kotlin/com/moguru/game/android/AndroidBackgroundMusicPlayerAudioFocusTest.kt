@@ -131,6 +131,22 @@ class AndroidBackgroundMusicPlayerAudioFocusTest {
     }
 
     @Test
+    fun `late transient focus loss after pause does not block the next play request`() {
+        val events = mutableListOf<String>()
+        val mediaPlayer = FakeLoopingMediaPlayer(events)
+        val audioFocus = FakeAndroidAudioFocus(events)
+        val player = AudioFocusBackgroundMusicPlayer(mediaPlayer, audioFocus)
+        player.playLooping()
+        player.pause()
+        events.clear()
+
+        player.onTransientAudioFocusLoss()
+        player.playLooping()
+
+        assertEquals(listOf("focus.request", "media.start"), events)
+    }
+
+    @Test
     fun `close abandons focus and closes media player once`() {
         val events = mutableListOf<String>()
         val mediaPlayer = FakeLoopingMediaPlayer(events)
