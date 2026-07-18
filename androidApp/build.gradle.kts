@@ -44,8 +44,8 @@ android {
         applicationId = "com.moguru.game.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "4"
+        versionCode = 6
+        versionName = "6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
