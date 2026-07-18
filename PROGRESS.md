@@ -259,6 +259,7 @@
   - `.\gradlew.bat test bundleRelease --stacktrace` は `BUILD SUCCESSFUL`。
   - 出力: `androidApp/build/outputs/bundle/release/mogura-game-v6-release.aab`
   - SHA-256: `B7696EC66EF199B94AD90F9262DE6A396609820376C158E1CCB117909829E599`
+- [x] 2026-07-18: BGM停止後の遅延した一時オーディオフォーカス喪失が次の再生を妨げないよう修正し、回帰テストを追加する。
 - [ ] 差異解消後に `:core:test :androidApp:testDebugUnitTest :desktop:test` と、必要に応じて `:androidApp:bundleRelease` を実行する。
 
 ## 次の作業

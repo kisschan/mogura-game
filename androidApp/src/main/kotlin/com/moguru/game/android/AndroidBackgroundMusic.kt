@@ -150,6 +150,7 @@ internal class AudioFocusBackgroundMusicPlayer(
 
     fun onTransientAudioFocusLoss() {
         if (isClosed) return
+        if (!playbackRequested || !hasFocus) return
 
         temporarilyPausedForFocus = true
         if (mediaPlayer.isPlaying) {
