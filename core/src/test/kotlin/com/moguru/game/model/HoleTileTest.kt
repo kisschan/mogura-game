@@ -65,6 +65,27 @@ class HoleTileTest {
     }
 
     @Test
+    fun `現在の開口方向から基準形状に対する回転角を復元できる`() {
+        assertEquals(
+            Rotation.DEG_270,
+            HoleTile(TileShape.L_SHAPE).rotate(Rotation.DEG_270).canonicalRotation(),
+        )
+        assertEquals(
+            Rotation.DEG_180,
+            HoleTile(TileShape.T_SHAPE).rotate(Rotation.DEG_180).canonicalRotation(),
+        )
+        assertEquals(
+            Rotation.DEG_90,
+            HoleTile(TileShape.STRAIGHT).rotate(Rotation.DEG_270).canonicalRotation(),
+            "回転対称な形状は同じ開口方向になる最初の角度へ正規化する",
+        )
+        assertEquals(
+            Rotation.DEG_0,
+            HoleTile(TileShape.CROSS).rotate(Rotation.DEG_180).canonicalRotation(),
+        )
+    }
+
+    @Test
     fun `直線タイルを90度回転すると左と右`() {
         val tile = HoleTile(TileShape.STRAIGHT)
         val rotated = tile.rotate(Rotation.DEG_90)

@@ -125,7 +125,7 @@ class AndroidGameViewModelTest {
         viewModel.onCellClicked(target)
         // 巣と接続する向き(左右開き)に回転し、移動フェーズで移動先を残す。
         viewModel.selectRotation(Rotation.DEG_90)
-        viewModel.onCellClicked(target)
+        viewModel.confirmDigPlacement()
 
         assertEquals(TurnPhase.MOVE, viewModel.uiState.value.playState.actionAvailability.activePhase)
         assertEquals(
@@ -148,6 +148,21 @@ class AndroidGameViewModelTest {
         assertEquals(TurnPhase.MOVE, state.playState.actionAvailability.activePhase)
         assertFalse(state.showDigControls)
         assertEquals("タイルを置きました。", state.lastMessage)
+    }
+
+    @Test
+    fun `repeated board tap does not confirm pending dig placement`() {
+        val viewModel = testViewModel()
+        val target = Position(1, 1)
+        viewModel.startNewGame(2)
+
+        viewModel.onCellClicked(target)
+        viewModel.onCellClicked(target)
+
+        val state = viewModel.uiState.value
+        assertEquals(TurnPhase.DIG, state.playState.actionAvailability.activePhase)
+        assertTrue(state.showDigControls)
+        assertEquals("操作バーの「置く」でタイルの配置を確定してください。", state.lastMessage)
     }
 
     @Test
@@ -212,7 +227,7 @@ class AndroidGameViewModelTest {
 
         // 回転なし(上下開き)で掘ると巣と接続せず移動先が無いため、捕獲も無く自動でターンが終わる。
         viewModel.onCellClicked(target)
-        viewModel.onCellClicked(target)
+        viewModel.confirmDigPlacement()
 
         val state = viewModel.uiState.value
         assertEquals(TurnPhase.DIG, state.playState.actionAvailability.activePhase)

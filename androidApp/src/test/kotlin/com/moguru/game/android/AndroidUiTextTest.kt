@@ -124,6 +124,30 @@ class AndroidUiTextTest {
     }
 
     @Test
+    fun `board highlight styles separate dig move and capture by color and pattern`() {
+        val dig = boardHighlightStyle(AndroidHighlightTone.DIG)
+        val move = boardHighlightStyle(AndroidHighlightTone.MOVE)
+        val capture = boardHighlightStyle(AndroidHighlightTone.CAPTURE)
+
+        assertEquals(AndroidHighlightPattern.DASHED, dig.pattern)
+        assertEquals(AndroidHighlightPattern.SOLID, move.pattern)
+        assertEquals(AndroidHighlightPattern.DOUBLE, capture.pattern)
+        assertEquals(0xFF1F6FB2.toInt(), move.strokeArgb)
+        assertFalse(move.strokeArgb == 0xFF158A45.toInt(), "移動候補は選択状態の緑と分離する")
+        assertEquals("掘る候補", AndroidHighlightTone.DIG.boardLabel())
+        assertEquals("移動候補", AndroidHighlightTone.MOVE.boardLabel())
+        assertEquals("捕獲候補", AndroidHighlightTone.CAPTURE.boardLabel())
+    }
+
+    @Test
+    fun `player visibility mode exposes stable alpha and accessibility state`() {
+        assertEquals(1f, playerTokenImageAlpha(isTransparent = false))
+        assertEquals(0.22f, playerTokenImageAlpha(isTransparent = true))
+        assertEquals("通常表示", playerVisibilityStateDescription(isTransparent = false))
+        assertEquals("半透明表示", playerVisibilityStateDescription(isTransparent = true))
+    }
+
+    @Test
     fun `single board target becomes one primary action`() {
         val target = AndroidBoardCellUiState(
             position = Position(1, 1),
