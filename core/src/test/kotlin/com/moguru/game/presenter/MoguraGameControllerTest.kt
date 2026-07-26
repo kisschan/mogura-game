@@ -79,7 +79,7 @@ class MoguraGameControllerTest {
 
         assertEquals(
             PublicDeckSummary(
-                tileDrawCount = 10,
+                tileDrawCount = 9,
                 tileDiscardCount = 0,
                 foodDrawCount = 8,
                 foodDiscardCount = 0,
@@ -98,7 +98,7 @@ class MoguraGameControllerTest {
         assertEquals(0, state.currentPlayer.playerId)
         assertEquals(
             PublicDeckSummary(
-                tileDrawCount = 10,
+                tileDrawCount = 9,
                 tileDiscardCount = 0,
                 foodDrawCount = 8,
                 foodDiscardCount = 0,
@@ -106,8 +106,10 @@ class MoguraGameControllerTest {
             state.deckSummary,
         )
         assertEquals(DigTileChoice.entries.toList(), state.digCandidates.map { it.choice })
-        assertEquals(listOf<TileShape?>(null, null), state.digCandidates.map { it.shape })
+        assertEquals(listOf(null, TileShape.L_SHAPE), state.digCandidates.map { it.shape })
         assertTrue(state.digCandidates.none { it.enabled })
+        assertEquals(TileShape.L_SHAPE, controller.pendingDigDrawnTile?.shape)
+        assertTrue(controller.logs.last().contains("確認してから掘る場所を選んでください"))
         assertEquals(Rotation.DEG_0, state.selectedRotation)
         assertNull(state.lastDiceRoll)
         assertFalse(state.diceRouletteActive)
@@ -768,6 +770,8 @@ class MoguraGameControllerTest {
         assertTrue(controller.digTargets().isEmpty())
         assertTrue(result.success)
         assertEquals(TurnPhase.MOVE, engine.currentPhase)
+        assertNull(controller.pendingDigDrawnTile)
+        assertEquals(10, controller.publicDeckSummary().tileDrawCount)
     }
 
     @Test
@@ -1000,6 +1004,24 @@ class MoguraGameControllerTest {
         assertEquals(TileShape.L_SHAPE, placedTile.shape)
         assertFalse(placedTile.isFaceDown)
         assertEquals(HoleTile(TileShape.L_SHAPE).rotate(Rotation.DEG_90).openSides, placedTile.openSides)
+    }
+
+    @Test
+    fun `drawn dig tile is public before the player selects a target`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val drawnBeforeTarget = controller.pendingDigDrawnTile
+        val drawCountBeforeTarget = controller.publicDeckSummary().tileDrawCount
+        val target = controller.digTargets().first()
+
+        val reveal = controller.revealDigTile(target)
+
+        assertNotNull(drawnBeforeTarget)
+        assertEquals(TileShape.L_SHAPE, drawnBeforeTarget?.shape)
+        assertNull(controller.pendingDigDrawnTile)
+        assertEquals(drawnBeforeTarget?.shape, controller.pendingDigPlacement?.drawnTile?.shape)
+        assertEquals(drawCountBeforeTarget, controller.publicDeckSummary().tileDrawCount)
+        assertTrue(reveal.success)
     }
 
     @Test
@@ -1248,6 +1270,33 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `owner can return to an invaded nest and immediately evict the intruder`() {
+        val controller = testController()
+        controller.startNewGame(2)
+        val engine = controller.engine!!
+        val owner = engine.players[0]
+        val intruder = engine.players[1]
+        val approach = Position(1, 1)
+        val ownerNest = owner.nestPosition
+        val evictionDestination = Board.NEST_EVICTION_DESTINATIONS.getValue(ownerNest)
+        owner.moveTo(approach)
+        intruder.moveTo(ownerNest)
+        engine.boardState.placeTile(
+            approach,
+            HoleTile(TileShape.CROSS).flip(),
+        )
+        engine.advancePhase()
+
+        val targets = controller.moveTargets()
+        val moveHome = controller.moveTo(ownerNest)
+
+        assertTrue(ownerNest in targets)
+        assertTrue(moveHome.success)
+        assertEquals(ownerNest, owner.position)
+        assertEquals(evictionDestination, intruder.position)
+    }
+
+    @Test
     fun `unoccupied opponent nest remains a move target`() {
         val controller = testController()
         controller.startNewGame(2)
@@ -1328,9 +1377,14 @@ class MoguraGameControllerTest {
 
         assertTrue(result.success)
         Board.HOT_ZONE_POSITIONS.forEach { position ->
-            val food = engine.foodAt(position)
-            assertTrue(food != null, "ホットゾーン $position にエサが補充されるべき")
-            assertTrue(food!!.isFaceDown, "補充後のエサは裏向きであるべき")
+            val foods = engine.foodsAt(position)
+            assertEquals(1, foods.count { it.isFaceDown }, "ホットゾーン $position に裏向きエサを1枚補充するべき")
+            if (position == target) {
+                assertEquals(1, foods.size, "捕獲された位置には補充エサだけが残るべき")
+            } else {
+                assertEquals(2, foods.size, "既存の表向きエサを残して補充するべき")
+                assertEquals(1, foods.count { !it.isFaceDown })
+            }
         }
     }
 
@@ -1458,10 +1512,12 @@ class MoguraGameControllerTest {
         assertTrue(result.success)
         assertEquals(1, engine.currentPlayerIndex)
         assertEquals(TurnPhase.DIG, engine.currentPhase)
+        assertNotNull(controller.pendingDigDrawnTile)
+        assertTrue(controller.logs.last().contains("確認してから掘る場所を選んでください"))
     }
 
     @Test
-    fun `finish turn ends game when current player elimination leaves one survivor`() {
+    fun `finish turn continues when one survivor remains below the winning score`() {
         val controller = testController()
         controller.startNewGame(2)
         val engine = controller.engine!!
@@ -1474,8 +1530,10 @@ class MoguraGameControllerTest {
 
         assertTrue(result.success)
         assertTrue(eliminated.isEliminated)
-        assertEquals(survivor, engine.checkWinCondition())
-        assertEquals(GameState.FINISHED, engine.gameState)
+        assertNull(engine.checkWinCondition())
+        assertEquals(GameState.PLAYING, engine.gameState)
+        assertEquals(survivor, controller.currentPlayer)
+        assertEquals(TurnPhase.DIG, engine.currentPhase)
     }
 
     @Test
