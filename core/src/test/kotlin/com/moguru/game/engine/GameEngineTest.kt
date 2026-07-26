@@ -225,15 +225,14 @@ class GameEngineTest {
     }
 
     @Test
-    fun `最後の生存プレイヤーが勝利する`() {
+    fun `最後の生存プレイヤーでも規定得点未満なら勝利しない`() {
         setupDefaultGame()
         val eliminated = engine.players[0]
-        val survivor = engine.players[1]
 
         repeat(13) { eliminated.reduceHealth(isOnSurface = false) }
 
-        assertEquals(survivor, engine.checkWinCondition())
-        assertEquals(GameState.FINISHED, engine.checkGameOver())
+        assertNull(engine.checkWinCondition())
+        assertEquals(GameState.PLAYING, engine.checkGameOver())
     }
 
     @Test
@@ -630,20 +629,55 @@ class GameEngineTest {
     @Test
     fun `ホットゾーンに表向きエサがある場合も補充される`() {
         setupDefaultGame()
+        val faceUpFoods = mutableMapOf<Position, FoodCard>()
         Board.HOT_ZONE_POSITIONS.forEach { position ->
             val food = engine.removeFoodAt(position)
             if (food != null) {
-                engine.placeFoodAt(position, food.copy(isFaceDown = false))
+                val faceUp = food.copy(isFaceDown = false)
+                faceUpFoods[position] = faceUp
+                engine.placeFoodAt(position, faceUp)
             }
         }
 
         assertTrue(engine.shouldReplenishFood())
 
-        engine.replenishFood()
+        val replenishedCount = engine.replenishFood()
+        assertEquals(4, replenishedCount)
         Board.HOT_ZONE_POSITIONS.forEach { position ->
-            val food = engine.foodAt(position)
-            assertNotNull(food, "補充後のホットゾーン $position にエサがない")
-            assertTrue(food!!.isFaceDown, "補充されたエサは裏向きであるべき")
+            val foods = engine.foodsAt(position)
+            assertEquals(2, foods.size, "表向きエサを残して1枚補充するべき")
+            assertEquals(faceUpFoods[position], foods.first(), "既存の表向きエサを捨ててはいけない")
+            assertTrue(foods.last().isFaceDown, "追加されたエサは裏向きであるべき")
+        }
+    }
+
+    @Test
+    fun `replenishment continues from discard when stock runs out midway`() {
+        setupDefaultGame()
+        val hotZones = Board.HOT_ZONE_POSITIONS.toList()
+
+        hotZones.forEach { position -> engine.removeFoodAt(position) }
+        assertEquals(4, engine.replenishFood())
+        assertEquals(4, engine.foodStockCount)
+
+        hotZones.drop(1).forEach { position -> engine.removeFoodAt(position) }
+        assertEquals(3, engine.replenishFood())
+        assertEquals(1, engine.foodStockCount)
+
+        repeat(3) {
+            engine.discardFood(FoodCard(FoodType.BEETLE_LARVA, emptyMap(), isFaceDown = false))
+        }
+        hotZones.forEach { position ->
+            while (engine.removeFoodAt(position) != null) {
+                // Clear the hot zone so all four positions need replenishment.
+            }
+        }
+
+        assertEquals(4, engine.replenishFood())
+        assertEquals(0, engine.foodStockCount)
+        assertEquals(0, engine.foodDiscardCount)
+        hotZones.forEach { position ->
+            assertEquals(1, engine.foodsAt(position).count { it.isFaceDown })
         }
     }
 
@@ -839,7 +873,7 @@ class GameEngineTest {
     }
 
     @Test
-    fun `replenish recycles face-up hot-zone food when stock and discard are empty`() {
+    fun `stock and discard are empty then face-up hot-zone food remains without replenishment`() {
         setupDefaultGame()
 
         repeat(2) {
@@ -859,13 +893,16 @@ class GameEngineTest {
         }
         assertTrue(engine.shouldReplenishFood())
 
-        engine.replenishFood()
+        val replenishedCount = engine.replenishFood()
 
         Board.HOT_ZONE_POSITIONS.forEach { position ->
-            val food = engine.foodAt(position)
-            assertNotNull(food, "hot-zone food should be recycled back into $position")
-            assertTrue(food!!.isFaceDown, "recycled hot-zone food should be face down")
+            val foods = engine.foodsAt(position)
+            assertEquals(1, foods.size, "existing face-up food should remain in $position")
+            assertFalse(foods.single().isFaceDown, "face-up food must not be recycled as replenishment")
         }
+        assertEquals(0, replenishedCount)
+        assertEquals(0, engine.foodStockCount)
+        assertEquals(0, engine.foodDiscardCount)
     }
 
     private fun setupDefaultGame() {

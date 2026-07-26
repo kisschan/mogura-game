@@ -275,10 +275,7 @@ class GameEngine(
 
     /** 勝利条件を満たすプレイヤーがいれば返す。 */
     fun checkWinCondition(): Player? {
-        val scoreWinner = players.firstOrNull { !it.isEliminated && it.score >= winScore }
-        if (scoreWinner != null) return scoreWinner
-
-        return players.filter { !it.isEliminated }.singleOrNull()
+        return players.firstOrNull { !it.isEliminated && it.score >= winScore }
     }
 
     /** ゲーム終了状態を更新して返す。 */
@@ -330,44 +327,30 @@ class GameEngine(
     }
 
     /**
-     * エサを補充する。
+     * 裏向きエサがないホットゾーンへ、表向きエサを残したまま1枚ずつ補充する。
      *
-     * 表向きエサは捨て札へ送り、裏向きエサがないホットゾーンへ裏向きエサを補充する。
+     * @return 実際に補充した枚数
      */
-    fun replenishFood(preserveFaceUpHotZonePositions: Set<Position> = emptySet()) {
-        sweepFaceUpHotZoneFood(preserveFaceUpHotZonePositions)
-
-        if (foodStock.isEmpty() && foodDiscard.isEmpty()) return
-
-        if (foodStock.isEmpty()) {
-            foodStock.addAll(shuffler.shuffle(foodDiscard.map { it.copy(isFaceDown = true) }))
-            foodDiscard.clear()
-        }
-
+    fun replenishFood(): Int {
+        var replenishedCount = 0
         Board.HOT_ZONE_POSITIONS.forEach { position ->
             val hasFaceDownFood = _foodPositions[position].orEmpty().any { it.isFaceDown }
-            if (!hasFaceDownFood && foodStock.isNotEmpty()) {
-                placeFoodAt(position, foodStock.removeFirst())
+            if (hasFaceDownFood) return@forEach
+
+            refillFoodStockFromDiscardIfNeeded()
+            if (foodStock.isNotEmpty()) {
+                placeFoodAt(position, foodStock.removeFirst().copy(isFaceDown = true))
+                replenishedCount++
             }
         }
+        return replenishedCount
     }
 
-    private fun sweepFaceUpHotZoneFood(preserveFaceUpHotZonePositions: Set<Position>) {
-        Board.HOT_ZONE_POSITIONS.forEach { position ->
-            if (position in preserveFaceUpHotZonePositions) return@forEach
-            val foods = _foodPositions[position] ?: return@forEach
-            val iterator = foods.iterator()
-            while (iterator.hasNext()) {
-                val existing = iterator.next()
-                if (!existing.isFaceDown) {
-                    iterator.remove()
-                    foodDiscard.add(existing.copy(isFaceDown = true))
-                }
-            }
-            if (foods.isEmpty()) {
-                _foodPositions.remove(position)
-            }
-        }
+    private fun refillFoodStockFromDiscardIfNeeded() {
+        if (foodStock.isNotEmpty() || foodDiscard.isEmpty()) return
+
+        foodStock.addAll(shuffler.shuffle(foodDiscard.map { it.copy(isFaceDown = true) }))
+        foodDiscard.clear()
     }
 
     /** 捕獲フェーズから、タベる/レンコウまたは強奪を選ぶフェーズへ直接入る。 */

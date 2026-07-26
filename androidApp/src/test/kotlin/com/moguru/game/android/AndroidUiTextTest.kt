@@ -254,6 +254,24 @@ class AndroidUiTextTest {
     }
 
     @Test
+    fun `drawn tile is announced before selecting a dig target`() {
+        val drawn = DigCandidateDisplay(
+            choice = DigTileChoice.DRAWN,
+            label = "山札",
+            shape = TileShape.L_SHAPE,
+            selected = false,
+            enabled = false,
+        )
+
+        assertEquals(
+            "山札: L字タイル。確認してから掘る場所を選んでください。",
+            drawnDigTargetInstruction(TurnPhase.DIG, listOf(drawn)),
+        )
+        assertNull(drawnDigTargetInstruction(TurnPhase.MOVE, listOf(drawn)))
+        assertNull(drawnDigTargetInstruction(TurnPhase.DIG, listOf(drawn.copy(enabled = true))))
+    }
+
+    @Test
     fun `capture target accessibility labels describe action and target`() {
         val target = CaptureTargetDisplay(
             index = 1,
