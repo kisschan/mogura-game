@@ -570,6 +570,7 @@ class MoguraGameFrame(
         val uiState = controller.playScreenUiState()
         val actions = uiState.actionAvailability
         val canAdvanceFromDig = controller.canAdvanceFromDigWithoutTargets()
+        val preparedDigShape = controller.pendingDigDrawnTile?.shape
 
         currentPlayerPanel.render(uiState.currentPlayer)
         val statusText = uiState.captureOutcome?.let(::desktopCaptureOutcomeStatus)
@@ -585,6 +586,8 @@ class MoguraGameFrame(
             val selected = controller.pendingDigTileChoice?.label() ?: DigTileChoice.REVEALED.label()
             val drawn = pending.drawnTile?.shape?.displayName() ?: "なし"
             desktopPendingDigStatus(selected, drawn)
+        } else if (actions.activePhase == TurnPhase.DIG && preparedDigShape != null) {
+            "山札: ${preparedDigShape.displayName()}。確認してから掘る場所を選んでください。"
         } else {
             phaseHelp(current?.currentPhase)
         }

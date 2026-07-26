@@ -13,6 +13,7 @@ import com.moguru.game.model.Rotation
 import com.moguru.game.model.TileShape
 import com.moguru.game.presenter.FoodDecisionSource
 import com.moguru.game.presenter.CaptureOutcomeKind
+import com.moguru.game.presenter.DigTileChoice
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.util.FixedDiceRoller
 import com.moguru.game.util.FixedShuffler
@@ -50,6 +51,11 @@ class AndroidGameViewModelTest {
         assertEquals(4, state.selectedPlayerCount)
         assertEquals(TurnPhase.DIG, state.playState.actionAvailability.activePhase)
         assertTrue(state.boardState.cells.isNotEmpty())
+        assertNull(state.lastMessage)
+        assertEquals(
+            TileShape.L_SHAPE,
+            state.playState.digCandidates.single { it.choice == DigTileChoice.DRAWN }.shape,
+        )
     }
 
     @Test
@@ -544,7 +550,7 @@ class AndroidGameViewModelTest {
     }
 
     @Test
-    fun `elimination win exposes eliminated player result`() {
+    fun `game continues when only one player survives below the winning score`() {
         val controller = testController()
         val viewModel = AndroidGameViewModel(controller)
         viewModel.startNewGame(2)
@@ -555,15 +561,14 @@ class AndroidGameViewModelTest {
 
         viewModel.finishTurn()
 
-        val result = viewModel.uiState.value.gameResult!!
-        val winnerResult = result.players.single { it.playerId == 0 }
-        val eliminatedResult = result.players.single { it.playerId == 1 }
-        assertEquals(GameState.FINISHED, engine.gameState)
-        assertEquals("モグオ", result.winnerName)
-        assertTrue(winnerResult.isWinner)
-        assertEquals(0, eliminatedResult.health)
-        assertTrue(eliminatedResult.isEliminated)
-        assertFalse(eliminatedResult.isWinner)
+        val state = viewModel.uiState.value
+        assertEquals(GameState.PLAYING, engine.gameState)
+        assertNull(state.gameResult)
+        assertFalse(state.showGameResultOverlay)
+        assertEquals(0, engine.currentPlayerIndex)
+        assertEquals(TurnPhase.DIG, engine.currentPhase)
+        assertEquals(0, eliminated.health)
+        assertTrue(eliminated.isEliminated)
     }
 
     private fun testViewModel(): AndroidGameViewModel =

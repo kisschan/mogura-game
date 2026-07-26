@@ -1993,8 +1993,26 @@ private fun latestEventText(state: AndroidGameUiState): String? =
     state.gameResult?.let(::gameResultEventText)
         ?: resultBannerText(state.playState.captureOutcome)
         ?: state.lastMessage
+        ?: drawnDigTargetInstruction(
+            phase = state.playState.actionAvailability.activePhase,
+            candidates = state.playState.digCandidates,
+        )
         ?: state.logs.lastOrNull()
         ?: phaseInstruction(state.playState.actionAvailability.activePhase)
+
+internal fun drawnDigTargetInstruction(
+    phase: TurnPhase?,
+    candidates: List<DigCandidateDisplay>,
+): String? {
+    if (phase != TurnPhase.DIG) return null
+    val drawn = candidates.firstOrNull { candidate ->
+        candidate.choice == DigTileChoice.DRAWN &&
+            candidate.shape != null &&
+            !candidate.enabled
+    } ?: return null
+    val shape = drawn.shape ?: return null
+    return "山札: ${shape.displayName()}。確認してから掘る場所を選んでください。"
+}
 
 private fun actionBarInstruction(state: AndroidGameUiState): String =
     state.gameResult?.let { gameResultActionInstruction() }
