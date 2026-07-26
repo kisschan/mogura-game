@@ -181,7 +181,7 @@ class AndroidGameViewModel(
         val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
         _uiState.value = snapshot(
             isGameStarted = true,
-            lastMessage = result.message,
+            lastMessage = messageForCurrentTurn(result.message),
         )
     }
 
@@ -191,7 +191,7 @@ class AndroidGameViewModel(
         val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
         _uiState.value = snapshot(
             isGameStarted = true,
-            lastMessage = result.message,
+            lastMessage = messageForCurrentTurn(result.message),
         )
     }
 
@@ -309,7 +309,17 @@ class AndroidGameViewModel(
      */
     private fun resolveAfterSuccessfulAction(message: String?) {
         val autoResult = controller.autoAdvanceWhileNoChoice()
-        refresh(if (autoResult != null) null else message)
+        val resolvedMessage = if (autoResult != null) null else message
+        refresh(messageForCurrentTurn(resolvedMessage))
+    }
+
+    private fun messageForCurrentTurn(message: String?): String? {
+        val engine = controller.engine
+        return if (engine?.currentPhase == TurnPhase.DIG && controller.pendingDigDrawnTile != null) {
+            null
+        } else {
+            message
+        }
     }
 
     private fun refresh(lastMessage: String?) {
