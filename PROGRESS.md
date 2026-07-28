@@ -1,8 +1,9 @@
 # PROGRESS.md
 
-最終更新: 2026-07-18
+最終更新: 2026-07-26
 
 ## 現在の状況
+- [x] 次回AABリリース用にAndroid `versionCode` / `versionName` を `7` に更新
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
 - [x] 移動、タイル配置、ターン進行のエンジン実装
 - [x] 文字化けしていたソースとドキュメントの修正
@@ -276,6 +277,10 @@
   - SHA-256: `B7696EC66EF199B94AD90F9262DE6A396609820376C158E1CCB117909829E599`
 - [x] 2026-07-18: BGM停止後の遅延した一時オーディオフォーカス喪失が次の再生を妨げないよう修正し、回帰テストを追加する。
 - [x] #31・#52・#53 の全回帰テストとAndroidテストAPKビルドを実行する。
+- [x] 2026-07-26: versionCode / versionName 7 の署名付きリリースAABを最新のルール修正を含めて再生成する。
+  - `.\gradlew.bat test bundleRelease --stacktrace --no-daemon --max-workers=1` は `BUILD SUCCESSFUL`（全361件、失敗0件）。
+  - 出力: `androidApp/build/outputs/bundle/release/mogura-game-v7-release.aab`
+  - SHA-256: `373E2B182FEA110F4EB17E60569C9FDFF2299C633260AC7F0FAB2B5BF8855437`
 
 ## 次の作業
 - Android/Swing の実プレイ表示差異を要件に照らして確認し、必要な表示補助だけを実装する
