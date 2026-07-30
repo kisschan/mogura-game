@@ -8,6 +8,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -53,14 +54,84 @@ class MobileGameplayComposeTest {
     }
 
     @Test
+    fun beginnerRulesOpenFromSetupAndReturnWithoutChangingSelections() {
+        composeRule.onNodeWithText("3人").performClick()
+        composeRule.onNodeWithText("3人").assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.Selected, true),
+        )
+        composeRule.onNodeWithTag(RULES_SETUP_BUTTON_TEST_TAG).performClick()
+
+        composeRule.onNodeWithTag(RULES_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(RULES_GOAL_TEST_TAG).assertIsDisplayed()
+        composeRule.onNodeWithText("4点先取").assertIsDisplayed()
+        composeRule.onNodeWithTag(RULES_BACK_BUTTON_TEST_TAG).performClick()
+
+        composeRule.onNodeWithText("プレイヤー人数").assertIsDisplayed()
+        composeRule.onNodeWithText("3人").assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.Selected, true),
+        )
+        composeRule.onNodeWithText("ゲームスタート").assertIsDisplayed()
+    }
+
+    @Test
+    fun beginnerRulesCanScrollThroughTheDetailedSections() {
+        composeRule.onNodeWithTag(RULES_SETUP_BUTTON_TEST_TAG).performClick()
+
+        composeRule.onNodeWithText("エサの補充 と ゲーム終了", substring = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("ゲームに戻る")
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun audioSettingsOpenFromActiveGameplayHud() {
         composeRule.onNodeWithText("ゲームスタート").performClick()
 
-        composeRule.onNodeWithTag(AUDIO_SETTINGS_BUTTON_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(GAME_MENU_BUTTON_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(GAME_MENU_AUDIO_ITEM_TEST_TAG).performClick()
 
         composeRule.onNodeWithText("音量設定").assertIsDisplayed()
         composeRule.onNodeWithTag(BGM_VOLUME_SLIDER_TEST_TAG).assertIsDisplayed()
         composeRule.onNodeWithTag(SOUND_EFFECT_VOLUME_SLIDER_TEST_TAG).assertIsDisplayed()
+    }
+
+    @Test
+    fun beginnerRulesOpenFromGameplayMenuAndPreserveGameplayUiState() {
+        composeRule.onNodeWithText("ゲームスタート").performClick()
+        composeRule.onNodeWithTag("game-board").assertIsDisplayed()
+        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "半透明表示"),
+        )
+
+        composeRule.onNodeWithTag(GAME_MENU_BUTTON_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(GAME_MENU_RULES_ITEM_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(RULES_SCREEN_TEST_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(RULES_TURN_FLOW_TEST_TAG)
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag(RULES_BACK_BUTTON_TEST_TAG).performClick()
+
+        composeRule.onNodeWithTag("top-hud").assertIsDisplayed()
+        composeRule.onNodeWithTag("game-board").assertIsDisplayed()
+        composeRule.onNodeWithTag("action-bar").assertIsDisplayed()
+        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "半透明表示"),
+        )
+    }
+
+    @Test
+    fun newGameRemainsAvailableFromGameplayMenuWithConfirmation() {
+        composeRule.onNodeWithText("ゲームスタート").performClick()
+
+        composeRule.onNodeWithTag(GAME_MENU_BUTTON_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(GAME_MENU_NEW_GAME_ITEM_TEST_TAG).performClick()
+
+        composeRule.onNodeWithText("設定画面に戻りますか？").assertIsDisplayed()
+        composeRule.onNodeWithText("続ける").performClick()
+        composeRule.onNodeWithTag("game-board").assertIsDisplayed()
     }
 
     @Test
