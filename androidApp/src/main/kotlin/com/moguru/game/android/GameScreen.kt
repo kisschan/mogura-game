@@ -31,6 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -58,6 +60,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
@@ -66,6 +69,7 @@ import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -131,10 +135,15 @@ internal const val ACTIVE_GAMEPLAY_USES_VERTICAL_SCROLL = false
 internal const val EVENT_STRIP_MAX_LINES = 1
 internal const val LOG_HISTORY_COLLAPSED_BY_DEFAULT = true
 internal const val AUDIO_SETTINGS_BUTTON_TEST_TAG = "audio-settings-button"
+internal const val GAME_MENU_BUTTON_TEST_TAG = "game-menu-button"
+internal const val GAME_MENU_RULES_ITEM_TEST_TAG = "game-menu-rules-item"
+internal const val GAME_MENU_AUDIO_ITEM_TEST_TAG = "game-menu-audio-item"
+internal const val GAME_MENU_NEW_GAME_ITEM_TEST_TAG = "game-menu-new-game-item"
 internal const val PLAYER_VISIBILITY_TOGGLE_TEST_TAG = "player-visibility-toggle"
 internal const val BGM_VOLUME_SLIDER_TEST_TAG = "bgm-volume-slider"
 internal const val SOUND_EFFECT_VOLUME_SLIDER_TEST_TAG = "sound-effect-volume-slider"
 internal val AUDIO_SETTINGS_BUTTON_SIZE = 44.dp
+internal val GAME_MENU_BUTTON_SIZE = 44.dp
 internal val PLAYER_VISIBILITY_TOGGLE_SIZE = 44.dp
 internal const val PLAYER_TOKEN_TRANSPARENT_ALPHA = 0.22f
 
@@ -180,6 +189,7 @@ internal fun MoguraGameScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     var showAudioSettings by remember { mutableStateOf(false) }
+    var showRules by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(state.isGameStarted) {
         onGameStartedChanged(state.isGameStarted)
@@ -192,50 +202,71 @@ internal fun MoguraGameScreen(
                 color = Color(0xFFFFF7E4),
             ) {
                 Box {
-                    if (state.isGameStarted) {
-                        PlayScreen(
-                            state = state,
-                            viewModel = viewModel,
-                            audioSettings = audioSettings,
-                            onAudioSettingsClick = { showAudioSettings = true },
-                        )
-                    } else {
-                        SetupScreen(
-                            state = state,
-                            viewModel = viewModel,
-                            audioSettings = audioSettings,
-                            onAudioSettingsClick = { showAudioSettings = true },
-                        )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (showRules) {
+                                    Modifier.clearAndSetSemantics {}
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                    ) {
+                        if (state.isGameStarted) {
+                            PlayScreen(
+                                state = state,
+                                viewModel = viewModel,
+                                audioSettings = audioSettings,
+                                onAudioSettingsClick = { showAudioSettings = true },
+                                onRulesClick = { showRules = true },
+                            )
+                        } else {
+                            SetupScreen(
+                                state = state,
+                                viewModel = viewModel,
+                                audioSettings = audioSettings,
+                                onAudioSettingsClick = { showAudioSettings = true },
+                                onRulesClick = { showRules = true },
+                            )
+                        }
+                        val rouletteFood = state.playState.diceRouletteFood
+                        if (state.playState.diceRouletteActive && rouletteFood != null) {
+                            DiceRouletteOverlay(
+                                foodType = rouletteFood,
+                                escapeRolls = state.playState.diceRouletteEscapeRolls,
+                                targetFace = state.playState.diceRouletteResult,
+                                onTap = soundEffectClick(onClick = viewModel::stopDiceRoulette),
+                                onFinished = viewModel::finishDiceRoulette,
+                            )
+                        }
+                        val gameResult = state.gameResult
+                        if (state.showGameResultOverlay && gameResult != null) {
+                            GameResultOverlay(
+                                result = gameResult,
+                                onViewBoard = viewModel::dismissGameResultOverlay,
+                                onNewGame = viewModel::returnToSetup,
+                            )
+                        }
+                        if (showAudioSettings) {
+                            AudioSettingsDialog(
+                                settings = audioSettings,
+                                onSettingsChanged = { updatedSettings ->
+                                    soundEffects.setVolume(updatedSettings.normalizedSoundEffectVolume)
+                                    onAudioSettingsChanged(updatedSettings)
+                                },
+                                onSoundEffectPreview = {
+                                    soundEffects.play(AndroidSoundEffect.BUTTON_PRESS)
+                                },
+                                onDismiss = { showAudioSettings = false },
+                            )
+                        }
                     }
-                    val rouletteFood = state.playState.diceRouletteFood
-                    if (state.playState.diceRouletteActive && rouletteFood != null) {
-                        DiceRouletteOverlay(
-                            foodType = rouletteFood,
-                            escapeRolls = state.playState.diceRouletteEscapeRolls,
-                            targetFace = state.playState.diceRouletteResult,
-                            onTap = soundEffectClick(onClick = viewModel::stopDiceRoulette),
-                            onFinished = viewModel::finishDiceRoulette,
-                        )
-                    }
-                    val gameResult = state.gameResult
-                    if (state.showGameResultOverlay && gameResult != null) {
-                        GameResultOverlay(
-                            result = gameResult,
-                            onViewBoard = viewModel::dismissGameResultOverlay,
-                            onNewGame = viewModel::returnToSetup,
-                        )
-                    }
-                    if (showAudioSettings) {
-                        AudioSettingsDialog(
-                            settings = audioSettings,
-                            onSettingsChanged = { updatedSettings ->
-                                soundEffects.setVolume(updatedSettings.normalizedSoundEffectVolume)
-                                onAudioSettingsChanged(updatedSettings)
-                            },
-                            onSoundEffectPreview = {
-                                soundEffects.play(AndroidSoundEffect.BUTTON_PRESS)
-                            },
-                            onDismiss = { showAudioSettings = false },
+                    if (showRules) {
+                        InputBlockingLayer()
+                        RulesScreen(
+                            onBack = { showRules = false },
+                            modifier = Modifier.zIndex(1f),
                         )
                     }
                 }
@@ -254,6 +285,24 @@ private fun soundEffectClick(
         soundEffects.play(effect)
         onClick()
     }
+}
+
+@Composable
+private fun InputBlockingLayer() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .zIndex(0.5f)
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent().changes.forEach { change ->
+                            change.consume()
+                        }
+                    }
+                }
+            },
+    )
 }
 
 @Composable
@@ -281,6 +330,94 @@ private fun AudioSettingsButton(
             lineHeight = 20.sp,
             maxLines = 1,
         )
+    }
+}
+
+@Composable
+private fun CompactGameMenuButton(
+    settings: AndroidAudioSettings,
+    onRulesClick: () -> Unit,
+    onAudioSettingsClick: () -> Unit,
+    onNewGameClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box(modifier = modifier) {
+        OutlinedButton(
+            onClick = soundEffectClick { expanded = true },
+            modifier = Modifier
+                .size(GAME_MENU_BUTTON_SIZE)
+                .testTag(GAME_MENU_BUTTON_TEST_TAG)
+                .semantics {
+                    contentDescription = "ゲームメニュー"
+                    stateDescription = if (expanded) "開いています" else "閉じています"
+                },
+            shape = RoundedCornerShape(8.dp),
+            contentPadding = PaddingValues(0.dp),
+            border = BorderStroke(2.dp, Color(0xFF9A7A52)),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2E2115)),
+        ) {
+            Text(
+                text = "☰",
+                fontSize = 19.sp,
+                lineHeight = 20.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1,
+            )
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = "遊び方",
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
+                onClick = soundEffectClick {
+                    expanded = false
+                    onRulesClick()
+                },
+                modifier = Modifier.testTag(GAME_MENU_RULES_ITEM_TEST_TAG),
+            )
+            DropdownMenuItem(
+                text = {
+                    Column {
+                        Text(
+                            text = "音量設定",
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = audioSettingsButtonContentDescription(settings)
+                                .removePrefix("音量設定: "),
+                            color = Color(0xFF6F5943),
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                        )
+                    }
+                },
+                onClick = soundEffectClick {
+                    expanded = false
+                    onAudioSettingsClick()
+                },
+                modifier = Modifier.testTag(GAME_MENU_AUDIO_ITEM_TEST_TAG),
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = "新規ゲーム",
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
+                onClick = soundEffectClick {
+                    expanded = false
+                    onNewGameClick()
+                },
+                modifier = Modifier.testTag(GAME_MENU_NEW_GAME_ITEM_TEST_TAG),
+            )
+        }
     }
 }
 
@@ -415,6 +552,7 @@ private fun SetupScreen(
     viewModel: AndroidGameViewModel,
     audioSettings: AndroidAudioSettings,
     onAudioSettingsClick: () -> Unit,
+    onRulesClick: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -444,9 +582,30 @@ private fun SetupScreen(
                 modifier = Modifier.align(Alignment.CenterEnd),
             )
         }
+        OutlinedButton(
+            onClick = soundEffectClick(onClick = onRulesClick),
+            modifier = Modifier
+                .padding(top = 16.dp)
+                .fillMaxWidth(0.82f)
+                .heightIn(min = 48.dp)
+                .testTag(RULES_SETUP_BUTTON_TEST_TAG),
+            shape = RoundedCornerShape(12.dp),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
+            border = BorderStroke(1.dp, Color.Black.copy(alpha = 0.12f)),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = Color.White.copy(alpha = 0.72f),
+                contentColor = Color(0xFF2E2115),
+            ),
+        ) {
+            Text(
+                text = "はじめての方へ　遊び方",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Black,
+            )
+        }
         Text(
             text = "プレイヤー人数",
-            modifier = Modifier.padding(top = 28.dp, bottom = 10.dp),
+            modifier = Modifier.padding(top = 20.dp, bottom = 10.dp),
             color = Color(0xFF4B3826),
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
@@ -777,6 +936,7 @@ private fun PlayScreen(
     viewModel: AndroidGameViewModel,
     audioSettings: AndroidAudioSettings,
     onAudioSettingsClick: () -> Unit,
+    onRulesClick: () -> Unit,
 ) {
     var playersTransparent by rememberSaveable { mutableStateOf(false) }
     BoxWithConstraints(
@@ -806,6 +966,7 @@ private fun PlayScreen(
                 onNewGame = viewModel::returnToSetup,
                 audioSettings = audioSettings,
                 onAudioSettingsClick = onAudioSettingsClick,
+                onRulesClick = onRulesClick,
                 playersTransparent = playersTransparent,
                 onPlayersTransparentChange = { playersTransparent = !playersTransparent },
                 modifier = Modifier
@@ -841,6 +1002,7 @@ private fun CompactPlayHud(
     onNewGame: () -> Unit,
     audioSettings: AndroidAudioSettings,
     onAudioSettingsClick: () -> Unit,
+    onRulesClick: () -> Unit,
     playersTransparent: Boolean,
     onPlayersTransparentChange: () -> Unit,
     modifier: Modifier = Modifier,
@@ -882,26 +1044,16 @@ private fun CompactPlayHud(
             HudChip(compactHealthText(current.healthText), accent = Color(0xFF35BC67))
             HudChip(compactScoreText(current.scoreText), accent = Color(0xFF56A3E8))
         }
-        AudioSettingsButton(
+        CompactGameMenuButton(
             settings = audioSettings,
-            onClick = onAudioSettingsClick,
+            onRulesClick = onRulesClick,
+            onAudioSettingsClick = onAudioSettingsClick,
+            onNewGameClick = { showNewGameConfirmation = true },
         )
         PlayerVisibilityToggle(
             isTransparent = playersTransparent,
             onToggle = onPlayersTransparentChange,
         )
-        OutlinedButton(
-            onClick = soundEffectClick { showNewGameConfirmation = true },
-            modifier = Modifier
-                .widthIn(min = 48.dp)
-                .heightIn(min = 40.dp),
-            shape = RoundedCornerShape(8.dp),
-            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
-            border = BorderStroke(2.dp, Color(0xFF9A7A52)),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2E2115)),
-        ) {
-            Text("新規", fontSize = 11.sp, fontWeight = FontWeight.Black, maxLines = 1)
-        }
     }
     if (showNewGameConfirmation) {
         AlertDialog(
