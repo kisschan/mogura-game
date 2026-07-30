@@ -125,6 +125,17 @@ class MobileGameplayLayoutContractTest {
     }
 
     @Test
+    fun `game menu keeps a full touch target inside the hud`() {
+        assertTrue(GAME_MENU_BUTTON_SIZE >= 44.dp)
+        assertTrue(GAME_MENU_BUTTON_SIZE <= MOBILE_PLAY_HUD_HEIGHT)
+    }
+
+    @Test
+    fun `rules navigation keeps a full touch target`() {
+        assertTrue(RULES_MIN_TOUCH_TARGET >= 44.dp)
+    }
+
+    @Test
     fun `player visibility toggle keeps a full touch target inside the hud`() {
         assertTrue(PLAYER_VISIBILITY_TOGGLE_SIZE >= 44.dp)
         assertTrue(PLAYER_VISIBILITY_TOGGLE_SIZE <= MOBILE_PLAY_HUD_HEIGHT)

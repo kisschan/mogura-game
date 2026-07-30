@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-最終更新: 2026-07-26
+最終更新: 2026-07-29
 
 ## 現在の状況
 - [x] 次回AABリリース用にAndroid `versionCode` / `versionName` を `7` に更新
@@ -66,8 +66,15 @@
 - [x] [#31](https://github.com/kisschan/mogura-game/issues/31) Android盤面の掘る・移動・捕獲候補を色と線種の両方で区別する
 - [x] [#53](https://github.com/kisschan/mogura-game/issues/53) HUDに駒画像だけを半透明化する44dpの表示切り替えを追加する
 - [x] PR #54 レビュー対応として、Desktopの操作パネルにも明示的な「置く」を追加し、盤面再クリックなしでDIGを確定可能にする
+- [x] Androidに初心者向け「遊び方」ページを追加し、セットアップ画面とプレイ中の統合メニューから開けるようにする
+- [x] プレイ中HUDの音量設定・遊び方・新規ゲームを44dpの統合メニューへまとめ、ルール閲覧中も盤面と表示設定を保持する
+- [x] 初心者向けルール導線・スクロール・状態保持・新規ゲーム確認を対象とするAndroid UIテスト4件とタップ領域の単体テスト2件を追加する
 
 ## テスト結果
+- 最終試行日: 2026-07-29
+- 実行コマンド: `.\gradlew.bat :androidApp:compileDebugKotlin`
+- 結果: 未完了（長時間終了しなかったためユーザー操作で中断し、残存Gradleデーモンを `.\gradlew.bat --stop` で停止。今回追加したテストは未実行）
+- 静的確認: `git diff --check` 成功。Compose API・import・画面状態保持・要件文言を読み取りレビュー済み
 - 最終実行日: 2026-07-18
 - 実行コマンド: `.\gradlew.bat :core:test :androidApp:testDebugUnitTest :desktop:test :androidApp:assembleDebug :androidApp:assembleDebugAndroidTest`
 - 結果: `BUILD SUCCESSFUL`（PR #54 レビュー修正後、357テスト・失敗0・スキップ0。通常APKと計測テストAPKの生成を確認）
@@ -180,7 +187,10 @@
 - `androidApp/src/main/kotlin/com/moguru/game/android/MainActivity.kt`
 - `androidApp/src/main/kotlin/com/moguru/game/android/AndroidGameViewModel.kt`
 - `androidApp/src/main/kotlin/com/moguru/game/android/GameScreen.kt`
+- `androidApp/src/main/kotlin/com/moguru/game/android/RulesScreen.kt`
 - `androidApp/src/test/kotlin/com/moguru/game/android/AndroidGameViewModelTest.kt`
+- `androidApp/src/test/kotlin/com/moguru/game/android/MobileGameplayLayoutContractTest.kt`
+- `androidApp/src/androidTest/kotlin/com/moguru/game/android/MobileGameplayComposeTest.kt`
 - `androidApp/src/main/res/drawable-nodpi/`
 - `androidApp/build.gradle.kts`
 - `.gitignore`
@@ -283,5 +293,6 @@
   - SHA-256: `373E2B182FEA110F4EB17E60569C9FDFF2299C633260AC7F0FAB2B5BF8855437`
 
 ## 次の作業
+- Gradleが正常終了する環境で `:androidApp:testDebugUnitTest` と `:androidApp:assembleDebugAndroidTest` を実行し、今回追加したルール画面テストを確認する
 - Android/Swing の実プレイ表示差異を要件に照らして確認し、必要な表示補助だけを実装する
 - 生成AAB/APKはGitHubへ上げず、Play Consoleへ直接アップロードする
