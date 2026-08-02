@@ -3,6 +3,7 @@ package com.moguru.game.android
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -51,6 +52,17 @@ class MobileGameplayComposeTest {
         composeRule.onNodeWithTag("top-hud").assertIsDisplayed()
         composeRule.onNodeWithTag("game-board").assertIsDisplayed()
         composeRule.onNodeWithTag("action-bar").assertIsDisplayed()
+    }
+
+    @Test
+    fun activeGameplayKeepsScoreAndDirectHudControlsVisible() {
+        composeRule.onNodeWithText("ゲームスタート").performClick()
+
+        composeRule.onNodeWithTag(HUD_SCORE_TEST_TAG)
+            .assertIsDisplayed()
+            .assertWidthIsAtLeast(HUD_SCORE_MIN_WIDTH)
+        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(GAME_MENU_BUTTON_TEST_TAG).assertIsDisplayed()
     }
 
     @Test

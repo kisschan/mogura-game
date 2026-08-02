@@ -140,11 +140,13 @@ internal const val GAME_MENU_RULES_ITEM_TEST_TAG = "game-menu-rules-item"
 internal const val GAME_MENU_AUDIO_ITEM_TEST_TAG = "game-menu-audio-item"
 internal const val GAME_MENU_NEW_GAME_ITEM_TEST_TAG = "game-menu-new-game-item"
 internal const val PLAYER_VISIBILITY_TOGGLE_TEST_TAG = "player-visibility-toggle"
+internal const val HUD_SCORE_TEST_TAG = "hud-score"
 internal const val BGM_VOLUME_SLIDER_TEST_TAG = "bgm-volume-slider"
 internal const val SOUND_EFFECT_VOLUME_SLIDER_TEST_TAG = "sound-effect-volume-slider"
 internal val AUDIO_SETTINGS_BUTTON_SIZE = 44.dp
 internal val GAME_MENU_BUTTON_SIZE = 44.dp
 internal val PLAYER_VISIBILITY_TOGGLE_SIZE = 44.dp
+internal val HUD_SCORE_MIN_WIDTH = 40.dp
 internal const val PLAYER_TOKEN_TRANSPARENT_ALPHA = 0.22f
 
 internal enum class AndroidHighlightPattern {
@@ -1040,19 +1042,34 @@ private fun CompactPlayHud(
             horizontalArrangement = Arrangement.spacedBy(5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            HudChip(compactPhaseLabel(state.playState.actionAvailability.activePhase), accent = Color(0xFFF2C94C))
-            HudChip(compactHealthText(current.healthText), accent = Color(0xFF35BC67))
-            HudChip(compactScoreText(current.scoreText), accent = Color(0xFF56A3E8))
+            HudChip(
+                text = compactPhaseLabel(state.playState.actionAvailability.activePhase),
+                accent = Color(0xFFF2C94C),
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            HudChip(
+                text = compactHealthText(current.healthText),
+                accent = Color(0xFF35BC67),
+                tabularNumbers = true,
+            )
+            HudChip(
+                text = compactScoreText(current.scoreText),
+                accent = Color(0xFF56A3E8),
+                modifier = Modifier
+                    .widthIn(min = HUD_SCORE_MIN_WIDTH)
+                    .testTag(HUD_SCORE_TEST_TAG),
+                tabularNumbers = true,
+            )
         }
+        PlayerVisibilityToggle(
+            isTransparent = playersTransparent,
+            onToggle = onPlayersTransparentChange,
+        )
         CompactGameMenuButton(
             settings = audioSettings,
             onRulesClick = onRulesClick,
             onAudioSettingsClick = onAudioSettingsClick,
             onNewGameClick = { showNewGameConfirmation = true },
-        )
-        PlayerVisibilityToggle(
-            isTransparent = playersTransparent,
-            onToggle = onPlayersTransparentChange,
         )
     }
     if (showNewGameConfirmation) {
@@ -1087,8 +1104,11 @@ private fun CompactPlayHud(
 private fun HudChip(
     text: String,
     accent: Color,
+    modifier: Modifier = Modifier,
+    tabularNumbers: Boolean = false,
 ) {
     Surface(
+        modifier = modifier,
         shape = RoundedCornerShape(8.dp),
         color = Color(0xFFFFFBF0),
         border = BorderStroke(1.dp, accent),
@@ -1102,6 +1122,11 @@ private fun HudChip(
             fontWeight = FontWeight.Black,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            style = if (tabularNumbers) {
+                LocalTextStyle.current.copy(fontFeatureSettings = "tnum")
+            } else {
+                LocalTextStyle.current
+            },
         )
     }
 }

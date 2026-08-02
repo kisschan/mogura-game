@@ -131,6 +131,13 @@ class MobileGameplayLayoutContractTest {
     }
 
     @Test
+    fun `hud score and direct controls keep their reserved widths`() {
+        assertTrue(HUD_SCORE_MIN_WIDTH >= 40.dp)
+        assertEquals(44.dp, GAME_MENU_BUTTON_SIZE)
+        assertEquals(44.dp, PLAYER_VISIBILITY_TOGGLE_SIZE)
+    }
+
+    @Test
     fun `rules navigation keeps a full touch target`() {
         assertTrue(RULES_MIN_TOUCH_TARGET >= 44.dp)
     }
