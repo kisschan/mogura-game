@@ -1,9 +1,9 @@
 # PROGRESS.md
 
-最終更新: 2026-07-29
+最終更新: 2026-08-02
 
 ## 現在の状況
-- [x] 次回AABリリース用にAndroid `versionCode` / `versionName` を `7` に更新
+- [x] 次回AABリリース用にAndroid `versionCode` / `versionName` を `9` に更新
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
 - [x] 移動、タイル配置、ターン進行のエンジン実装
 - [x] 文字化けしていたソースとドキュメントの修正
@@ -69,8 +69,14 @@
 - [x] Androidに初心者向け「遊び方」ページを追加し、セットアップ画面とプレイ中の統合メニューから開けるようにする
 - [x] プレイ中HUDの音量設定・遊び方・新規ゲームを44dpの統合メニューへまとめ、ルール閲覧中も盤面と表示設定を保持する
 - [x] 初心者向けルール導線・スクロール・状態保持・新規ゲーム確認を対象とするAndroid UIテスト4件とタップ領域の単体テスト2件を追加する
+- [x] Androidプレイ中HUDで点数幅を優先確保し、駒透の右に統合メニューを配置して小画面での点数省略を防止する
 
 ## テスト結果
+- 最終実行日: 2026-07-31
+- 実行コマンド: `.\gradlew.bat test --no-daemon`
+- 結果: `BUILD SUCCESSFUL`（Android・core・desktopの全単体テスト成功）
+- UIテスト確認: `:androidApp:compileDebugAndroidTestKotlin` 成功。接続端末・エミュレーターがないため計測テスト実行は未実施
+- ビルド確認: `.\gradlew.bat :androidApp:assembleDebug --no-daemon` 成功
 - 最終試行日: 2026-07-29
 - 実行コマンド: `.\gradlew.bat :androidApp:compileDebugKotlin`
 - 結果: 未完了（長時間終了しなかったためユーザー操作で中断し、残存Gradleデーモンを `.\gradlew.bat --stop` で停止。今回追加したテストは未実行）
