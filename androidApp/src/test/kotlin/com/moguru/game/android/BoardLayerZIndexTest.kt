@@ -31,6 +31,14 @@ class BoardLayerZIndexTest {
             "Current-cell ring should not cover the current-player token outline.",
         )
         assertTrue(
+            BOARD_CURRENT_CELL_RING_Z < BOARD_SELECTED_MOVE_RING_Z,
+            "Selected move ring should remain visible above the current-cell ring.",
+        )
+        assertTrue(
+            BOARD_SELECTED_MOVE_RING_Z < BOARD_CURRENT_PLAYER_OUTLINE_Z,
+            "Selected move ring should not cover the current-player token outline.",
+        )
+        assertTrue(
             BOARD_CURRENT_PLAYER_OUTLINE_Z < BOARD_CLICK_TARGET_Z,
             "Clickable cell overlay should remain the top board layer.",
         )
