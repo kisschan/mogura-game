@@ -171,25 +171,66 @@ class AndroidUiTextTest {
     }
 
     @Test
-    fun `single board action is preferred over generic visible actions`() {
-        val action = MobilePrimaryBoardAction(label = "このマスへ移動", position = Position(1, 1))
+    fun `move action stays available when multiple destinations are reachable`() {
+        val firstTarget = AndroidBoardCellUiState(
+            position = Position(1, 1),
+            cellType = CellType.UNDERGROUND,
+            tile = null,
+            foods = emptyList(),
+            players = emptyList(),
+            highlight = AndroidHighlightTone.MOVE,
+        )
+        val secondTarget = firstTarget.copy(position = Position(2, 1))
 
-        assertTrue(preferSingleBoardAction(action, listOf(AndroidVisibleAction.SKIP)))
-        assertFalse(preferSingleBoardAction(null, listOf(AndroidVisibleAction.SKIP)))
+        assertEquals(
+            listOf(
+                MobilePrimaryBoardAction(label = "このマスへ移動", position = Position(1, 1)),
+                MobilePrimaryBoardAction(label = "このマスへ移動", position = Position(2, 1)),
+            ),
+            primaryBoardActions(listOf(firstTarget, secondTarget), TurnPhase.MOVE),
+        )
+
+        val moveActions = primaryBoardActions(listOf(firstTarget, secondTarget), TurnPhase.MOVE)
+        assertEquals(moveActions, primaryBoardActionsForBar(moveActions, TurnPhase.MOVE))
+        assertEquals(emptyList<MobilePrimaryBoardAction>(), primaryBoardActionsForBar(moveActions, TurnPhase.DIG))
     }
 
     @Test
-    fun `single board capture keeps optional end turn without duplicate capture action`() {
+    fun `selected move action follows the destination chosen in the action bar`() {
+        val actions = listOf(
+            MobilePrimaryBoardAction(label = "このマスへ移動", position = Position(1, 1)),
+            MobilePrimaryBoardAction(label = "このマスへ移動", position = Position(2, 1)),
+        )
+
+        assertEquals(actions[1], selectedPrimaryBoardAction(actions, selectedIndex = 1))
+        assertEquals(actions[0], selectedPrimaryBoardAction(actions, selectedIndex = 99))
+        assertEquals(1, nextPrimaryBoardActionIndex(selectedIndex = 0, actionCount = 2))
+        assertEquals(0, nextPrimaryBoardActionIndex(selectedIndex = 1, actionCount = 2))
+        assertEquals("移動先 2/2: 3列2行", primaryBoardActionTargetLabel(actions[1], selectedIndex = 1, total = 2))
+        assertEquals("移動先 1/2: 2列2行", primaryBoardActionTargetLabel(actions[0], selectedIndex = 99, total = 2))
+        assertEquals(
+            Position(2, 1),
+            selectedMoveActionPosition(actions, selectedIndex = 1, phase = TurnPhase.MOVE),
+        )
+        assertNull(selectedMoveActionPosition(actions, selectedIndex = 1, phase = TurnPhase.DIG))
+        assertEquals(
+            "選択中の移動先 2/2: 3列2行。押すと次の移動先に切り替えます",
+            primaryBoardActionSelectorDescription(actions[1], selectedIndex = 1, total = 2),
+        )
+    }
+
+    @Test
+    fun `board action keeps optional actions without duplicate capture action`() {
         assertEquals(
             listOf(AndroidVisibleAction.END_TURN),
-            visibleActionsAfterSingleBoardAction(
+            visibleActionsAfterBoardAction(
                 TurnPhase.CAPTURE,
                 listOf(AndroidVisibleAction.CAPTURE, AndroidVisibleAction.END_TURN),
             ),
         )
         assertEquals(
             listOf(AndroidVisibleAction.SKIP, AndroidVisibleAction.END_TURN),
-            visibleActionsAfterSingleBoardAction(
+            visibleActionsAfterBoardAction(
                 TurnPhase.MOVE,
                 listOf(AndroidVisibleAction.SKIP, AndroidVisibleAction.END_TURN),
             ),
