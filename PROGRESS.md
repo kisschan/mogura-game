@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-最終更新: 2026-08-02
+最終更新: 2026-08-05
 
 ## 現在の状況
 - [x] 次回AABリリース用にAndroid `versionCode` / `versionName` を `9` に更新
@@ -70,8 +70,16 @@
 - [x] プレイ中HUDの音量設定・遊び方・新規ゲームを44dpの統合メニューへまとめ、ルール閲覧中も盤面と表示設定を保持する
 - [x] 初心者向けルール導線・スクロール・状態保持・新規ゲーム確認を対象とするAndroid UIテスト4件とタップ領域の単体テスト2件を追加する
 - [x] Androidプレイ中HUDで点数幅を優先確保し、駒透の右に統合メニューを配置して小画面での点数省略を防止する
+- [x] Androidの移動候補が複数ある局面でも「このマスへ移動」を表示し、操作バーで移動先を切り替え、選択中マスを緑の内枠で確認して実行できるようにする
 
 ## テスト結果
+- 最終実行日: 2026-08-05
+- TDD確認: 複数移動候補の回帰テストを先に追加し、`primaryBoardActions` / `primaryBoardActionsForBar` 未実装のコンパイル失敗を確認後、実装して成功
+- 実行コマンド: `.\gradlew.bat test --no-daemon`
+- 結果: `BUILD SUCCESSFUL`（Android・core・desktopの全単体テスト成功）
+- Android本体確認: `.\gradlew.bat :androidApp:lintAnalyzeDebug :androidApp:assembleDebug --no-daemon` は `BUILD SUCCESSFUL`
+- Android UIテストAPK確認: Android Studio同梱JDK 21を明示した `:androidApp:assembleDebugAndroidTest` は `BUILD SUCCESSFUL`
+- Android全lint確認: Android Studio同梱JDK 21を明示した `:androidApp:lintDebug` は `BUILD SUCCESSFUL`
 - 最終実行日: 2026-07-31
 - 実行コマンド: `.\gradlew.bat test --no-daemon`
 - 結果: `BUILD SUCCESSFUL`（Android・core・desktopの全単体テスト成功）

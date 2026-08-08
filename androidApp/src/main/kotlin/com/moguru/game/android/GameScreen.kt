@@ -108,6 +108,7 @@ internal const val BOARD_CONNECTION_PORT_Z = 32f
 internal const val BOARD_FOOD_Z = 40f
 internal const val BOARD_PLAYER_BASE_Z = 45f
 internal const val BOARD_CURRENT_CELL_RING_Z = 72f
+internal const val BOARD_SELECTED_MOVE_RING_Z = 74f
 internal const val BOARD_CURRENT_PLAYER_OUTLINE_Z = 75f
 internal const val BOARD_CLICK_TARGET_Z = 80f
 
@@ -941,6 +942,21 @@ private fun PlayScreen(
     onRulesClick: () -> Unit,
 ) {
     var playersTransparent by rememberSaveable { mutableStateOf(false) }
+    val activePhase = state.playState.actionAvailability.activePhase
+    val boardActionsForBar = primaryBoardActionsForBar(
+        actions = primaryBoardActions(state.boardState.cells, activePhase),
+        phase = activePhase,
+    )
+    var selectedBoardActionIndex by remember(
+        activePhase,
+        state.playState.currentPlayer.playerId,
+        boardActionsForBar,
+    ) { mutableStateOf(0) }
+    val selectedMoveTargetPosition = selectedMoveActionPosition(
+        actions = boardActionsForBar,
+        selectedIndex = selectedBoardActionIndex,
+        phase = activePhase,
+    )
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -981,6 +997,7 @@ private fun PlayScreen(
                 boardWidth = layout.boardWidth,
                 onCellClicked = viewModel::onCellClicked,
                 playersTransparent = playersTransparent,
+                selectedMoveTargetPosition = selectedMoveTargetPosition,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("board-viewport")
@@ -989,6 +1006,9 @@ private fun PlayScreen(
             GameplayActionBar(
                 state = state,
                 viewModel = viewModel,
+                boardActions = boardActionsForBar,
+                selectedBoardActionIndex = selectedBoardActionIndex,
+                onBoardActionSelected = { selectedBoardActionIndex = it },
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("action-bar")
@@ -1137,6 +1157,7 @@ private fun BoardViewport(
     boardWidth: Dp,
     onCellClicked: (Position) -> Unit,
     playersTransparent: Boolean,
+    selectedMoveTargetPosition: Position?,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -1148,6 +1169,7 @@ private fun BoardViewport(
             boardWidth = boardWidth,
             onCellClicked = onCellClicked,
             playersTransparent = playersTransparent,
+            selectedMoveTargetPosition = selectedMoveTargetPosition,
         )
     }
 }
@@ -1156,14 +1178,13 @@ private fun BoardViewport(
 private fun GameplayActionBar(
     state: AndroidGameUiState,
     viewModel: AndroidGameViewModel,
+    boardActions: List<MobilePrimaryBoardAction>,
+    selectedBoardActionIndex: Int,
+    onBoardActionSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val singleBoardAction = singlePrimaryBoardAction(
-        state.boardState.cells,
-        state.playState.actionAvailability.activePhase,
-    )
-    val preferSingleBoardAction = preferSingleBoardAction(singleBoardAction, state.visibleActions)
     val activePhase = state.playState.actionAvailability.activePhase
+    val selectedBoardAction = selectedPrimaryBoardAction(boardActions, selectedBoardActionIndex)
     var showLogHistory by remember { mutableStateOf(!LOG_HISTORY_COLLAPSED_BY_DEFAULT) }
     Box(modifier = modifier) {
         Surface(
@@ -1211,10 +1232,12 @@ private fun GameplayActionBar(
                             extraActions = state.visibleActions.filter { it != AndroidVisibleAction.ROB },
                             onExtraAction = { action -> viewModel.performVisibleAction(action) },
                         )
-                    preferSingleBoardAction && singleBoardAction != null -> CompactBoardActionRow(
-                        singleBoardAction = singleBoardAction,
-                        onBoardAction = { viewModel.onCellClicked(singleBoardAction.position) },
-                        extraActions = visibleActionsAfterSingleBoardAction(activePhase, state.visibleActions),
+                    selectedBoardAction != null -> CompactBoardActionRow(
+                        boardActions = boardActions,
+                        selectedIndex = selectedBoardActionIndex,
+                        onSelect = onBoardActionSelected,
+                        onBoardAction = { viewModel.onCellClicked(selectedBoardAction.position) },
+                        extraActions = visibleActionsAfterBoardAction(activePhase, state.visibleActions),
                         onExtraAction = { action -> viewModel.performVisibleAction(action) },
                     )
                     state.visibleActions.isNotEmpty() -> ActionControls(state = state, viewModel = viewModel)
@@ -1648,16 +1671,57 @@ private fun CompactTargetActionRow(
 
 @Composable
 private fun CompactBoardActionRow(
-    singleBoardAction: MobilePrimaryBoardAction,
+    boardActions: List<MobilePrimaryBoardAction>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
     onBoardAction: () -> Unit,
     extraActions: List<AndroidVisibleAction>,
     onExtraAction: (AndroidVisibleAction) -> Unit,
 ) {
+    val selectedBoardAction = selectedPrimaryBoardAction(boardActions, selectedIndex) ?: return
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (boardActions.size > 1) {
+            val selectorDescription = primaryBoardActionSelectorDescription(
+                action = selectedBoardAction,
+                selectedIndex = selectedIndex,
+                total = boardActions.size,
+            )
+            OutlinedButton(
+                onClick = soundEffectClick {
+                    onSelect(nextPrimaryBoardActionIndex(selectedIndex, boardActions.size))
+                },
+                modifier = Modifier
+                    .weight(1.35f)
+                    .height(COMPACT_ACTION_BUTTON_HEIGHT)
+                    .semantics {
+                        contentDescription = selectorDescription
+                    },
+                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(2.dp, Color(0xFF1F6FB2)),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color(0xFFE8F4FF),
+                    contentColor = Color(0xFF173A5A),
+                ),
+            ) {
+                Text(
+                    text = primaryBoardActionTargetLabel(
+                        action = selectedBoardAction,
+                        selectedIndex = selectedIndex,
+                        total = boardActions.size,
+                    ),
+                    fontSize = 10.sp,
+                    lineHeight = 12.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         Button(
             onClick = soundEffectClick(onClick = onBoardAction),
             modifier = Modifier
@@ -1672,7 +1736,7 @@ private fun CompactBoardActionRow(
             ),
         ) {
             Text(
-                singleBoardAction.label,
+                selectedBoardAction.label,
                 fontSize = 13.sp,
                 lineHeight = 15.sp,
                 fontWeight = FontWeight.Black,
@@ -1696,6 +1760,7 @@ private fun BoardView(
     boardWidth: Dp,
     onCellClicked: (Position) -> Unit,
     playersTransparent: Boolean,
+    selectedMoveTargetPosition: Position?,
 ) {
     val playerImageAlpha by animateFloatAsState(
         targetValue = playerTokenImageAlpha(playersTransparent),
@@ -1809,6 +1874,15 @@ private fun BoardView(
                 )
             }
 
+        selectedMoveTargetPosition?.let { position ->
+            Box(
+                modifier = Modifier
+                    .boardRect(maxWidth, maxHeight, cellRect(position, scale = 0.86f))
+                    .zIndex(BOARD_SELECTED_MOVE_RING_Z)
+                    .border(3.dp, Color(0xFF158A45), RoundedCornerShape(6.dp)),
+            )
+        }
+
         state.boardState.cells
             .forEach { cell ->
                 cell.players.forEachIndexed { index, player ->
@@ -1834,6 +1908,10 @@ private fun BoardView(
                         .zIndex(BOARD_CLICK_TARGET_Z)
                         .semantics {
                             contentDescription = cellDescription(cell)
+                            if (cell.position == selectedMoveTargetPosition) {
+                                selected = true
+                                stateDescription = "操作バーで選択中の移動先"
+                            }
                         }
                         .clickable(
                             onClickLabel = cellClickLabel(cell),
@@ -2364,32 +2442,78 @@ internal data class MobilePrimaryBoardAction(
     val position: Position,
 )
 
+internal fun primaryBoardActions(
+    cells: List<AndroidBoardCellUiState>,
+    phase: TurnPhase?,
+): List<MobilePrimaryBoardAction> =
+    cells.mapNotNull { cell ->
+        if (!isBoardPrimaryActionCell(cell, phase)) return@mapNotNull null
+        val label = when (cell.highlight) {
+            AndroidHighlightTone.DIG -> "このタイルを掘る"
+            AndroidHighlightTone.MOVE -> "このマスへ移動"
+            AndroidHighlightTone.CAPTURE -> "このマスで捕獲"
+            null -> return@mapNotNull null
+        }
+        MobilePrimaryBoardAction(label, cell.position)
+    }
+
 internal fun singlePrimaryBoardAction(
     cells: List<AndroidBoardCellUiState>,
     phase: TurnPhase?,
-): MobilePrimaryBoardAction? {
-    val targets = cells.filter { isBoardPrimaryActionCell(it, phase) }
-    if (targets.size != 1) return null
-    val target = targets.single()
-    val label = when (target.highlight) {
-        AndroidHighlightTone.DIG -> "このタイルを掘る"
-        AndroidHighlightTone.MOVE -> "このマスへ移動"
-        AndroidHighlightTone.CAPTURE -> "このマスで捕獲"
-        null -> return null
-    }
-    return MobilePrimaryBoardAction(label, target.position)
+): MobilePrimaryBoardAction? = primaryBoardActions(cells, phase).singleOrNull()
+
+internal fun primaryBoardActionsForBar(
+    actions: List<MobilePrimaryBoardAction>,
+    phase: TurnPhase?,
+): List<MobilePrimaryBoardAction> =
+    if (phase == TurnPhase.MOVE || actions.size == 1) actions else emptyList()
+
+internal fun selectedPrimaryBoardAction(
+    actions: List<MobilePrimaryBoardAction>,
+    selectedIndex: Int,
+): MobilePrimaryBoardAction? = actions.getOrNull(normalizedPrimaryBoardActionIndex(selectedIndex, actions.size))
+
+private fun normalizedPrimaryBoardActionIndex(selectedIndex: Int, actionCount: Int): Int =
+    selectedIndex.takeIf { it in 0 until actionCount } ?: 0
+
+internal fun nextPrimaryBoardActionIndex(selectedIndex: Int, actionCount: Int): Int {
+    if (actionCount <= 0) return 0
+    val normalizedIndex = normalizedPrimaryBoardActionIndex(selectedIndex, actionCount)
+    return (normalizedIndex + 1) % actionCount
 }
+
+internal fun selectedMoveActionPosition(
+    actions: List<MobilePrimaryBoardAction>,
+    selectedIndex: Int,
+    phase: TurnPhase?,
+): Position? =
+    if (phase == TurnPhase.MOVE && actions.size > 1) {
+        selectedPrimaryBoardAction(actions, selectedIndex)?.position
+    } else {
+        null
+    }
+
+internal fun primaryBoardActionTargetLabel(
+    action: MobilePrimaryBoardAction,
+    selectedIndex: Int,
+    total: Int,
+): String {
+    val normalizedIndex = normalizedPrimaryBoardActionIndex(selectedIndex, total)
+    return "移動先 ${normalizedIndex + 1}/$total: ${action.position.col + 1}列${action.position.row + 1}行"
+}
+
+internal fun primaryBoardActionSelectorDescription(
+    action: MobilePrimaryBoardAction,
+    selectedIndex: Int,
+    total: Int,
+): String =
+    "選択中の${primaryBoardActionTargetLabel(action, selectedIndex, total)}。押すと次の移動先に切り替えます"
 
 internal fun isBoardPrimaryActionCell(cell: AndroidBoardCellUiState, phase: TurnPhase?): Boolean =
     cell.highlight != null &&
         (phase == TurnPhase.DIG || phase == TurnPhase.MOVE || phase == TurnPhase.CAPTURE)
 
-internal fun preferSingleBoardAction(
-    singleBoardAction: MobilePrimaryBoardAction?,
-    _visibleActions: List<AndroidVisibleAction>,
-): Boolean = singleBoardAction != null
-
-internal fun visibleActionsAfterSingleBoardAction(
+internal fun visibleActionsAfterBoardAction(
     phase: TurnPhase?,
     visibleActions: List<AndroidVisibleAction>,
 ): List<AndroidVisibleAction> {
