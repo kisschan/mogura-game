@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -61,7 +62,7 @@ class MobileGameplayComposeTest {
         composeRule.onNodeWithTag(HUD_SCORE_TEST_TAG)
             .assertIsDisplayed()
             .assertWidthIsAtLeast(HUD_SCORE_MIN_WIDTH)
-        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(BOARD_PIECE_VISIBILITY_TOGGLE_TEST_TAG).assertIsDisplayed()
         composeRule.onNodeWithTag(GAME_MENU_BUTTON_TEST_TAG).assertIsDisplayed()
     }
 
@@ -113,8 +114,8 @@ class MobileGameplayComposeTest {
     fun beginnerRulesOpenFromGameplayMenuAndPreserveGameplayUiState() {
         composeRule.onNodeWithText("ゲームスタート").performClick()
         composeRule.onNodeWithTag("game-board").assertIsDisplayed()
-        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).performClick()
-        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).assert(
+        composeRule.onNodeWithTag(BOARD_PIECE_VISIBILITY_TOGGLE_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(BOARD_PIECE_VISIBILITY_TOGGLE_TEST_TAG).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "半透明表示"),
         )
 
@@ -129,7 +130,7 @@ class MobileGameplayComposeTest {
         composeRule.onNodeWithTag("top-hud").assertIsDisplayed()
         composeRule.onNodeWithTag("game-board").assertIsDisplayed()
         composeRule.onNodeWithTag("action-bar").assertIsDisplayed()
-        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).assert(
+        composeRule.onNodeWithTag(BOARD_PIECE_VISIBILITY_TOGGLE_TEST_TAG).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "半透明表示"),
         )
     }
@@ -147,18 +148,20 @@ class MobileGameplayComposeTest {
     }
 
     @Test
-    fun playerVisibilityToggleSwitchesBetweenNormalAndTransparentBoardModes() {
+    fun boardPieceVisibilityToggleSwitchesBetweenNormalAndTransparentBoardModes() {
         composeRule.onNodeWithText("ゲームスタート").performClick()
 
-        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).assert(
+        composeRule.onNodeWithContentDescription("駒とエサ表示の切り替え").assertIsDisplayed()
+        composeRule.onNodeWithText("透過").assertIsDisplayed()
+        composeRule.onNodeWithTag(BOARD_PIECE_VISIBILITY_TOGGLE_TEST_TAG).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "通常表示"),
         )
-        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).performClick()
-        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).assert(
+        composeRule.onNodeWithTag(BOARD_PIECE_VISIBILITY_TOGGLE_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(BOARD_PIECE_VISIBILITY_TOGGLE_TEST_TAG).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "半透明表示"),
         )
-        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).performClick()
-        composeRule.onNodeWithTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG).assert(
+        composeRule.onNodeWithTag(BOARD_PIECE_VISIBILITY_TOGGLE_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(BOARD_PIECE_VISIBILITY_TOGGLE_TEST_TAG).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "通常表示"),
         )
     }

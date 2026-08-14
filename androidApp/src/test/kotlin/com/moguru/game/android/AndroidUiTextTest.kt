@@ -140,11 +140,11 @@ class AndroidUiTextTest {
     }
 
     @Test
-    fun `player visibility mode exposes stable alpha and accessibility state`() {
-        assertEquals(1f, playerTokenImageAlpha(isTransparent = false))
-        assertEquals(0.22f, playerTokenImageAlpha(isTransparent = true))
-        assertEquals("通常表示", playerVisibilityStateDescription(isTransparent = false))
-        assertEquals("半透明表示", playerVisibilityStateDescription(isTransparent = true))
+    fun `board piece visibility mode exposes shared stable alpha and accessibility state`() {
+        assertEquals(1f, boardPieceImageAlpha(isTransparent = false))
+        assertEquals(0.22f, boardPieceImageAlpha(isTransparent = true))
+        assertEquals("通常表示", boardPieceVisibilityStateDescription(isTransparent = false))
+        assertEquals("半透明表示", boardPieceVisibilityStateDescription(isTransparent = true))
     }
 
     @Test
