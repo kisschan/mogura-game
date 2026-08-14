@@ -140,15 +140,15 @@ internal const val GAME_MENU_BUTTON_TEST_TAG = "game-menu-button"
 internal const val GAME_MENU_RULES_ITEM_TEST_TAG = "game-menu-rules-item"
 internal const val GAME_MENU_AUDIO_ITEM_TEST_TAG = "game-menu-audio-item"
 internal const val GAME_MENU_NEW_GAME_ITEM_TEST_TAG = "game-menu-new-game-item"
-internal const val PLAYER_VISIBILITY_TOGGLE_TEST_TAG = "player-visibility-toggle"
+internal const val BOARD_PIECE_VISIBILITY_TOGGLE_TEST_TAG = "player-visibility-toggle"
 internal const val HUD_SCORE_TEST_TAG = "hud-score"
 internal const val BGM_VOLUME_SLIDER_TEST_TAG = "bgm-volume-slider"
 internal const val SOUND_EFFECT_VOLUME_SLIDER_TEST_TAG = "sound-effect-volume-slider"
 internal val AUDIO_SETTINGS_BUTTON_SIZE = 44.dp
 internal val GAME_MENU_BUTTON_SIZE = 44.dp
-internal val PLAYER_VISIBILITY_TOGGLE_SIZE = 44.dp
+internal val BOARD_PIECE_VISIBILITY_TOGGLE_SIZE = 44.dp
 internal val HUD_SCORE_MIN_WIDTH = 40.dp
-internal const val PLAYER_TOKEN_TRANSPARENT_ALPHA = 0.22f
+internal const val BOARD_PIECE_TRANSPARENT_ALPHA = 0.22f
 
 internal enum class AndroidHighlightPattern {
     DASHED,
@@ -425,7 +425,7 @@ private fun CompactGameMenuButton(
 }
 
 @Composable
-private fun PlayerVisibilityToggle(
+private fun BoardPieceVisibilityToggle(
     isTransparent: Boolean,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
@@ -433,12 +433,12 @@ private fun PlayerVisibilityToggle(
     OutlinedButton(
         onClick = soundEffectClick(onClick = onToggle),
         modifier = modifier
-            .size(PLAYER_VISIBILITY_TOGGLE_SIZE)
-            .testTag(PLAYER_VISIBILITY_TOGGLE_TEST_TAG)
+            .size(BOARD_PIECE_VISIBILITY_TOGGLE_SIZE)
+            .testTag(BOARD_PIECE_VISIBILITY_TOGGLE_TEST_TAG)
             .semantics {
-                contentDescription = "駒表示の切り替え"
+                contentDescription = "駒とエサ表示の切り替え"
                 selected = isTransparent
-                stateDescription = playerVisibilityStateDescription(isTransparent)
+                stateDescription = boardPieceVisibilityStateDescription(isTransparent)
             },
         shape = RoundedCornerShape(8.dp),
         contentPadding = PaddingValues(0.dp),
@@ -452,7 +452,7 @@ private fun PlayerVisibilityToggle(
         ),
     ) {
         Text(
-            text = "駒透",
+            text = "透過",
             fontSize = 10.sp,
             lineHeight = 11.sp,
             fontWeight = FontWeight.Black,
@@ -941,7 +941,7 @@ private fun PlayScreen(
     onAudioSettingsClick: () -> Unit,
     onRulesClick: () -> Unit,
 ) {
-    var playersTransparent by rememberSaveable { mutableStateOf(false) }
+    var boardPiecesTransparent by rememberSaveable { mutableStateOf(false) }
     val activePhase = state.playState.actionAvailability.activePhase
     val boardActionsForBar = primaryBoardActionsForBar(
         actions = primaryBoardActions(state.boardState.cells, activePhase),
@@ -985,8 +985,8 @@ private fun PlayScreen(
                 audioSettings = audioSettings,
                 onAudioSettingsClick = onAudioSettingsClick,
                 onRulesClick = onRulesClick,
-                playersTransparent = playersTransparent,
-                onPlayersTransparentChange = { playersTransparent = !playersTransparent },
+                boardPiecesTransparent = boardPiecesTransparent,
+                onBoardPiecesTransparentChange = { boardPiecesTransparent = !boardPiecesTransparent },
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("top-hud")
@@ -996,7 +996,7 @@ private fun PlayScreen(
                 state = state,
                 boardWidth = layout.boardWidth,
                 onCellClicked = viewModel::onCellClicked,
-                playersTransparent = playersTransparent,
+                boardPiecesTransparent = boardPiecesTransparent,
                 selectedMoveTargetPosition = selectedMoveTargetPosition,
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1025,8 +1025,8 @@ private fun CompactPlayHud(
     audioSettings: AndroidAudioSettings,
     onAudioSettingsClick: () -> Unit,
     onRulesClick: () -> Unit,
-    playersTransparent: Boolean,
-    onPlayersTransparentChange: () -> Unit,
+    boardPiecesTransparent: Boolean,
+    onBoardPiecesTransparentChange: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val current = state.playState.currentPlayer
@@ -1081,9 +1081,9 @@ private fun CompactPlayHud(
                 tabularNumbers = true,
             )
         }
-        PlayerVisibilityToggle(
-            isTransparent = playersTransparent,
-            onToggle = onPlayersTransparentChange,
+        BoardPieceVisibilityToggle(
+            isTransparent = boardPiecesTransparent,
+            onToggle = onBoardPiecesTransparentChange,
         )
         CompactGameMenuButton(
             settings = audioSettings,
@@ -1156,7 +1156,7 @@ private fun BoardViewport(
     state: AndroidGameUiState,
     boardWidth: Dp,
     onCellClicked: (Position) -> Unit,
-    playersTransparent: Boolean,
+    boardPiecesTransparent: Boolean,
     selectedMoveTargetPosition: Position?,
     modifier: Modifier = Modifier,
 ) {
@@ -1168,7 +1168,7 @@ private fun BoardViewport(
             state = state,
             boardWidth = boardWidth,
             onCellClicked = onCellClicked,
-            playersTransparent = playersTransparent,
+            boardPiecesTransparent = boardPiecesTransparent,
             selectedMoveTargetPosition = selectedMoveTargetPosition,
         )
     }
@@ -1759,13 +1759,13 @@ private fun BoardView(
     state: AndroidGameUiState,
     boardWidth: Dp,
     onCellClicked: (Position) -> Unit,
-    playersTransparent: Boolean,
+    boardPiecesTransparent: Boolean,
     selectedMoveTargetPosition: Position?,
 ) {
-    val playerImageAlpha by animateFloatAsState(
-        targetValue = playerTokenImageAlpha(playersTransparent),
+    val boardPieceAlpha by animateFloatAsState(
+        targetValue = boardPieceImageAlpha(boardPiecesTransparent),
         animationSpec = tween(durationMillis = 150),
-        label = "player-token-transparency",
+        label = "board-piece-transparency",
     )
     BoxWithConstraints(
         modifier = Modifier
@@ -1833,7 +1833,8 @@ private fun BoardView(
                     contentDescription = null,
                     modifier = Modifier
                         .boardRect(maxWidth, maxHeight, foodRect(cell.position, scale, index, cell.foods.size))
-                        .zIndex(BOARD_FOOD_Z + (cell.foods.size - index) * 0.01f),
+                        .zIndex(BOARD_FOOD_Z + (cell.foods.size - index) * 0.01f)
+                        .graphicsLayer { alpha = boardPieceAlpha },
                     contentScale = ContentScale.Fit,
                 )
             }
@@ -1856,7 +1857,7 @@ private fun BoardView(
                             contentDescription = player.accessibilityLabel,
                             modifier = Modifier
                                 .fillMaxSize()
-                                .graphicsLayer { alpha = playerImageAlpha },
+                                .graphicsLayer { alpha = boardPieceAlpha },
                         )
                     }
                 }
@@ -2622,10 +2623,10 @@ internal fun AndroidHighlightTone.boardLabel(): String = when (this) {
     AndroidHighlightTone.CAPTURE -> "捕獲候補"
 }
 
-internal fun playerTokenImageAlpha(isTransparent: Boolean): Float =
-    if (isTransparent) PLAYER_TOKEN_TRANSPARENT_ALPHA else 1f
+internal fun boardPieceImageAlpha(isTransparent: Boolean): Float =
+    if (isTransparent) BOARD_PIECE_TRANSPARENT_ALPHA else 1f
 
-internal fun playerVisibilityStateDescription(isTransparent: Boolean): String =
+internal fun boardPieceVisibilityStateDescription(isTransparent: Boolean): String =
     if (isTransparent) "半透明表示" else "通常表示"
 
 private fun TileShape.boardLabel(): String = when (this) {

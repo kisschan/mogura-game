@@ -134,7 +134,7 @@ class MobileGameplayLayoutContractTest {
     fun `hud score and direct controls keep their reserved widths`() {
         assertTrue(HUD_SCORE_MIN_WIDTH >= 40.dp)
         assertEquals(44.dp, GAME_MENU_BUTTON_SIZE)
-        assertEquals(44.dp, PLAYER_VISIBILITY_TOGGLE_SIZE)
+        assertEquals(44.dp, BOARD_PIECE_VISIBILITY_TOGGLE_SIZE)
     }
 
     @Test
@@ -143,9 +143,9 @@ class MobileGameplayLayoutContractTest {
     }
 
     @Test
-    fun `player visibility toggle keeps a full touch target inside the hud`() {
-        assertTrue(PLAYER_VISIBILITY_TOGGLE_SIZE >= 44.dp)
-        assertTrue(PLAYER_VISIBILITY_TOGGLE_SIZE <= MOBILE_PLAY_HUD_HEIGHT)
+    fun `board piece visibility toggle keeps a full touch target inside the hud`() {
+        assertTrue(BOARD_PIECE_VISIBILITY_TOGGLE_SIZE >= 44.dp)
+        assertTrue(BOARD_PIECE_VISIBILITY_TOGGLE_SIZE <= MOBILE_PLAY_HUD_HEIGHT)
     }
 
     @Test
