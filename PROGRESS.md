@@ -3,7 +3,7 @@
 最終更新: 2026-08-05
 
 ## 現在の状況
-- [x] 次回AABリリース用にAndroid `versionCode` / `versionName` を `10` に更新
+- [x] 次回AABリリース用にAndroid `versionCode` / `versionName` を `11` に更新
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
 - [x] 移動、タイル配置、ターン進行のエンジン実装
 - [x] 文字化けしていたソースとドキュメントの修正
