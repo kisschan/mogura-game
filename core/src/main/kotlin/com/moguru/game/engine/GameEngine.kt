@@ -273,9 +273,16 @@ class GameEngine(
         return CaptureResult.Escaped(escapeDirection, roll, escapeTo)
     }
 
-    /** 勝利条件を満たすプレイヤーがいれば返す。 */
+    /** 得点、または2人プレイの生存条件を満たす勝者がいれば返す。 */
     fun checkWinCondition(): Player? {
-        return players.firstOrNull { !it.isEliminated && it.score >= winScore }
+        val scoreWinner = players.firstOrNull { !it.isEliminated && it.score >= winScore }
+        if (scoreWinner != null) return scoreWinner
+
+        return if (playerCount == 2) {
+            players.singleOrNull { !it.isEliminated }
+        } else {
+            null
+        }
     }
 
     /** ゲーム終了状態を更新して返す。 */

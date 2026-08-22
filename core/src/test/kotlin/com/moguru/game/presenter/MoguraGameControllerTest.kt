@@ -1517,7 +1517,7 @@ class MoguraGameControllerTest {
     }
 
     @Test
-    fun `finish turn continues when one survivor remains below the winning score`() {
+    fun `finish turn declares the survivor winner in a two player game regardless of score`() {
         val controller = testController()
         controller.startNewGame(2)
         val engine = controller.engine!!
@@ -1530,10 +1530,10 @@ class MoguraGameControllerTest {
 
         assertTrue(result.success)
         assertTrue(eliminated.isEliminated)
-        assertNull(engine.checkWinCondition())
-        assertEquals(GameState.PLAYING, engine.gameState)
-        assertEquals(survivor, controller.currentPlayer)
-        assertEquals(TurnPhase.DIG, engine.currentPhase)
+        assertEquals(survivor, engine.checkWinCondition())
+        assertEquals(GameState.FINISHED, engine.gameState)
+        assertEquals("ゲーム終了です。", result.message)
+        assertTrue(controller.logs.last().contains("${survivor.name} の勝利"))
     }
 
     @Test
