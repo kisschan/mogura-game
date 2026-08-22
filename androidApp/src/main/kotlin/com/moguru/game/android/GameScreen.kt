@@ -2852,8 +2852,8 @@ private fun Rotation.nextClockwise(): Rotation =
 private fun playerImageSourceRect(playerId: Int): SourceImageRect = when (playerId) {
     0 -> SourceImageRect(left = 264, top = 216, width = 726, height = 751)
     1 -> SourceImageRect(left = 196, top = 145, width = 856, height = 890)
-    2 -> SourceImageRect(left = 206, top = 165, width = 839, height = 866)
-    else -> SourceImageRect(left = 252, top = 202, width = 768, height = 773)
+    2 -> SourceImageRect(left = 159, top = 126, width = 934, height = 983)
+    else -> SourceImageRect(left = 202, top = 158, width = 847, height = 882)
 }
 
 private const val BOARD_SOURCE_WIDTH = 1086f
