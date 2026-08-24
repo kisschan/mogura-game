@@ -225,14 +225,48 @@ class GameEngineTest {
     }
 
     @Test
-    fun `最後の生存プレイヤーでも規定得点未満なら勝利しない`() {
+    fun `2人プレイでは相手の体力が0になると得点に関係なく生存プレイヤーが勝利する`() {
         setupDefaultGame()
         val eliminated = engine.players[0]
+        val survivor = engine.players[1]
+
+        repeat(3) {
+            eliminated.carryFood(FoodCard(FoodType.BEETLE_LARVA, emptyMap()))
+            eliminated.storeFood()
+        }
 
         repeat(13) { eliminated.reduceHealth(isOnSurface = false) }
 
-        assertNull(engine.checkWinCondition())
-        assertEquals(GameState.PLAYING, engine.checkGameOver())
+        assertEquals(3, eliminated.score)
+        assertEquals(0, survivor.score)
+        assertEquals(survivor, engine.checkWinCondition())
+        assertEquals(GameState.FINISHED, engine.checkGameOver())
+    }
+
+    @Test
+    fun `3人以上では最後の1人になっても規定得点未満ならゲームを継続する`() {
+        val allConfigs = listOf(
+            PlayerConfig("モグオ", Position(0, 1)),
+            PlayerConfig("モグタ", Position(5, 1)),
+            PlayerConfig("モグミ", Position(0, 4)),
+            PlayerConfig("モグカ", Position(5, 4)),
+        )
+
+        (3..4).forEach { playerCount ->
+            val multiplayerEngine = GameEngine(
+                playerCount = playerCount,
+                diceRoller = diceRoller,
+                shuffler = shuffler,
+            )
+            multiplayerEngine.setupGame(allConfigs.take(playerCount))
+            multiplayerEngine.players.dropLast(1).forEach { player ->
+                repeat(13) { player.reduceHealth(isOnSurface = false) }
+            }
+
+            assertEquals(1, multiplayerEngine.players.count { !it.isEliminated })
+            assertNull(multiplayerEngine.checkWinCondition())
+            assertEquals(GameState.PLAYING, multiplayerEngine.checkGameOver())
+        }
     }
 
     @Test

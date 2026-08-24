@@ -1,6 +1,6 @@
 # PROGRESS.md
 
-最終更新: 2026-08-05
+最終更新: 2026-08-23
 
 ## 現在の状況
 - [x] 次回AABリリース用にAndroid `versionCode` / `versionName` を `11` に更新
@@ -33,7 +33,7 @@
 - [x] 現在手番プレイヤー画像の透明余白を切り詰め、黄色い円内でカード部分が大きく見えるよう修正
 - [x] 逃走判定ダイスを振った捕獲成功でも、直近ダイスに出目を表示するよう修正
 - [x] `Burrowed_Logic.mp3` をプレイ中BGMとしてループ再生するよう追加
-- [x] 体力切れで最後の生存プレイヤーだけが残った場合にゲーム終了するよう修正
+- [x] 体力切れの勝敗判定を2人戦限定にし、得点に関係なく生存者を勝者とする一方、3〜4人戦は脱落者の手番を飛ばして継続するよう修正
 - [x] Avast誤検知を避けるため、BGM再生からPowerShell実行を削除
 - [x] 外部メディアプレイヤーを出さず、Swing版アプリ内でMP3を再生するよう修正
 - [x] Android版MVP作成のため、`core` / `desktop` / `androidApp` の3モジュール構成に再編
@@ -73,6 +73,10 @@
 - [x] Androidの移動候補が複数ある局面でも「このマスへ移動」を表示し、操作バーで移動先を切り替え、選択中マスを緑の内枠で確認して実行できるようにする
 
 ## テスト結果
+- 最終実行日: 2026-08-23
+- TDD確認: 2人戦の体力切れ勝利と、3〜4人戦で最後の1人になっても得点未達なら継続する回帰テストを先に更新。初回実行は作業開始前から変更されていた `GradlePropertiesTest.kt` の `assertFalse` import不足で対象テスト実行前に停止
+- `GradlePropertiesTest.kt` に不足していた `assertFalse` importだけを追加後、通常の `.\gradlew.bat test` を実行
+- 結果: `BUILD SUCCESSFUL`（core 219件・Android 113件・desktop 34件、計366テスト・失敗0・スキップ0）
 - 最終実行日: 2026-08-05
 - TDD確認: 複数移動候補の回帰テストを先に追加し、`primaryBoardActions` / `primaryBoardActionsForBar` 未実装のコンパイル失敗を確認後、実装して成功
 - 実行コマンド: `.\gradlew.bat test --no-daemon`

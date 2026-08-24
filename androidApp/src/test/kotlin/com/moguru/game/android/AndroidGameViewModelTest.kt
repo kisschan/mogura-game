@@ -550,23 +550,27 @@ class AndroidGameViewModelTest {
     }
 
     @Test
-    fun `game continues when only one player survives below the winning score`() {
+    fun `two player game shows the surviving player as winner when either player runs out of health`() {
         val controller = testController()
         val viewModel = AndroidGameViewModel(controller)
         viewModel.startNewGame(2)
         val engine = controller.engine!!
-        val eliminated = engine.players[1]
-        repeat(Player.MAX_HEALTH) { eliminated.reduceHealth(isOnSurface = false) }
+        val eliminated = engine.players[0]
+        val survivor = engine.players[1]
+        repeat(Player.MAX_HEALTH - 1) { eliminated.reduceHealth(isOnSurface = false) }
         repeat(3) { engine.advancePhase() }
 
         viewModel.finishTurn()
 
         val state = viewModel.uiState.value
-        assertEquals(GameState.PLAYING, engine.gameState)
-        assertNull(state.gameResult)
-        assertFalse(state.showGameResultOverlay)
+        val result = state.gameResult!!
+        assertEquals(GameState.FINISHED, engine.gameState)
+        assertEquals(survivor.id, result.winnerPlayerId)
+        assertEquals(survivor.name, result.winnerName)
+        assertTrue(result.players.single { it.playerId == survivor.id }.isWinner)
+        assertTrue(state.showGameResultOverlay)
         assertEquals(0, engine.currentPlayerIndex)
-        assertEquals(TurnPhase.DIG, engine.currentPhase)
+        assertEquals(TurnPhase.END, engine.currentPhase)
         assertEquals(0, eliminated.health)
         assertTrue(eliminated.isEliminated)
     }
