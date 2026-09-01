@@ -366,7 +366,13 @@ class AndroidGameViewModelTest {
         viewModel.stopDiceRoulette()
         viewModel.finishDiceRoulette()
 
-        viewModel.finishCaptureAnimation(requireNotNull(viewModel.uiState.value.captureAnimation).event.id)
+        val animationEvent = requireNotNull(viewModel.uiState.value.captureAnimation).event
+        assertEquals(
+            AndroidSoundEffect.CAPTURE_FAILURE,
+            viewModel.captureFailureSoundEffectFor(animationEvent),
+        )
+        assertNull(viewModel.captureFailureSoundEffectFor(animationEvent))
+        viewModel.finishCaptureAnimation(animationEvent.id)
         val state = viewModel.uiState.value.playState
         val outcome = state.captureOutcome
         val text = resultBannerText(outcome)

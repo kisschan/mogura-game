@@ -203,6 +203,7 @@ internal fun MoguraGameScreen(
     CaptureFailureSoundEffect(
         event = state.captureAnimation?.event,
         soundEffects = soundEffects,
+        soundEffectFor = viewModel::captureFailureSoundEffectFor,
     )
 
     MaterialTheme {
@@ -294,12 +295,13 @@ internal fun MoguraGameScreen(
 internal fun CaptureFailureSoundEffect(
     event: CaptureAnimationEvent?,
     soundEffects: AndroidSoundEffectPlayer,
+    soundEffectFor: (CaptureAnimationEvent?) -> AndroidSoundEffect?,
 ) {
-    val trigger = remember { CaptureFailureSoundEffectTrigger() }
     val currentSoundEffects by rememberUpdatedState(soundEffects)
+    val currentSoundEffectFor by rememberUpdatedState(soundEffectFor)
 
     LaunchedEffect(event?.id, event?.kind) {
-        trigger.soundEffectFor(event)?.let(currentSoundEffects::play)
+        currentSoundEffectFor(event)?.let(currentSoundEffects::play)
     }
 }
 

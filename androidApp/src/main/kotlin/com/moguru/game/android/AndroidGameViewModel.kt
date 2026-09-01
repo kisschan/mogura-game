@@ -145,6 +145,7 @@ class AndroidGameViewModel(
     private var selectedStartPlayerIndex = 0
     private var gameResultOverlayDismissed = false
     private var captureAnimation: AndroidCaptureAnimationUiState? = null
+    private val captureFailureSoundEffectTrigger = CaptureFailureSoundEffectTrigger()
 
     private val _uiState = MutableStateFlow(
         snapshot(
@@ -304,6 +305,11 @@ class AndroidGameViewModel(
             }
         }
     }
+
+    /** The ViewModel retains this consumption state when the Activity is recreated. */
+    internal fun captureFailureSoundEffectFor(
+        event: CaptureAnimationEvent?,
+    ): AndroidSoundEffect? = captureFailureSoundEffectTrigger.soundEffectFor(event)
 
     /** An old completion callback must never finish a newer capture or advance twice. */
     fun finishCaptureAnimation(eventId: Long) {

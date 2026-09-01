@@ -19,13 +19,21 @@ class CaptureFailureSoundEffectComposeTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun escapedEventPlaysOnceAcrossRecompositionAndSameIdUpdates() {
+    fun escapedEventPlaysOnceAcrossRecompositionAndEffectRecreation() {
         val player = RecordingSoundEffectPlayer()
+        val viewModel = AndroidGameViewModel()
         val activeEvent = mutableStateOf<CaptureAnimationEvent?>(event(31L, CaptureOutcomeKind.ESCAPED))
+        val showEffect = mutableStateOf(true)
         val recomposition = mutableIntStateOf(0)
         composeRule.setContent {
             Box(Modifier.testTag("capture-sound-${recomposition.intValue}")) {
-                CaptureFailureSoundEffect(activeEvent.value, player)
+                if (showEffect.value) {
+                    CaptureFailureSoundEffect(
+                        activeEvent.value,
+                        player,
+                        viewModel::captureFailureSoundEffectFor,
+                    )
+                }
             }
         }
 
@@ -36,6 +44,13 @@ class CaptureFailureSoundEffectComposeTest {
         composeRule.runOnIdle {
             assertEquals(listOf(AndroidSoundEffect.CAPTURE_FAILURE), player.played)
             activeEvent.value = activeEvent.value?.copy(foodType = FoodType.EARTHWORM)
+        }
+        composeRule.runOnIdle {
+            assertEquals(listOf(AndroidSoundEffect.CAPTURE_FAILURE), player.played)
+            showEffect.value = false
+        }
+        composeRule.runOnIdle {
+            showEffect.value = true
         }
         composeRule.runOnIdle {
             assertEquals(listOf(AndroidSoundEffect.CAPTURE_FAILURE), player.played)
@@ -52,9 +67,14 @@ class CaptureFailureSoundEffectComposeTest {
     @Test
     fun capturedEventsNeverPlayFailureSound() {
         val player = RecordingSoundEffectPlayer()
+        val viewModel = AndroidGameViewModel()
         val activeEvent = mutableStateOf<CaptureAnimationEvent?>(event(41L, CaptureOutcomeKind.CAPTURED))
         composeRule.setContent {
-            CaptureFailureSoundEffect(activeEvent.value, player)
+            CaptureFailureSoundEffect(
+                activeEvent.value,
+                player,
+                viewModel::captureFailureSoundEffectFor,
+            )
         }
 
         composeRule.runOnIdle {
