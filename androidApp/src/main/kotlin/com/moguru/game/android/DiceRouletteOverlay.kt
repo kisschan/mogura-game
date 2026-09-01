@@ -4,6 +4,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -98,18 +99,36 @@ fun DiceRouletteOverlay(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .consumeBackLayerInput()
-            .background(Color(0xB3000000)),
-        contentAlignment = Alignment.Center,
-    ) {
+    DiceRouletteModalLayer {
         if (!spinning && targetFace == null) {
             FoodRevealContent(foodType, escapeRolls, onPrimaryAction = ::handlePrimaryAction)
         } else {
             DiceSpinContent(foodType, escapeRolls, face, landed, targetFace, onPrimaryAction = ::handlePrimaryAction)
         }
+    }
+}
+
+/**
+ * 背面入力を遮断しつつ、前面の操作部品には通常のタッチイベントを届ける。
+ *
+ * 入力を消費する要素を前面コンテンツの親にすると、指の微小な移動イベントまで
+ * 子の [Button] から奪ってクリックを取り消してしまうため、背面の兄弟要素に分ける。
+ */
+@Composable
+internal fun DiceRouletteModalLayer(
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .consumeBackLayerInput()
+                .background(Color(0xB3000000)),
+        )
+        content()
     }
 }
 
@@ -120,7 +139,7 @@ private fun Modifier.consumeBackLayerInput(): Modifier =
         pointerInput(Unit) {
             awaitPointerEventScope {
                 while (true) {
-                    val event = awaitPointerEvent(PointerEventPass.Final)
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
                     event.changes.forEach { it.consume() }
                 }
             }

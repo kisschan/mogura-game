@@ -47,6 +47,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -92,6 +93,7 @@ import com.moguru.game.model.Player
 import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
 import com.moguru.game.model.TileShape
+import com.moguru.game.presenter.CaptureAnimationEvent
 import com.moguru.game.presenter.CaptureTargetDisplay
 import com.moguru.game.presenter.CaptureOutcomeDisplay
 import com.moguru.game.presenter.CaptureOutcomeKind
@@ -198,6 +200,12 @@ internal fun MoguraGameScreen(
         onGameStartedChanged(state.isGameStarted)
     }
 
+    CaptureFailureSoundEffect(
+        event = state.captureAnimation?.event,
+        soundEffects = soundEffects,
+        soundEffectFor = viewModel::captureFailureSoundEffectFor,
+    )
+
     MaterialTheme {
         CompositionLocalProvider(LocalAndroidSoundEffectPlayer provides soundEffects) {
             Surface(
@@ -209,7 +217,7 @@ internal fun MoguraGameScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .then(
-                                if (showRules) {
+                                if (showRules || state.captureAnimation != null) {
                                     Modifier.clearAndSetSemantics {}
                                 } else {
                                     Modifier
@@ -265,6 +273,11 @@ internal fun MoguraGameScreen(
                             )
                         }
                     }
+                    if (!showRules) {
+                        state.captureAnimation?.let { animation ->
+                            CaptureAnimationInputBlocker(animation.event)
+                        }
+                    }
                     if (showRules) {
                         InputBlockingLayer()
                         RulesScreen(
@@ -275,6 +288,20 @@ internal fun MoguraGameScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+internal fun CaptureFailureSoundEffect(
+    event: CaptureAnimationEvent?,
+    soundEffects: AndroidSoundEffectPlayer,
+    soundEffectFor: (CaptureAnimationEvent?) -> AndroidSoundEffect?,
+) {
+    val currentSoundEffects by rememberUpdatedState(soundEffects)
+    val currentSoundEffectFor by rememberUpdatedState(soundEffectFor)
+
+    LaunchedEffect(event?.id, event?.kind) {
+        currentSoundEffectFor(event)?.let(currentSoundEffects::play)
     }
 }
 
@@ -998,6 +1025,7 @@ private fun PlayScreen(
                 onCellClicked = viewModel::onCellClicked,
                 boardPiecesTransparent = boardPiecesTransparent,
                 selectedMoveTargetPosition = selectedMoveTargetPosition,
+                onCaptureAnimationFinished = viewModel::finishCaptureAnimation,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("board-viewport")
@@ -1158,6 +1186,7 @@ private fun BoardViewport(
     onCellClicked: (Position) -> Unit,
     boardPiecesTransparent: Boolean,
     selectedMoveTargetPosition: Position?,
+    onCaptureAnimationFinished: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -1170,6 +1199,7 @@ private fun BoardViewport(
             onCellClicked = onCellClicked,
             boardPiecesTransparent = boardPiecesTransparent,
             selectedMoveTargetPosition = selectedMoveTargetPosition,
+            onCaptureAnimationFinished = onCaptureAnimationFinished,
         )
     }
 }
@@ -1761,6 +1791,7 @@ private fun BoardView(
     onCellClicked: (Position) -> Unit,
     boardPiecesTransparent: Boolean,
     selectedMoveTargetPosition: Position?,
+    onCaptureAnimationFinished: (Long) -> Unit,
 ) {
     val boardPieceAlpha by animateFloatAsState(
         targetValue = boardPieceImageAlpha(boardPiecesTransparent),
@@ -1826,6 +1857,7 @@ private fun BoardView(
             }
 
             cell.foods.forEachIndexed { index, food ->
+                if (isAnimatedCaptureFood(state.captureAnimation, cell.position, index)) return@forEachIndexed
                 val phase = state.playState.actionAvailability.activePhase
                 val scale = if (phase == TurnPhase.DIG || phase == TurnPhase.MOVE) 0.58f else 0.76f
                 Image(
@@ -1840,6 +1872,7 @@ private fun BoardView(
             }
 
             cell.players.forEachIndexed { index, player ->
+                if (state.captureAnimation?.event?.playerId == player.playerId) return@forEachIndexed
                 Box(
                     modifier = Modifier
                         .boardRect(maxWidth, maxHeight, playerRect(cell.position, index, cell.players.size))
@@ -1887,7 +1920,7 @@ private fun BoardView(
         state.boardState.cells
             .forEach { cell ->
                 cell.players.forEachIndexed { index, player ->
-                    if (player.isCurrent) {
+                    if (player.isCurrent && state.captureAnimation?.event?.playerId != player.playerId) {
                         Box(
                             modifier = Modifier
                                 .boardRect(maxWidth, maxHeight, playerRect(cell.position, index, cell.players.size))
@@ -1901,7 +1934,7 @@ private fun BoardView(
             }
 
         state.boardState.cells
-            .filter { isBoardPrimaryActionCell(it, state.playState.actionAvailability.activePhase) }
+            .filter { state.captureAnimation == null && isBoardPrimaryActionCell(it, state.playState.actionAvailability.activePhase) }
             .forEach { cell ->
                 Box(
                     modifier = Modifier
@@ -1920,11 +1953,20 @@ private fun BoardView(
                         ) { onCellClicked(cell.position) },
                 )
             }
+        state.captureAnimation?.let { animation ->
+            CaptureAnimationOverlay(
+                animation = animation,
+                maxWidth = maxWidth,
+                maxHeight = maxHeight,
+                pieceAlpha = boardPieceAlpha,
+                onFinished = onCaptureAnimationFinished,
+            )
+        }
     }
 }
 
 @Composable
-private fun BoardPlayerImage(
+internal fun BoardPlayerImage(
     playerId: Int,
     contentDescription: String?,
     modifier: Modifier = Modifier,
@@ -2299,7 +2341,7 @@ internal fun gameResultPlayerStatus(player: AndroidGameResultPlayerUiState): Str
         else -> "継続"
     }
 
-private data class BoardRectSpec(
+internal data class BoardRectSpec(
     val left: Float,
     val top: Float,
     val width: Float,
@@ -2321,12 +2363,12 @@ private fun sourceBoardRect(left: Float, top: Float, width: Float, height: Float
         height = height / BOARD_SOURCE_HEIGHT,
     )
 
-private fun Modifier.boardRect(maxWidth: Dp, maxHeight: Dp, rect: BoardRectSpec): Modifier =
+internal fun Modifier.boardRect(maxWidth: Dp, maxHeight: Dp, rect: BoardRectSpec): Modifier =
     offset(x = maxWidth * rect.left, y = maxHeight * rect.top)
         .width(maxWidth * rect.width)
         .height(maxHeight * rect.height)
 
-private fun cellRect(position: Position, scale: Float): BoardRectSpec {
+internal fun cellRect(position: Position, scale: Float): BoardRectSpec {
     val x = GRID_LEFT + position.col * CELL_WIDTH + CELL_WIDTH * (1f - scale) / 2f
     val y = GRID_TOP + position.row * CELL_HEIGHT + CELL_HEIGHT * (1f - scale) / 2f
     return BoardRectSpec(
@@ -2337,7 +2379,7 @@ private fun cellRect(position: Position, scale: Float): BoardRectSpec {
     )
 }
 
-private fun foodRect(
+internal fun foodRect(
     position: Position,
     scale: Float,
     stackIndex: Int = 0,
@@ -2541,7 +2583,7 @@ internal fun boardPlayerVisibleLabel(name: String): String? = null
 internal fun boardPlayerContentDescription(name: String, isCurrent: Boolean): String =
     if (isCurrent) "${name}の駒、現在の手番" else "${name}の駒"
 
-private fun playerRect(position: Position, index: Int, count: Int): BoardRectSpec {
+internal fun playerRect(position: Position, index: Int, count: Int): BoardRectSpec {
     val base = cellRect(position, 1f)
     val size = when (count) {
         1 -> minOf(base.width, base.height) * 0.95f
@@ -2839,7 +2881,7 @@ private fun playerRes(playerId: Int): Int = when (playerId) {
     else -> R.drawable.player_moguka_yellow
 }
 
-private fun playerAccentColor(playerId: Int): Color = when (playerId) {
+internal fun playerAccentColor(playerId: Int): Color = when (playerId) {
     0 -> Color(0xFF2F80ED)
     1 -> Color(0xFFF2994A)
     2 -> Color(0xFFE88DB5)

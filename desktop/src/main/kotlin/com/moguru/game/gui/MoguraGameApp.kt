@@ -69,6 +69,7 @@ internal enum class BoardPaintLayer {
     FOOD,
     PLAYERS,
     CURRENT_PLAYER_OUTLINE,
+    CAPTURE_ANIMATION,
     HOVER_PREVIEW,
 }
 
@@ -78,6 +79,7 @@ internal val boardPaintLayerOrder = listOf(
     BoardPaintLayer.FOOD,
     BoardPaintLayer.PLAYERS,
     BoardPaintLayer.CURRENT_PLAYER_OUTLINE,
+    BoardPaintLayer.CAPTURE_ANIMATION,
     BoardPaintLayer.HOVER_PREVIEW,
 )
 
@@ -109,6 +111,7 @@ class MoguraGameFrame(
     private val skipButton = JButton("スキップ")
     private val endTurnButton = JButton("ターン終了")
     private val newGameButton = JButton("新しいゲーム")
+    private val refreshTimer = Timer(150) { refresh() }
     private val digTileChoiceButtons = DigTileChoice.entries.associateWith { choice ->
         JToggleButton(choice.label())
     }
@@ -130,6 +133,8 @@ class MoguraGameFrame(
                 }
 
                 override fun windowClosing(event: WindowEvent) {
+                    refreshTimer.stop()
+                    boardPanel.cancelCaptureAnimation()
                     backgroundMusic.close()
                 }
             },
@@ -163,10 +168,15 @@ class MoguraGameFrame(
         pack()
         setLocationRelativeTo(null)
 
-        Timer(150) {
-            refresh()
-        }.start()
+        refreshTimer.start()
 
+    }
+
+    override fun dispose() {
+        refreshTimer.stop()
+        boardPanel.cancelCaptureAnimation()
+        backgroundMusic.close()
+        super.dispose()
     }
 
     private fun createTopPanel(): JPanel {
@@ -471,12 +481,14 @@ class MoguraGameFrame(
         ) as? String ?: startLabels.first()
         val startPlayerIndex = startLabels.indexOf(startChoice).takeIf { it >= 0 } ?: 0
 
+        boardPanel.cancelCaptureAnimation()
         controller.startNewGame(configs, startPlayerIndex)
         backgroundMusic.playLooping()
         refresh()
     }
 
     private fun handleBoardClick(position: Position) {
+        if (boardPanel.isCaptureAnimating) return
         val current = controller.engine ?: return
         val result = when (current.currentPhase) {
             TurnPhase.DIG -> controller.digAt(position, selectedRotation())
@@ -523,6 +535,7 @@ class MoguraGameFrame(
             val selected = controller.selectCaptureTarget(selectedIndex)
             if (!selected.success) return selected
         }
+        boardPanel.prepareCaptureAnimation()
         return controller.captureCurrentPositionImmediately()
     }
 
@@ -552,13 +565,19 @@ class MoguraGameFrame(
     }
 
     private fun runAction(action: () -> GameActionResult) {
+        if (boardPanel.isCaptureAnimating) return
         handleActionResult(action())
     }
 
     private fun handleActionResult(result: GameActionResult) {
         if (result.success) {
-            controller.autoAdvanceWhileNoChoice()
+            val playing = boardPanel.playCaptureAnimation {
+                controller.autoAdvanceWhileNoChoice()
+                refresh()
+            }
+            if (!playing) controller.autoAdvanceWhileNoChoice()
         } else {
+            boardPanel.clearPreparedCaptureAnimation()
             Toolkit.getDefaultToolkit().beep()
             showStatus(result.message)
         }
@@ -611,6 +630,17 @@ class MoguraGameFrame(
         refreshDigChoiceButtons(uiState.digCandidates)
         syncRotationButtons(uiState.digCandidates.any { it.enabled }, uiState.selectedRotation)
         refreshActionButtonStyles(actions)
+        if (boardPanel.isCaptureAnimating) {
+            listOf(
+                digGuideButton, confirmDigButton, moveGuideButton, captureButton, robButton,
+                eatButton, carryButton, skipButton, endTurnButton,
+            ).forEach { it.isEnabled = false }
+            digTileChoiceButtons.values.forEach { it.isEnabled = false }
+            rotationButtons.values.forEach { it.isEnabled = false }
+        }
+        digGuideButton.isEnabled = !boardPanel.isCaptureAnimating
+        moveGuideButton.isEnabled = !boardPanel.isCaptureAnimating
+        newGameButton.isEnabled = !boardPanel.isCaptureAnimating
 
         logArea.text = controller.logs.joinToString("\n")
         logArea.caretPosition = logArea.document.length
@@ -941,8 +971,84 @@ class BoardPanel(
     private val controller: MoguraGameController,
     private val assets: GuiAssets,
     private val onCellClicked: (Position) -> Unit,
+    private val nanoTime: () -> Long = System::nanoTime,
 ) : JPanel() {
     private var hoveredFoodPosition: Position? = null
+    private var preparedCaptureBoard: CaptureBoardSnapshot? = null
+    private var captureAnimation: DesktopCaptureAnimation? = null
+    private val captureTimer = Timer(16) { advanceCaptureAnimation() }
+
+    val isCaptureAnimating: Boolean get() = captureAnimation != null
+
+    fun prepareCaptureAnimation() {
+        val current = controller.engine ?: return
+        preparedCaptureBoard = CaptureBoardSnapshot(
+            foods = current.foodPositions.mapValues { (_, foods) -> foods.toList() },
+            players = current.players.filter { !it.isEliminated }.map { player ->
+                CapturePlayerSnapshot(player.id, player.name, player.position)
+            },
+            phase = current.currentPhase,
+            previousEventId = controller.playScreenUiState().captureOutcome?.animation?.id,
+        )
+    }
+
+    fun clearPreparedCaptureAnimation() {
+        preparedCaptureBoard = null
+    }
+
+    fun playCaptureAnimation(onFinished: () -> Unit): Boolean {
+        val snapshot = preparedCaptureBoard ?: return false
+        preparedCaptureBoard = null
+        val current = controller.engine ?: return false
+        val event = controller.playScreenUiState().captureOutcome?.animation ?: return false
+        if (event.id == snapshot.previousEventId || snapshot.players.none { it.id == event.playerId }) return false
+        if (snapshot.foods[event.source]?.getOrNull(event.foodIndex)?.type != event.foodType) return false
+
+        captureAnimation = DesktopCaptureAnimation(
+            event = event,
+            board = snapshot,
+            destinationStackSize = event.destination?.let { current.foodsAt(it).size } ?: 0,
+            destinationFoodIndex = snapshot.foods[event.destination].orEmpty().size,
+            startedAtNanos = nanoTime(),
+            onFinished = onFinished,
+        )
+        hoveredFoodPosition = null
+        captureTimer.start()
+        repaint()
+        return true
+    }
+
+    fun cancelCaptureAnimation() {
+        captureTimer.stop()
+        captureAnimation = null
+        preparedCaptureBoard = null
+        hoveredFoodPosition = null
+        repaint()
+    }
+
+    internal fun advanceCaptureAnimation() {
+        val animation = captureAnimation ?: return
+        if (captureProgress(animation) >= 1f) {
+            captureTimer.stop()
+            captureAnimation = null
+            animation.onFinished()
+        }
+        repaint()
+    }
+
+    private fun captureProgress(animation: DesktopCaptureAnimation): Float {
+        val duration = if (animation.event.kind == CaptureOutcomeKind.CAPTURED) {
+            CAPTURE_SUCCESS_DURATION_MILLIS
+        } else {
+            CAPTURE_ESCAPE_DURATION_MILLIS
+        }
+        return ((nanoTime() - animation.startedAtNanos) / (duration * 1_000_000.0)).toFloat().coerceIn(0f, 1f)
+    }
+
+    override fun removeNotify() {
+        cancelCaptureAnimation()
+        super.removeNotify()
+    }
 
     init {
         preferredSize = Dimension(860, 820)
@@ -951,6 +1057,7 @@ class BoardPanel(
 
         addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(event: MouseEvent) {
+                if (isCaptureAnimating) return
                 imagePoint(event.point)?.let { point ->
                     positionAt(point)?.let(onCellClicked)
                 }
@@ -1010,6 +1117,7 @@ class BoardPanel(
                 BoardPaintLayer.FOOD -> drawFoods(g)
                 BoardPaintLayer.PLAYERS -> drawPlayers(g)
                 BoardPaintLayer.CURRENT_PLAYER_OUTLINE -> drawCurrentPlayerOutline(g)
+                BoardPaintLayer.CAPTURE_ANIMATION -> drawCaptureAnimation(g)
                 BoardPaintLayer.HOVER_PREVIEW -> drawHoveredFoodPreview(g)
             }
         }
@@ -1073,6 +1181,7 @@ class BoardPanel(
     }
 
     private fun highlights(): Set<Position> {
+        if (isCaptureAnimating) return emptySet()
         val current = controller.engine ?: return emptySet()
         return when (current.currentPhase) {
             TurnPhase.DIG -> controller.pendingDigPlacement?.let { setOf(it.position) }
@@ -1115,12 +1224,15 @@ class BoardPanel(
 
     private fun drawPlayers(g: Graphics2D) {
         val current = controller.engine ?: return
-        current.players
-            .filter { !it.isEliminated }
+        val animation = captureAnimation
+        val players = animation?.board?.players ?: current.players
+            .filter { !it.isEliminated }.map { CapturePlayerSnapshot(it.id, it.name, it.position) }
+        players
             .groupBy { it.position }
             .forEach { (position, players) ->
                 val rect = cellRect(position) ?: return@forEach
-                players.zip(playerTokenRects(rect, players.size)).forEach { (player, tokenRect) ->
+                players.zip(playerTokenRects(rect, players.size)).forEach playerLoop@{ (player, tokenRect) ->
+                    if (player.id == animation?.event?.playerId) return@playerLoop
                     val image = assets.playerImage(player.id)
                     if (image != null) {
                         drawImage(g, image, tokenRect, assets.visibleBounds(image))
@@ -1133,6 +1245,7 @@ class BoardPanel(
     }
 
     private fun drawCurrentPlayerOutline(g: Graphics2D) {
+        if (isCaptureAnimating) return
         val current = controller.engine ?: return
         val currentPlayer = controller.currentPlayer?.takeUnless { it.isEliminated } ?: return
         val rect = cellRect(currentPlayer.position) ?: return
@@ -1151,12 +1264,93 @@ class BoardPanel(
 
     private fun drawFoods(g: Graphics2D) {
         val current = controller.engine ?: return
-        current.foodPositions.forEach { (position, foods) ->
+        val animation = captureAnimation
+        val foodPositions = animation?.board?.foods ?: current.foodPositions
+        val phase = animation?.board?.phase ?: current.currentPhase
+        foodPositions.forEach { (position, foods) ->
             val cellRect = cellRect(position) ?: return@forEach
-            foods.asReversed().forEachIndexed { reversedIndex, food ->
+            foods.asReversed().forEachIndexed foodLoop@{ reversedIndex, food ->
                 val stackIndex = foods.lastIndex - reversedIndex
-                drawFood(g, food, cellRect, foodCardScaleForPhase(current.currentPhase), stackIndex, foods.size)
+                if (animation?.event?.let { it.source == position && it.foodIndex == stackIndex } == true) return@foodLoop
+                drawFood(g, food, cellRect, foodCardScaleForPhase(phase), stackIndex, foods.size)
             }
+        }
+    }
+
+    private fun drawCaptureAnimation(g: Graphics2D) {
+        val animation = captureAnimation ?: return
+        val event = animation.event
+        val sourceCell = cellRect(event.source) ?: return
+        val player = animation.board.players.firstOrNull { it.id == event.playerId } ?: return
+        val playersAtSource = animation.board.players.filter { it.position == player.position }
+        val playerCell = cellRect(player.position) ?: return
+        val playerStart = playerTokenRects(playerCell, playersAtSource.size)[playersAtSource.indexOf(player)]
+        val foodStart = foodCardRect(
+            sourceCell,
+            foodCardScaleForPhase(animation.board.phase),
+            stackIndex = event.foodIndex,
+            stackSize = animation.board.foods[event.source].orEmpty().size,
+        )
+
+        // The existing pawn is a single image. Move the whole pawn toward the card,
+        // retaining a visible pounce even when their original centers nearly overlap.
+        val dx = foodStart.centerX - playerStart.centerX
+        val dy = foodStart.centerY - playerStart.centerY
+        val distance = kotlin.math.hypot(dx, dy)
+        val pounce = max(distance, min(sourceCell.width, sourceCell.height) * 0.22)
+        val unitX = if (distance > 0.1) dx / distance else 0.6
+        val unitY = if (distance > 0.1) dy / distance else 0.8
+        val playerContact = Rectangle(playerStart).apply {
+            translate((unitX * pounce).roundToInt(), (unitY * pounce).roundToInt())
+        }
+        val foodDestination = if (event.kind == CaptureOutcomeKind.ESCAPED) {
+            val destinationCell = event.destination?.let(::cellRect) ?: sourceCell
+            val count = animation.destinationStackSize.coerceAtLeast(1)
+            foodCardRect(
+                destinationCell,
+                foodCardScaleForPhase(animation.board.phase),
+                stackIndex = animation.destinationFoodIndex,
+                stackSize = count,
+            )
+        } else {
+            Rectangle(foodStart).apply {
+                setLocation(
+                    (playerStart.centerX - width / 2.0).roundToInt(),
+                    (playerStart.centerY + playerStart.height * 0.2 - height / 2.0).roundToInt(),
+                )
+            }
+        }
+        val progress = captureProgress(animation)
+        val frame = captureAnimationFrame(event.kind, progress)
+        val playerRect = captureSpriteRect(playerStart, playerContact, frame.playerApproach, frame.playerScale)
+        val foodRect = captureSpriteRect(
+            foodStart, foodDestination, frame.foodTravel, frame.foodScale,
+            frame.foodLift * min(sourceCell.width, sourceCell.height),
+        )
+        val drawPlayer = {
+            assets.playerImage(player.id)?.let { image ->
+                drawCaptureSprite(
+                    g, image, playerRect, assets.visibleBounds(image),
+                    rotationDegrees = frame.playerRotationDegrees,
+                )
+            } ?: drawPlaceholder(g, playerRect, player.name.take(1), playerColor(player.id))
+            drawPlayerNameBadge(g, playerRect, player.name)
+        }
+        val drawFood = {
+            assets.foodImage(event.foodType)?.let { image ->
+                drawCaptureSprite(g, image, foodRect, rotationDegrees = frame.foodRotationDegrees, alpha = frame.foodAlpha)
+            }
+        }
+        val foodInFront = when (event.kind) {
+            CaptureOutcomeKind.CAPTURED -> progress >= 0.29f
+            CaptureOutcomeKind.ESCAPED -> frame.foodTravel > 0f
+        }
+        if (foodInFront) {
+            drawPlayer()
+            drawFood()
+        } else {
+            drawFood()
+            drawPlayer()
         }
     }
 
@@ -1204,6 +1398,7 @@ class BoardPanel(
     }
 
     private fun drawHoveredFoodPreview(g: Graphics2D) {
+        if (isCaptureAnimating) return
         val current = controller.engine ?: return
         val position = hoveredFoodPosition ?: return
         val food = current.foodAt(position) ?: return
@@ -1317,6 +1512,7 @@ class BoardPanel(
     }
 
     private fun updateHoveredFoodPosition(point: Point?) {
+        if (isCaptureAnimating) return
         val current = controller.engine
         val next = if (current == null || point == null) {
             null
