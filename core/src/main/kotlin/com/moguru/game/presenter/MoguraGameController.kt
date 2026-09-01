@@ -66,6 +66,7 @@ data class CaptureOutcomeDisplay(
     val kind: CaptureOutcomeKind,
     val diceRoll: Int?,
     val message: String,
+    val animation: CaptureAnimationEvent? = null,
 )
 
 enum class CaptureOutcomeKind {
@@ -168,6 +169,9 @@ class MoguraGameController(
         private set
 
     private var captureOutcome: CaptureOutcomeDisplay? = null
+
+    // Keep IDs unique for this controller, including after starting another game.
+    private var captureAnimationId = 0L
 
     private var pendingDecision: PendingFoodDecision? = null
 
@@ -658,6 +662,19 @@ class MoguraGameController(
             is CaptureResult.Escaped -> result.diceRoll
         }
 
+        val animation = CaptureAnimationEvent(
+            id = ++captureAnimationId,
+            kind = when (result) {
+                is CaptureResult.Success -> CaptureOutcomeKind.CAPTURED
+                is CaptureResult.Escaped -> CaptureOutcomeKind.ESCAPED
+            },
+            playerId = player.id,
+            foodType = food.type,
+            source = position,
+            foodIndex = foodIndex,
+            destination = (result as? CaptureResult.Escaped)?.to,
+        )
+
         when (result) {
             is CaptureResult.Success -> {
                 val captured = current.removeFoodAt(position, foodIndex) ?: food
@@ -667,6 +684,7 @@ class MoguraGameController(
                     kind = CaptureOutcomeKind.CAPTURED,
                     diceRoll = result.diceRoll,
                     message = message,
+                    animation = animation,
                 )
                 addLog(message)
             }
@@ -679,6 +697,7 @@ class MoguraGameController(
                     kind = CaptureOutcomeKind.ESCAPED,
                     diceRoll = result.diceRoll,
                     message = message,
+                    animation = animation,
                 )
                 addLog(message)
             }

@@ -337,6 +337,7 @@ class AndroidGameViewModelTest {
             resultBannerText(state.captureOutcome)
                 ?.contains("ダイス: 6") == true,
         )
+        viewModel.finishCaptureAnimation(requireNotNull(viewModel.uiState.value.captureAnimation).event.id)
         assertEquals(
             listOf(AndroidVisibleAction.EAT, AndroidVisibleAction.CARRY),
             viewModel.uiState.value.visibleActions,
@@ -365,6 +366,7 @@ class AndroidGameViewModelTest {
         viewModel.stopDiceRoulette()
         viewModel.finishDiceRoulette()
 
+        viewModel.finishCaptureAnimation(requireNotNull(viewModel.uiState.value.captureAnimation).event.id)
         val state = viewModel.uiState.value.playState
         val outcome = state.captureOutcome
         val text = resultBannerText(outcome)
@@ -407,6 +409,7 @@ class AndroidGameViewModelTest {
             resultBannerText(state.captureOutcome)
                 ?.startsWith("逃走なし") == true,
         )
+        viewModel.finishCaptureAnimation(requireNotNull(viewModel.uiState.value.captureAnimation).event.id)
         assertEquals(
             listOf(AndroidVisibleAction.EAT, AndroidVisibleAction.CARRY),
             viewModel.uiState.value.visibleActions,

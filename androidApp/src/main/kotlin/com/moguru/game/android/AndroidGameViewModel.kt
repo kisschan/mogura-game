@@ -14,6 +14,7 @@ import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
 import com.moguru.game.model.TileShape
 import com.moguru.game.presenter.DigTileChoice
+import com.moguru.game.presenter.CaptureAnimationEvent
 import com.moguru.game.presenter.GameActionResult
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.presenter.PlayScreenUiState
@@ -36,6 +37,14 @@ data class AndroidGameUiState(
     val lastMessage: String?,
     val gameResult: AndroidGameResultUiState?,
     val showGameResultOverlay: Boolean,
+    val captureAnimation: AndroidCaptureAnimationUiState? = null,
+)
+
+/** Keeps the original stack visible until the resolved capture has finished moving. */
+data class AndroidCaptureAnimationUiState(
+    val event: CaptureAnimationEvent,
+    val boardBefore: AndroidBoardUiState,
+    val boardAfter: AndroidBoardUiState,
 )
 
 data class AndroidGameResultUiState(
@@ -135,6 +144,7 @@ class AndroidGameViewModel(
     private var setupNestPositions = defaultSetupNestPositions(selectedPlayerCount)
     private var selectedStartPlayerIndex = 0
     private var gameResultOverlayDismissed = false
+    private var captureAnimation: AndroidCaptureAnimationUiState? = null
 
     private val _uiState = MutableStateFlow(
         snapshot(
@@ -177,6 +187,7 @@ class AndroidGameViewModel(
     }
 
     fun startSelectedGame() {
+        captureAnimation = null
         gameResultOverlayDismissed = false
         val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
         _uiState.value = snapshot(
@@ -186,6 +197,7 @@ class AndroidGameViewModel(
     }
 
     fun startNewGame(playerCount: Int) {
+        captureAnimation = null
         gameResultOverlayDismissed = false
         resetSetupDefaults(playerCount)
         val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
@@ -196,6 +208,7 @@ class AndroidGameViewModel(
     }
 
     fun returnToSetup() {
+        captureAnimation = null
         gameResultOverlayDismissed = false
         _uiState.value = snapshot(
             isGameStarted = false,
@@ -210,6 +223,7 @@ class AndroidGameViewModel(
     }
 
     fun onCellClicked(position: Position) {
+        if (captureAnimation != null) return
         val engine = controller.engine ?: return refresh(null)
         val result = when (engine.currentPhase) {
             TurnPhase.DIG -> controller.digAt(position, _uiState.value.playState.selectedRotation)
@@ -263,6 +277,7 @@ class AndroidGameViewModel(
      * 連打などで既に確定済みの場合は黙って無視する。
      */
     fun stopDiceRoulette() {
+        if (captureAnimation != null) return
         val result = controller.rollCaptureDice()
         if (result.success) refresh(null)
     }
@@ -272,10 +287,29 @@ class AndroidGameViewModel(
      * 再コンポーズによる重複呼び出しは黙って無視する。
      */
     fun finishDiceRoulette() {
+        if (captureAnimation != null || !_uiState.value.isGameStarted) return
+        val boardBefore = AndroidBoardUiState(buildBoardCells())
         val result = controller.resolveCaptureRoll()
         if (result.success) {
-            resolveAfterSuccessfulAction(result.message)
+            val event = controller.playScreenUiState().captureOutcome?.animation
+            if (event != null) {
+                captureAnimation = AndroidCaptureAnimationUiState(
+                    event = event,
+                    boardBefore = boardBefore,
+                    boardAfter = AndroidBoardUiState(buildBoardCells()),
+                )
+                refresh(result.message)
+            } else {
+                resolveAfterSuccessfulAction(result.message)
+            }
         }
+    }
+
+    /** An old completion callback must never finish a newer capture or advance twice. */
+    fun finishCaptureAnimation(eventId: Long) {
+        if (captureAnimation?.event?.id != eventId) return
+        captureAnimation = null
+        resolveAfterSuccessfulAction(_uiState.value.lastMessage)
     }
 
     fun eat() {
@@ -295,6 +329,7 @@ class AndroidGameViewModel(
     }
 
     private fun runAction(action: () -> GameActionResult) {
+        if (captureAnimation != null) return
         val result = action()
         if (result.success) {
             resolveAfterSuccessfulAction(result.message)
@@ -342,16 +377,17 @@ class AndroidGameViewModel(
             selectedStartPlayerIndex = selectedStartPlayerIndex,
             canStartGame = canStartConfiguredGame(),
             playState = playState,
-            boardState = AndroidBoardUiState(
+            boardState = captureAnimation?.boardBefore ?: AndroidBoardUiState(
                 cells = if (isGameStarted) buildBoardCells() else emptyList(),
             ),
             hungerMarkers = if (isGameStarted) buildHungerMarkers() else emptyList(),
-            visibleActions = if (isGameStarted) visibleActions(playState) else emptyList(),
+            visibleActions = if (isGameStarted && captureAnimation == null) visibleActions(playState) else emptyList(),
             showDigControls = isGameStarted && playState.digCandidates.any { it.enabled },
             logs = if (isGameStarted) controller.logs.takeLast(5) else emptyList(),
             lastMessage = lastMessage,
             gameResult = gameResult,
             showGameResultOverlay = gameResult != null && !gameResultOverlayDismissed,
+            captureAnimation = captureAnimation,
         )
     }
 

@@ -3,10 +3,13 @@ package com.moguru.game.android
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.SoundPool
+import com.moguru.game.presenter.CaptureAnimationEvent
+import com.moguru.game.presenter.CaptureOutcomeKind
 
 enum class AndroidSoundEffect {
     BUTTON_PRESS,
     TILE_ROTATE,
+    CAPTURE_FAILURE,
 }
 
 interface AndroidSoundEffectPlayer : AutoCloseable {
@@ -32,13 +35,34 @@ internal fun defaultAndroidSoundEffectPlayer(
     VolumeControlledAndroidSoundEffectPlayer(
         output = SoundPoolAndroidSoundEffectOutput(
             context = context.applicationContext,
-            resourceIds = mapOf(
-                AndroidSoundEffect.BUTTON_PRESS to R.raw.button_press,
-                AndroidSoundEffect.TILE_ROTATE to R.raw.tile_rotate,
-            ),
+            resourceIds = androidSoundEffectResourceIds(),
         ),
         initialVolume = initialVolume,
     )
+
+internal fun androidSoundEffectResourceIds(): Map<AndroidSoundEffect, Int> =
+    mapOf(
+        AndroidSoundEffect.BUTTON_PRESS to R.raw.button_press,
+        AndroidSoundEffect.TILE_ROTATE to R.raw.tile_rotate,
+        AndroidSoundEffect.CAPTURE_FAILURE to R.raw.capture_failure,
+    )
+
+internal class CaptureFailureSoundEffectTrigger {
+    private var lastPlayedEscapeEventId: Long? = null
+
+    fun soundEffectFor(event: CaptureAnimationEvent?): AndroidSoundEffect? {
+        if (
+            event == null ||
+            event.kind != CaptureOutcomeKind.ESCAPED ||
+            lastPlayedEscapeEventId?.let { event.id <= it } == true
+        ) {
+            return null
+        }
+
+        lastPlayedEscapeEventId = event.id
+        return AndroidSoundEffect.CAPTURE_FAILURE
+    }
+}
 
 internal interface AndroidSoundEffectOutput : AutoCloseable {
     fun play(effect: AndroidSoundEffect, volume: Float)

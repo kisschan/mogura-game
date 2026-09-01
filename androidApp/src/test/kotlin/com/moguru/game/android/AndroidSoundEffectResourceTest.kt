@@ -1,16 +1,16 @@
 package com.moguru.game.android
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class AndroidSoundEffectResourceTest {
     @Test
-    fun `button press raw resource is generated`() {
-        assertTrue(R.raw.button_press != 0)
-    }
+    fun `every sound effect has a generated raw resource`() {
+        val resources = androidSoundEffectResourceIds()
 
-    @Test
-    fun `tile rotate raw resource is generated`() {
-        assertTrue(R.raw.tile_rotate != 0)
+        assertEquals(AndroidSoundEffect.entries.toSet(), resources.keys)
+        assertEquals(R.raw.capture_failure, resources[AndroidSoundEffect.CAPTURE_FAILURE])
+        assertTrue(resources.values.all { it != 0 })
     }
 }
