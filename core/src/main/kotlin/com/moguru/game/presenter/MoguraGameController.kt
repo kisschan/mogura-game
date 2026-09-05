@@ -23,6 +23,8 @@ import com.moguru.game.util.Shuffler
 data class GameActionResult(
     val success: Boolean,
     val message: String,
+    val eatAnimation: EatAnimationEvent? = null,
+    val turnConsumptionAnimation: TurnConsumptionAnimationEvent? = null,
 )
 
 data class PublicDeckSummary(
@@ -172,6 +174,8 @@ class MoguraGameController(
 
     // Keep IDs unique for this controller, including after starting another game.
     private var captureAnimationId = 0L
+    private var eatAnimationId = 0L
+    private var turnConsumptionAnimationId = 0L
 
     private var pendingDecision: PendingFoodDecision? = null
 
@@ -725,14 +729,14 @@ class MoguraGameController(
 
         val food = decision.food
 
-        player.heal(food.type.recovery)
+        val animation = createEatAnimation(player, food)
         current.discardFood(food)
         pendingDecision = null
         captureOutcome = null
         current.advancePhase()
         val prefix = if (decision.source == FoodDecisionSource.ROBBERY) "強奪した " else ""
-        addLog("${player.name} が $prefix${food.type.displayName()} をタベました。体力を ${food.type.recovery} 回復しました。")
-        return GameActionResult(true, "エサをタベました。")
+        addLog("${player.name} が $prefix${food.type.displayName()} をタベました。体力を ${animation.actualRecovery} 回復しました。")
+        return GameActionResult(true, "エサをタベました。", eatAnimation = animation)
     }
 
     private fun eatOwnNestStoredFood(current: GameEngine, player: Player): GameActionResult {
@@ -742,14 +746,30 @@ class MoguraGameController(
 
         val food = player.removeStoredFoodAt(0)
             ?: return GameActionResult(false, "タベるエサがありません。")
-        player.heal(food.type.recovery)
+        val animation = createEatAnimation(player, food)
         current.discardFood(food)
         ownNestEatEligiblePlayers.remove(player.id)
         selectedRobberyFoodIndex = null
         captureOutcome = null
         current.advancePhase()
-        addLog("${player.name} が巣の ${food.type.displayName()} をタベました。体力を ${food.type.recovery} 回復し、${food.type.points}点を失いました。")
-        return GameActionResult(true, "巣のエサをタベました。")
+        addLog("${player.name} が巣の ${food.type.displayName()} をタベました。体力を ${animation.actualRecovery} 回復し、${food.type.points}点を失いました。")
+        return GameActionResult(true, "巣のエサをタベました。", eatAnimation = animation)
+    }
+
+    private fun createEatAnimation(player: Player, food: FoodCard): EatAnimationEvent {
+        val healthBefore = player.health
+        val requestedRecovery = food.type.recovery
+        player.heal(requestedRecovery)
+        val healthAfter = player.health
+        return EatAnimationEvent(
+            id = ++eatAnimationId,
+            playerId = player.id,
+            foodType = food.type,
+            requestedRecovery = requestedRecovery,
+            actualRecovery = healthAfter - healthBefore,
+            healthBefore = healthBefore,
+            healthAfter = healthAfter,
+        )
     }
 
     fun carryPendingFood(): GameActionResult {
@@ -848,6 +868,7 @@ class MoguraGameController(
             val result = skipPhase()
             if (!result.success) break
             last = result
+            if (result.turnConsumptionAnimation != null) break
         }
         return last
     }
@@ -890,7 +911,7 @@ class MoguraGameController(
         captureOutcome = null
         resolveHomecoming(player)
         ownNestEatEligiblePlayers.remove(player.id)
-        current.endTurn()
+        val consumptionAnimation = consumeTurnAndCreateAnimation(current, player)
         addLog("${player.name} の番を終了しました。体力: ${player.health}")
 
         replenishFoodIfNeeded()
@@ -899,12 +920,20 @@ class MoguraGameController(
         if (winner != null) {
             current.checkGameOver()
             addLog("${winner.name} の勝利です（${winner.score}点）。")
-            return GameActionResult(true, "ゲーム終了です。")
+            return GameActionResult(
+                success = true,
+                message = "ゲーム終了です。",
+                turnConsumptionAnimation = consumptionAnimation,
+            )
         }
 
         if (current.checkGameOver() == GameState.FINISHED) {
             addLog("全員の体力がなくなりました。ゲーム終了です。")
-            return GameActionResult(true, "ゲーム終了です。")
+            return GameActionResult(
+                success = true,
+                message = "ゲーム終了です。",
+                turnConsumptionAnimation = consumptionAnimation,
+            )
         }
 
         current.advancePhase()
@@ -913,7 +942,31 @@ class MoguraGameController(
         val nextPlayer = currentPlayer
         addLog("${nextPlayer?.name} の番です。隣の穴タイルを掘ってください。")
         prepareDigDrawForCurrentPlayer()
-        return GameActionResult(true, "ターンを終了しました。")
+        return GameActionResult(
+            success = true,
+            message = "ターンを終了しました。",
+            turnConsumptionAnimation = consumptionAnimation,
+        )
+    }
+
+    private fun consumeTurnAndCreateAnimation(
+        current: GameEngine,
+        player: Player,
+    ): TurnConsumptionAnimationEvent {
+        val healthBefore = player.health
+        val isOnSurface = current.board.getCell(player.position)?.type == CellType.GROUND
+        val requestedConsumption = if (isOnSurface) 2 else 1
+        current.endTurn()
+        val healthAfter = player.health
+        return TurnConsumptionAnimationEvent(
+            id = ++turnConsumptionAnimationId,
+            playerId = player.id,
+            requestedConsumption = requestedConsumption,
+            actualConsumption = healthBefore - healthAfter,
+            healthBefore = healthBefore,
+            healthAfter = healthAfter,
+            isOnSurface = isOnSurface,
+        )
     }
 
     fun resolveCurrentPlayerPositionEffects(): Boolean {

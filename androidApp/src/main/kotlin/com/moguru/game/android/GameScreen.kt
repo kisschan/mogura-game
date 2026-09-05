@@ -99,6 +99,7 @@ import com.moguru.game.presenter.CaptureOutcomeDisplay
 import com.moguru.game.presenter.CaptureOutcomeKind
 import com.moguru.game.presenter.DigCandidateDisplay
 import com.moguru.game.presenter.DigTileChoice
+import com.moguru.game.presenter.EatAnimationEvent
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.presenter.RobberyTargetDisplay
 import com.moguru.game.presenter.displayName
@@ -143,6 +144,7 @@ internal const val GAME_MENU_RULES_ITEM_TEST_TAG = "game-menu-rules-item"
 internal const val GAME_MENU_AUDIO_ITEM_TEST_TAG = "game-menu-audio-item"
 internal const val GAME_MENU_NEW_GAME_ITEM_TEST_TAG = "game-menu-new-game-item"
 internal const val BOARD_PIECE_VISIBILITY_TOGGLE_TEST_TAG = "player-visibility-toggle"
+internal const val HUNGER_MARKER_TEST_TAG_PREFIX = "hunger-marker-"
 internal const val HUD_SCORE_TEST_TAG = "hud-score"
 internal const val BGM_VOLUME_SLIDER_TEST_TAG = "bgm-volume-slider"
 internal const val SOUND_EFFECT_VOLUME_SLIDER_TEST_TAG = "sound-effect-volume-slider"
@@ -205,6 +207,10 @@ internal fun MoguraGameScreen(
         soundEffects = soundEffects,
         soundEffectFor = viewModel::captureFailureSoundEffectFor,
     )
+    EatRecoverySoundEffect(
+        event = state.eatAnimation,
+        soundEffects = soundEffects,
+    )
 
     MaterialTheme {
         CompositionLocalProvider(LocalAndroidSoundEffectPlayer provides soundEffects) {
@@ -217,7 +223,12 @@ internal fun MoguraGameScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .then(
-                                if (showRules || state.captureAnimation != null) {
+                                if (
+                                    showRules ||
+                                    state.captureAnimation != null ||
+                                    state.eatAnimation != null ||
+                                    state.turnConsumptionAnimation != null
+                                ) {
                                     Modifier.clearAndSetSemantics {}
                                 } else {
                                     Modifier
@@ -277,6 +288,12 @@ internal fun MoguraGameScreen(
                         state.captureAnimation?.let { animation ->
                             CaptureAnimationInputBlocker(animation.event)
                         }
+                        state.eatAnimation?.let { event ->
+                            EatAnimationInputBlocker(event)
+                        }
+                        state.turnConsumptionAnimation?.let { event ->
+                            TurnConsumptionAnimationInputBlocker(event)
+                        }
                     }
                     if (showRules) {
                         InputBlockingLayer()
@@ -302,6 +319,19 @@ internal fun CaptureFailureSoundEffect(
 
     LaunchedEffect(event?.id, event?.kind) {
         currentSoundEffectFor(event)?.let(currentSoundEffects::play)
+    }
+}
+
+@Composable
+internal fun EatRecoverySoundEffect(
+    event: EatAnimationEvent?,
+    soundEffects: AndroidSoundEffectPlayer,
+) {
+    val trigger = remember { EatRecoverySoundEffectTrigger() }
+    val currentSoundEffects by rememberUpdatedState(soundEffects)
+
+    LaunchedEffect(event?.id) {
+        trigger.soundEffectFor(event)?.let(currentSoundEffects::play)
     }
 }
 
@@ -1026,6 +1056,8 @@ private fun PlayScreen(
                 boardPiecesTransparent = boardPiecesTransparent,
                 selectedMoveTargetPosition = selectedMoveTargetPosition,
                 onCaptureAnimationFinished = viewModel::finishCaptureAnimation,
+                onEatAnimationFinished = viewModel::finishEatAnimation,
+                onTurnConsumptionAnimationFinished = viewModel::finishTurnConsumptionAnimation,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("board-viewport")
@@ -1187,6 +1219,8 @@ private fun BoardViewport(
     boardPiecesTransparent: Boolean,
     selectedMoveTargetPosition: Position?,
     onCaptureAnimationFinished: (Long) -> Unit,
+    onEatAnimationFinished: (Long) -> Unit,
+    onTurnConsumptionAnimationFinished: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Box(
@@ -1200,6 +1234,8 @@ private fun BoardViewport(
             boardPiecesTransparent = boardPiecesTransparent,
             selectedMoveTargetPosition = selectedMoveTargetPosition,
             onCaptureAnimationFinished = onCaptureAnimationFinished,
+            onEatAnimationFinished = onEatAnimationFinished,
+            onTurnConsumptionAnimationFinished = onTurnConsumptionAnimationFinished,
         )
     }
 }
@@ -1792,6 +1828,8 @@ private fun BoardView(
     boardPiecesTransparent: Boolean,
     selectedMoveTargetPosition: Position?,
     onCaptureAnimationFinished: (Long) -> Unit,
+    onEatAnimationFinished: (Long) -> Unit,
+    onTurnConsumptionAnimationFinished: (Long) -> Unit,
 ) {
     val boardPieceAlpha by animateFloatAsState(
         targetValue = boardPieceImageAlpha(boardPiecesTransparent),
@@ -1813,7 +1851,13 @@ private fun BoardView(
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.FillBounds,
         )
-        HungerMeterOverlay(maxWidth = maxWidth, maxHeight = maxHeight, markers = state.hungerMarkers)
+        HungerMeterOverlay(
+            maxWidth = maxWidth,
+            maxHeight = maxHeight,
+            markers = state.hungerMarkers,
+            hiddenPlayerId = state.eatAnimation?.playerId
+                ?: state.turnConsumptionAnimation?.playerId,
+        )
 
         state.boardState.cells.forEach { cell ->
             cell.highlight?.let { tone ->
@@ -1872,7 +1916,10 @@ private fun BoardView(
             }
 
             cell.players.forEachIndexed { index, player ->
-                if (state.captureAnimation?.event?.playerId == player.playerId) return@forEachIndexed
+                if (
+                    state.captureAnimation?.event?.playerId == player.playerId ||
+                    state.eatAnimation?.playerId == player.playerId
+                ) return@forEachIndexed
                 Box(
                     modifier = Modifier
                         .boardRect(maxWidth, maxHeight, playerRect(cell.position, index, cell.players.size))
@@ -1920,7 +1967,11 @@ private fun BoardView(
         state.boardState.cells
             .forEach { cell ->
                 cell.players.forEachIndexed { index, player ->
-                    if (player.isCurrent && state.captureAnimation?.event?.playerId != player.playerId) {
+                    if (
+                        player.isCurrent &&
+                        state.captureAnimation?.event?.playerId != player.playerId &&
+                        state.eatAnimation?.playerId != player.playerId
+                    ) {
                         Box(
                             modifier = Modifier
                                 .boardRect(maxWidth, maxHeight, playerRect(cell.position, index, cell.players.size))
@@ -1934,7 +1985,12 @@ private fun BoardView(
             }
 
         state.boardState.cells
-            .filter { state.captureAnimation == null && isBoardPrimaryActionCell(it, state.playState.actionAvailability.activePhase) }
+            .filter {
+                state.captureAnimation == null &&
+                    state.eatAnimation == null &&
+                    state.turnConsumptionAnimation == null &&
+                    isBoardPrimaryActionCell(it, state.playState.actionAvailability.activePhase)
+            }
             .forEach { cell ->
                 Box(
                     modifier = Modifier
@@ -1960,6 +2016,25 @@ private fun BoardView(
                 maxHeight = maxHeight,
                 pieceAlpha = boardPieceAlpha,
                 onFinished = onCaptureAnimationFinished,
+            )
+        }
+        state.eatAnimation?.let { event ->
+            EatAnimationOverlay(
+                state = state,
+                event = event,
+                maxWidth = maxWidth,
+                maxHeight = maxHeight,
+                pieceAlpha = boardPieceAlpha,
+                onFinished = onEatAnimationFinished,
+            )
+        }
+        state.turnConsumptionAnimation?.let { event ->
+            TurnConsumptionAnimationOverlay(
+                state = state,
+                event = event,
+                maxWidth = maxWidth,
+                maxHeight = maxHeight,
+                onFinished = onTurnConsumptionAnimationFinished,
             )
         }
     }
@@ -1990,6 +2065,7 @@ private fun HungerMeterOverlay(
     maxWidth: Dp,
     maxHeight: Dp,
     markers: List<AndroidHungerMarkerUiState>,
+    hiddenPlayerId: Int? = null,
 ) {
     Image(
         painter = painterResource(R.drawable.hunger_meter_reference_transparent),
@@ -2000,10 +2076,12 @@ private fun HungerMeterOverlay(
         contentScale = ContentScale.Fit,
     )
     markers.forEachIndexed { index, marker ->
+        if (marker.playerId == hiddenPlayerId) return@forEachIndexed
         Box(
             modifier = Modifier
-                .boardRect(maxWidth, maxHeight, hungerMarkerRect(marker.health, index))
-                .zIndex(11f + index),
+                .boardRect(maxWidth, maxHeight, hungerMarkerRect(marker.health, marker.layoutIndex))
+                .zIndex(11f + index)
+                .testTag("$HUNGER_MARKER_TEST_TAG_PREFIX${marker.playerId}"),
         ) {
             Image(
                 painter = painterResource(playerRes(marker.playerId)),
@@ -2029,7 +2107,10 @@ private fun HungerMeterOverlay(
  * メーターは U 字で、満タン(13)が左上、空(0)が左下になるよう左上→右→下→左下へ進む。
  * モックアップ (mockups/android/index.html) の hungerPoint と同じ計算を移植したもの。
  */
-private fun hungerMarkerRect(health: Int, index: Int): BoardRectSpec {
+internal fun hungerMarkerRect(health: Int, index: Int): BoardRectSpec =
+    hungerMarkerRect(health.toFloat(), index)
+
+internal fun hungerMarkerRect(health: Float, index: Int): BoardRectSpec {
     val w = BOARD_SOURCE_WIDTH
     val h = BOARD_SOURCE_HEIGHT
     val rectX = METER_LEFT * w
@@ -2042,7 +2123,7 @@ private fun hungerMarkerRect(health: Int, index: Int): BoardRectSpec {
     val bottom = rectY + rectH * 0.78f
     val topLength = right - left
     val sideLength = bottom - top
-    val progress = (Player.MAX_HEALTH - health.coerceIn(0, Player.MAX_HEALTH)).toFloat() / Player.MAX_HEALTH
+    val progress = (Player.MAX_HEALTH - health.coerceIn(0f, Player.MAX_HEALTH.toFloat())) / Player.MAX_HEALTH
     val distance = progress * (topLength + sideLength + topLength)
     val pointX: Float
     val pointY: Float
@@ -2874,7 +2955,7 @@ internal fun foodRes(type: FoodType): Int = when (type) {
     FoodType.FROG -> R.drawable.food_frog
 }
 
-private fun playerRes(playerId: Int): Int = when (playerId) {
+internal fun playerRes(playerId: Int): Int = when (playerId) {
     0 -> R.drawable.player_moguo_blue
     1 -> R.drawable.player_moguta_orange
     2 -> R.drawable.player_mogumi_pink

@@ -199,8 +199,14 @@ class AndroidGameViewModelTest {
 
         engine.advancePhase()
         viewModel.onCellClicked(victim.nestPosition)
+        viewModel.finishTurnConsumptionAnimation(
+            requireNotNull(viewModel.uiState.value.turnConsumptionAnimation).id,
+        )
         engine.advancePhase()
         viewModel.finishTurn()
+        viewModel.finishTurnConsumptionAnimation(
+            requireNotNull(viewModel.uiState.value.turnConsumptionAnimation).id,
+        )
         engine.advancePhase()
         viewModel.skip()
 
@@ -235,6 +241,9 @@ class AndroidGameViewModelTest {
         viewModel.onCellClicked(target)
         viewModel.confirmDigPlacement()
 
+        val consumption = requireNotNull(viewModel.uiState.value.turnConsumptionAnimation)
+        assertTrue(viewModel.uiState.value.visibleActions.isEmpty())
+        viewModel.finishTurnConsumptionAnimation(consumption.id)
         val state = viewModel.uiState.value
         assertEquals(TurnPhase.DIG, state.playState.actionAvailability.activePhase)
         assertEquals(1, state.playState.currentPlayer.playerId)
@@ -262,7 +271,8 @@ class AndroidGameViewModelTest {
 
     @Test
     fun `current hunger marker is exposed last when player health overlaps`() {
-        val viewModel = testViewModel()
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
         viewModel.startNewGame(4)
 
         val markers = viewModel.uiState.value.hungerMarkers
@@ -270,6 +280,24 @@ class AndroidGameViewModelTest {
         assertEquals(4, markers.size)
         assertEquals(0, markers.last().playerId)
         assertTrue(markers.last().isCurrent)
+        assertEquals(
+            mapOf(0 to 0, 1 to 1, 2 to 2, 3 to 3),
+            markers.associate { it.playerId to it.layoutIndex },
+        )
+
+        repeat(3) { controller.engine!!.advancePhase() }
+        viewModel.finishTurn()
+        viewModel.finishTurnConsumptionAnimation(
+            requireNotNull(viewModel.uiState.value.turnConsumptionAnimation).id,
+        )
+
+        val nextTurnMarkers = viewModel.uiState.value.hungerMarkers
+        assertEquals(
+            markers.associate { it.playerId to it.layoutIndex },
+            nextTurnMarkers.associate { it.playerId to it.layoutIndex },
+        )
+        assertEquals(1, nextTurnMarkers.last().playerId)
+        assertTrue(nextTurnMarkers.last().isCurrent)
     }
 
     @Test
@@ -384,6 +412,9 @@ class AndroidGameViewModelTest {
 
         viewModel.finishTurn()
 
+        val consumption = requireNotNull(viewModel.uiState.value.turnConsumptionAnimation)
+        assertEquals(CaptureOutcomeKind.ESCAPED, viewModel.uiState.value.playState.captureOutcome?.kind)
+        viewModel.finishTurnConsumptionAnimation(consumption.id)
         assertNull(viewModel.uiState.value.playState.captureOutcome)
     }
 
@@ -536,9 +567,18 @@ class AndroidGameViewModelTest {
 
         viewModel.finishTurn()
 
+        val animatingState = viewModel.uiState.value
+        val consumption = requireNotNull(animatingState.turnConsumptionAnimation)
+        assertEquals(GameState.FINISHED, engine.gameState)
+        assertNull(animatingState.gameResult)
+        assertNull(animatingState.lastMessage)
+        assertFalse(animatingState.showGameResultOverlay)
+        assertTrue(animatingState.visibleActions.isEmpty())
+
+        viewModel.finishTurnConsumptionAnimation(consumption.id)
+
         val state = viewModel.uiState.value
         val result = state.gameResult!!
-        assertEquals(GameState.FINISHED, engine.gameState)
         assertEquals("ゲーム終了です。", state.lastMessage)
         assertTrue(state.showGameResultOverlay)
         assertEquals(winner.id, result.winnerPlayerId)
@@ -567,21 +607,42 @@ class AndroidGameViewModelTest {
         val eliminated = engine.players[0]
         val survivor = engine.players[1]
         repeat(Player.MAX_HEALTH - 1) { eliminated.reduceHealth(isOnSurface = false) }
+        // Refresh the displayed pre-consumption health after direct fixture mutation.
+        viewModel.onCellClicked(Position(5, 4))
+        val displayBefore = viewModel.uiState.value
         repeat(3) { engine.advancePhase() }
 
         viewModel.finishTurn()
 
-        val state = viewModel.uiState.value
-        val result = state.gameResult!!
+        val animatingState = viewModel.uiState.value
+        val consumption = requireNotNull(animatingState.turnConsumptionAnimation)
         assertEquals(GameState.FINISHED, engine.gameState)
+        assertEquals(1, consumption.healthBefore)
+        assertEquals(0, consumption.healthAfter)
+        assertEquals(displayBefore.playState, animatingState.playState)
+        assertEquals(displayBefore.boardState, animatingState.boardState)
+        assertEquals(displayBefore.hungerMarkers, animatingState.hungerMarkers)
+        assertNull(animatingState.gameResult)
+        assertEquals(displayBefore.lastMessage, animatingState.lastMessage)
+        assertFalse(animatingState.showGameResultOverlay)
+        assertEquals(1, animatingState.hungerMarkers.single { it.playerId == eliminated.id }.health)
+        assertTrue(animatingState.boardState.cells.any { cell -> cell.players.any { it.playerId == eliminated.id } })
+
+        viewModel.finishTurnConsumptionAnimation(consumption.id)
+
+        val completedState = viewModel.uiState.value
+        val result = completedState.gameResult!!
         assertEquals(survivor.id, result.winnerPlayerId)
         assertEquals(survivor.name, result.winnerName)
         assertTrue(result.players.single { it.playerId == survivor.id }.isWinner)
-        assertTrue(state.showGameResultOverlay)
         assertEquals(0, engine.currentPlayerIndex)
         assertEquals(TurnPhase.END, engine.currentPhase)
         assertEquals(0, eliminated.health)
         assertTrue(eliminated.isEliminated)
+        assertTrue(completedState.hungerMarkers.none { it.playerId == eliminated.id })
+        assertTrue(completedState.boardState.cells.none { cell -> cell.players.any { it.playerId == eliminated.id } })
+
+        assertTrue(completedState.showGameResultOverlay)
     }
 
     private fun testViewModel(): AndroidGameViewModel =

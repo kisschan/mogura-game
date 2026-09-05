@@ -5,11 +5,13 @@ import android.media.AudioAttributes
 import android.media.SoundPool
 import com.moguru.game.presenter.CaptureAnimationEvent
 import com.moguru.game.presenter.CaptureOutcomeKind
+import com.moguru.game.presenter.EatAnimationEvent
 
 enum class AndroidSoundEffect {
     BUTTON_PRESS,
     TILE_ROTATE,
     CAPTURE_FAILURE,
+    EAT_RECOVERY,
 }
 
 interface AndroidSoundEffectPlayer : AutoCloseable {
@@ -45,6 +47,7 @@ internal fun androidSoundEffectResourceIds(): Map<AndroidSoundEffect, Int> =
         AndroidSoundEffect.BUTTON_PRESS to R.raw.button_press,
         AndroidSoundEffect.TILE_ROTATE to R.raw.tile_rotate,
         AndroidSoundEffect.CAPTURE_FAILURE to R.raw.capture_failure,
+        AndroidSoundEffect.EAT_RECOVERY to R.raw.eat_recovery,
     )
 
 internal class CaptureFailureSoundEffectTrigger {
@@ -61,6 +64,17 @@ internal class CaptureFailureSoundEffectTrigger {
 
         lastPlayedEscapeEventId = event.id
         return AndroidSoundEffect.CAPTURE_FAILURE
+    }
+}
+
+internal class EatRecoverySoundEffectTrigger {
+    private var lastPlayedEventId: Long? = null
+
+    fun soundEffectFor(event: EatAnimationEvent?): AndroidSoundEffect? {
+        if (event == null || lastPlayedEventId?.let { event.id <= it } == true) return null
+
+        lastPlayedEventId = event.id
+        return AndroidSoundEffect.EAT_RECOVERY
     }
 }
 
