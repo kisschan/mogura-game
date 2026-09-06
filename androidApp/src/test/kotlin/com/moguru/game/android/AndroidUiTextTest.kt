@@ -220,6 +220,27 @@ class AndroidUiTextTest {
     }
 
     @Test
+    fun `a single move destination is visibly selected before confirmation`() {
+        val action = MobilePrimaryBoardAction("このマスへ移動", Position(1, 1))
+
+        assertEquals(
+            action.position,
+            selectedMoveActionPosition(listOf(action), selectedIndex = 0, phase = TurnPhase.MOVE),
+        )
+        assertEquals(0, nextPrimaryBoardActionIndex(selectedIndex = 0, actionCount = 1))
+    }
+
+    @Test
+    fun `no move destinations means no selection or move action`() {
+        val actions = emptyList<MobilePrimaryBoardAction>()
+
+        assertNull(selectedMoveActionPosition(actions, selectedIndex = 0, phase = TurnPhase.MOVE))
+        assertNull(selectedPrimaryBoardAction(actions, selectedIndex = 0))
+        assertTrue(primaryBoardActionsForBar(actions, TurnPhase.MOVE).isEmpty())
+        assertEquals(0, nextPrimaryBoardActionIndex(selectedIndex = 0, actionCount = 0))
+    }
+
+    @Test
     fun `board action keeps optional actions without duplicate capture action`() {
         assertEquals(
             listOf(AndroidVisibleAction.END_TURN),

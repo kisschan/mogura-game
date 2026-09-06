@@ -1052,7 +1052,14 @@ private fun PlayScreen(
             BoardViewport(
                 state = state,
                 boardWidth = layout.boardWidth,
-                onCellClicked = viewModel::onCellClicked,
+                onCellClicked = { position ->
+                    if (activePhase == TurnPhase.MOVE) {
+                        val targetIndex = boardActionsForBar.indexOfFirst { it.position == position }
+                        if (targetIndex >= 0) selectedBoardActionIndex = targetIndex
+                    } else {
+                        viewModel.onCellClicked(position)
+                    }
+                },
                 boardPiecesTransparent = boardPiecesTransparent,
                 selectedMoveTargetPosition = selectedMoveTargetPosition,
                 onCaptureAnimationFinished = viewModel::finishCaptureAnimation,
@@ -1299,6 +1306,7 @@ private fun GameplayActionBar(
                             onExtraAction = { action -> viewModel.performVisibleAction(action) },
                         )
                     selectedBoardAction != null -> CompactBoardActionRow(
+                        phase = activePhase,
                         boardActions = boardActions,
                         selectedIndex = selectedBoardActionIndex,
                         onSelect = onBoardActionSelected,
@@ -1737,6 +1745,7 @@ private fun CompactTargetActionRow(
 
 @Composable
 private fun CompactBoardActionRow(
+    phase: TurnPhase?,
     boardActions: List<MobilePrimaryBoardAction>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
@@ -1761,7 +1770,7 @@ private fun CompactBoardActionRow(
                     onSelect(nextPrimaryBoardActionIndex(selectedIndex, boardActions.size))
                 },
                 modifier = Modifier
-                    .weight(1.35f)
+                    .weight(1f)
                     .height(COMPACT_ACTION_BUTTON_HEIGHT)
                     .semantics {
                         contentDescription = selectorDescription
@@ -1775,11 +1784,7 @@ private fun CompactBoardActionRow(
                 ),
             ) {
                 Text(
-                    text = primaryBoardActionTargetLabel(
-                        action = selectedBoardAction,
-                        selectedIndex = selectedIndex,
-                        total = boardActions.size,
-                    ),
+                    text = "次の移動先",
                     fontSize = 10.sp,
                     lineHeight = 12.sp,
                     fontWeight = FontWeight.Black,
@@ -1791,7 +1796,7 @@ private fun CompactBoardActionRow(
         Button(
             onClick = soundEffectClick(onClick = onBoardAction),
             modifier = Modifier
-                .weight(1.2f)
+                .weight(if (phase == TurnPhase.MOVE) 1.6f else 1.2f)
                 .testTag("primary-action")
                 .height(COMPACT_ACTION_BUTTON_HEIGHT),
             contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
@@ -1802,10 +1807,15 @@ private fun CompactBoardActionRow(
             ),
         ) {
             Text(
-                selectedBoardAction.label,
+                text = if (phase == TurnPhase.MOVE) {
+                    "${selectedBoardAction.label}\n${selectedBoardAction.position.col + 1}列${selectedBoardAction.position.row + 1}行"
+                } else {
+                    selectedBoardAction.label
+                },
                 fontSize = 13.sp,
                 lineHeight = 15.sp,
                 fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -2000,7 +2010,7 @@ private fun BoardView(
                             contentDescription = cellDescription(cell)
                             if (cell.position == selectedMoveTargetPosition) {
                                 selected = true
-                                stateDescription = "操作バーで選択中の移動先"
+                                stateDescription = "選択中の移動先。「このマスへ移動」で確定"
                             }
                         }
                         .clickable(
@@ -2261,7 +2271,7 @@ internal fun audioSettingsButtonContentDescription(settings: AndroidAudioSetting
 
 private fun phaseInstruction(phase: TurnPhase?): String = when (phase) {
     TurnPhase.DIG -> "ハイライトされた隣の穴タイルを選んで掘る"
-    TurnPhase.MOVE -> "ハイライトされた到達可能マスへ移動"
+    TurnPhase.MOVE -> "移動先を選び「このマスへ移動」で確定"
     TurnPhase.CAPTURE -> "捕獲対象を確認して捕獲する"
     TurnPhase.DECIDE -> "タベる/レンコウ/強奪を選択"
     TurnPhase.END -> "ターン終了を押してください"
@@ -2556,7 +2566,7 @@ private fun cellDescription(cell: AndroidBoardCellUiState): String =
 private fun cellClickLabel(cell: AndroidBoardCellUiState): String =
     when (cell.highlight) {
         AndroidHighlightTone.DIG -> "このマスを掘る"
-        AndroidHighlightTone.MOVE -> "このマスへ移動"
+        AndroidHighlightTone.MOVE -> "移動先に選択"
         AndroidHighlightTone.CAPTURE -> "このマスで捕獲"
         null -> "このマスは選択できません"
     }
@@ -2611,7 +2621,7 @@ internal fun selectedMoveActionPosition(
     selectedIndex: Int,
     phase: TurnPhase?,
 ): Position? =
-    if (phase == TurnPhase.MOVE && actions.size > 1) {
+    if (phase == TurnPhase.MOVE) {
         selectedPrimaryBoardAction(actions, selectedIndex)?.position
     } else {
         null

@@ -348,7 +348,7 @@ private fun RulesTurnFlow() {
         RuleStep(
             number = "2",
             title = "いどう",
-            description = "つながった道なら距離制限なし。動かずに次へ進んでもOKです。",
+            description = "青い候補をタップして選び、「このマスへ移動」で確定します。つながった道なら距離制限なし。動かずに次へ進んでもOKです。",
             accent = RulesBlue,
         ),
         RuleStep(

@@ -1,8 +1,12 @@
 # PROGRESS.md
 
-最終更新: 2026-08-23
+最終更新: 2026-09-07
 
 ## 現在の状況
+- [x] Androidの移動を「盤面で選択 → このマスへ移動で確定」に統一。再タップでは移動せず、最初の候補を仮選択し、単一候補でも選択枠を表示する
+- [x] 移動候補の切替を「次の移動先」と明記し、確定ボタンに列・行を2行目で表示。操作バーの高さを維持して確定ボタンの横幅を確保する
+- [x] 移動の読み上げ説明・遊び方・`AGENT.md`の操作規約を更新し、単体テスト2件とCompose回帰テスト9件を追加する
+- コミット範囲（2026-09-07）: Android移動UI修正、関連テスト、遊び方・操作規約・進捗記録の6ファイル
 - [x] 次回AABリリース用にAndroid `versionCode` / `versionName` を `11` に更新
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
 - [x] 移動、タイル配置、ターン進行のエンジン実装
@@ -73,6 +77,13 @@
 - [x] Androidの移動候補が複数ある局面でも「このマスへ移動」を表示し、操作バーで移動先を切り替え、選択中マスを緑の内枠で確認して実行できるようにする
 
 ## テスト結果
+- 最終実行日: 2026-09-07
+- Android移動操作のTDD確認: 変更前ソースの検証コピーで、追加した「単一移動候補も選択中になる」単体テストの失敗を確認後、変更後ソースで成功を確認
+- 検証方法: 通常のAndroidビルド設定が署名情報を自動ロードするため、ソース・公開ビルド定義・必要リソースだけを `.codex-analysis/move-selection/workspace` へコピーして実行。署名情報の読み込みを除去し、Gradle設定とキャッシュを分離。JDK・コンパイルターゲットは検証コピー内のみ21に揃え、元のビルド設定は変更しない
+- 実行: 検証コピーで `:core:test :androidApp:testDebugUnitTest :androidApp:compileDebugAndroidTestKotlin --no-daemon --max-workers=2`。結果は `BUILD SUCCESSFUL`（core 245件・Android 130件、計375件・失敗0・スキップ0）。コピー対象外の元ビルド設定を検査するcoreのconfigテストは除外
+- 新規Composeテスト9件を含む計測テストソースのコンパイル成功。盤面タップ・再タップ・候補循環で位置/HP/手番/段階が変わらないこと、ボタン確定、単一/0候補、選択初期化、掘る/捕獲回帰、360×740・390×844での表示範囲と文字切れを検証するテストを追加
+- 未実施: 接続端末・エミュレーターがないため、Composeテスト実行および実画面でのレイアウト確認。元チェックアウトの通常ビルドと署名APK作成は実行していない
+- 差分確認: 対象ファイルの `git diff --check` 成功。次の作業は端末上で `MoveSelectionComposeTest` を実行し、移動操作と2サイズの表示を確認する
 - 最終実行日: 2026-08-23
 - TDD確認: 2人戦の体力切れ勝利と、3〜4人戦で最後の1人になっても得点未達なら継続する回帰テストを先に更新。初回実行は作業開始前から変更されていた `GradlePropertiesTest.kt` の `assertFalse` import不足で対象テスト実行前に停止
 - `GradlePropertiesTest.kt` に不足していた `assertFalse` importだけを追加後、通常の `.\gradlew.bat test` を実行
@@ -209,6 +220,7 @@
 - `androidApp/src/test/kotlin/com/moguru/game/android/AndroidGameViewModelTest.kt`
 - `androidApp/src/test/kotlin/com/moguru/game/android/MobileGameplayLayoutContractTest.kt`
 - `androidApp/src/androidTest/kotlin/com/moguru/game/android/MobileGameplayComposeTest.kt`
+- `androidApp/src/androidTest/kotlin/com/moguru/game/android/MoveSelectionComposeTest.kt`
 - `androidApp/src/main/res/drawable-nodpi/`
 - `androidApp/build.gradle.kts`
 - `.gitignore`
