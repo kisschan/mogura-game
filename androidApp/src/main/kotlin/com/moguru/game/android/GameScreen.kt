@@ -217,6 +217,7 @@ internal fun MoguraGameScreen(
     EatRecoverySoundEffect(
         event = state.eatAnimation,
         soundEffects = soundEffects,
+        soundEffectFor = viewModel::eatRecoverySoundEffectFor,
     )
 
     MaterialTheme {
@@ -333,12 +334,13 @@ internal fun CaptureFailureSoundEffect(
 internal fun EatRecoverySoundEffect(
     event: EatAnimationEvent?,
     soundEffects: AndroidSoundEffectPlayer,
+    soundEffectFor: (EatAnimationEvent?) -> AndroidSoundEffect?,
 ) {
-    val trigger = remember { EatRecoverySoundEffectTrigger() }
     val currentSoundEffects by rememberUpdatedState(soundEffects)
+    val currentSoundEffectFor by rememberUpdatedState(soundEffectFor)
 
     LaunchedEffect(event?.id) {
-        trigger.soundEffectFor(event)?.let(currentSoundEffects::play)
+        currentSoundEffectFor(event)?.let(currentSoundEffects::play)
     }
 }
 

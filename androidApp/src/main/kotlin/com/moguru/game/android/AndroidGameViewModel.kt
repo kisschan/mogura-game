@@ -162,6 +162,7 @@ class AndroidGameViewModel(
     private var captureAnimation: AndroidCaptureAnimationUiState? = null
     private val captureFailureSoundEffectTrigger = CaptureFailureSoundEffectTrigger()
     private var eatAnimation: EatAnimationEvent? = null
+    private val eatRecoverySoundEffectTrigger = EatRecoverySoundEffectTrigger()
     private var turnConsumptionAnimation: TurnConsumptionAnimationEvent? = null
     private var turnConsumptionDisplaySnapshot: AndroidTurnConsumptionDisplaySnapshot? = null
     private var turnConsumptionPostMessage: String? = null
@@ -335,6 +336,11 @@ class AndroidGameViewModel(
     internal fun captureFailureSoundEffectFor(
         event: CaptureAnimationEvent?,
     ): AndroidSoundEffect? = captureFailureSoundEffectTrigger.soundEffectFor(event)
+
+    /** Keep played meal IDs across Activity recreation, just like capture sounds. */
+    internal fun eatRecoverySoundEffectFor(
+        event: EatAnimationEvent?,
+    ): AndroidSoundEffect? = eatRecoverySoundEffectTrigger.soundEffectFor(event)
 
     /** An old completion callback must never finish a newer capture or advance twice. */
     fun finishCaptureAnimation(eventId: Long) {

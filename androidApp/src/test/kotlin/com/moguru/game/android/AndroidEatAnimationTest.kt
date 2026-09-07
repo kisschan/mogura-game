@@ -123,6 +123,29 @@ class AndroidEatAnimationTest {
         assertTrue(viewModel.uiState.value.turnConsumptionAnimation != null)
     }
 
+    @Test
+    fun `meal sound consumption survives repeated observers and allows the next game meal`() {
+        val (controller, viewModel) = fixture()
+        prepareCapturedFood(controller, FoodType.BEETLE_LARVA)
+        viewModel.eat()
+        val firstEvent = requireNotNull(viewModel.uiState.value.eatAnimation)
+
+        assertNull(viewModel.eatRecoverySoundEffectFor(null))
+        assertEquals(AndroidSoundEffect.EAT_RECOVERY, viewModel.eatRecoverySoundEffectFor(firstEvent))
+        // A recreated observer receives the same event from the retained ViewModel.
+        assertNull(viewModel.eatRecoverySoundEffectFor(viewModel.uiState.value.eatAnimation))
+        assertEquals(firstEvent, viewModel.uiState.value.eatAnimation)
+
+        viewModel.startNewGame(2)
+        prepareCapturedFood(controller, FoodType.BEETLE_LARVA)
+        viewModel.eat()
+        val nextEvent = requireNotNull(viewModel.uiState.value.eatAnimation)
+        assertNotEquals(firstEvent.id, nextEvent.id)
+        assertEquals(AndroidSoundEffect.EAT_RECOVERY, viewModel.eatRecoverySoundEffectFor(nextEvent))
+        assertNull(viewModel.eatRecoverySoundEffectFor(firstEvent))
+        assertNull(viewModel.eatRecoverySoundEffectFor(nextEvent))
+    }
+
     private fun fixture(): Pair<MoguraGameController, AndroidGameViewModel> {
         val controller = MoguraGameController(FixedDiceRoller(listOf(6)), FixedShuffler())
         val viewModel = AndroidGameViewModel(controller)
