@@ -785,20 +785,23 @@ class MoguraGameController(
             return GameActionResult(false, "すでにエサをレンコウ中です。")
         }
 
-        when (decision) {
+        val message = when (decision) {
             is PendingFoodDecision.Captured -> {
                 player.carryFood(food)
                 addLog("${player.name} が ${food.type.displayName()} をレンコウします。")
+                "エサをレンコウします。"
             }
             is PendingFoodDecision.Stolen -> {
                 player.carryFood(food)
-                addLog("${player.name} が強奪した ${food.type.displayName()} をレンコウします。")
+                player.storeFood()
+                addLog("${player.name} が強奪した ${food.type.displayName()} を自分の巣へ送り、${food.type.points}点を獲得しました。")
+                "強奪したエサを自分の巣へ送り、${food.type.points}点を獲得しました。"
             }
         }
         pendingDecision = null
         captureOutcome = null
         current.advancePhase()
-        return GameActionResult(true, "エサをレンコウします。")
+        return GameActionResult(true, message)
     }
 
     fun skipPhase(): GameActionResult {

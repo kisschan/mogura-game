@@ -28,15 +28,21 @@ class MobileGameplayLayoutContractTest {
 
     @Test
     fun `dig placement still fits the smallest supported viewport`() {
-        val spec = mobileGameplayLayoutSpec(
-            viewportWidth = 360.dp,
-            viewportHeight = 740.dp,
-            actionBarHeight = MOBILE_PLAY_DIG_ACTION_BAR_HEIGHT,
-        )
+        listOf(1f, 1.5f).forEach { fontScale ->
+            val stripHeight = actionGuidanceStripHeight(hasCaptureOutcome = false, fontScale)
+            val buttonHeight = compactActionButtonHeight(hasEndTurnHint = false, fontScale)
+            val actionBarHeight = compactActionBarHeight(ActionBarContentMode.DIG_PLACEMENT, stripHeight, buttonHeight)
+            val spec = mobileGameplayLayoutSpec(
+                viewportWidth = 360.dp,
+                viewportHeight = 740.dp,
+                actionBarHeight = actionBarHeight,
+            )
 
-        assertTrue(spec.fitsWithoutScroll)
-        assertTrue(spec.usedHeight <= 740.dp)
-        assertTrue(spec.actionBarHeight <= MOBILE_PLAY_DIG_ACTION_BAR_HEIGHT)
+            assertTrue(spec.fitsWithoutScroll)
+            assertTrue(spec.usedHeight <= 740.dp)
+            assertTrue(spec.actionBarHeight >= ACTION_BAR_VERTICAL_PADDING * 2 + stripHeight + ACTION_BAR_CONTENT_GAP + buttonHeight)
+            if (fontScale == 1f) assertEquals(MOBILE_PLAY_DIG_ACTION_BAR_HEIGHT, spec.actionBarHeight)
+        }
     }
 
     @Test

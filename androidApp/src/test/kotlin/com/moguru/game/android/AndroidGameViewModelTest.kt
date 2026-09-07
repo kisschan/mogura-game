@@ -188,27 +188,7 @@ class AndroidGameViewModelTest {
     fun `robbery action appears on next own turn in opponent nest`() {
         val controller = testController()
         val viewModel = AndroidGameViewModel(controller)
-        viewModel.startNewGame(2)
-        val engine = controller.engine!!
-        val thief = engine.players[0]
-        val victim = engine.players[1]
-        victim.carryFood(FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = false))
-        victim.storeFood()
-        victim.moveTo(Position(1, 1))
-        connectLeftNestToRightNest(engine)
-
-        engine.advancePhase()
-        viewModel.onCellClicked(victim.nestPosition)
-        viewModel.finishTurnConsumptionAnimation(
-            requireNotNull(viewModel.uiState.value.turnConsumptionAnimation).id,
-        )
-        engine.advancePhase()
-        viewModel.finishTurn()
-        viewModel.finishTurnConsumptionAnimation(
-            requireNotNull(viewModel.uiState.value.turnConsumptionAnimation).id,
-        )
-        engine.advancePhase()
-        viewModel.skip()
+        val (thief, victim) = advanceToRobberyDecision(controller, viewModel)
 
         var state = viewModel.uiState.value
         assertEquals(TurnPhase.DECIDE, state.playState.actionAvailability.activePhase)
@@ -226,9 +206,61 @@ class AndroidGameViewModelTest {
 
         viewModel.carry()
 
-        assertTrue(thief.isCarrying)
-        assertEquals(0, thief.score)
+        assertFalse(thief.isCarrying)
+        assertEquals(1, thief.score)
+        assertEquals(listOf(FoodType.EARTHWORM), thief.storedFoods.map { it.type })
+        assertEquals(victim.nestPosition, thief.position)
         assertTrue(victim.storedFoods.isEmpty())
+        assertEquals(0, victim.score)
+        state = viewModel.uiState.value
+        val consumption = requireNotNull(state.turnConsumptionAnimation)
+        assertEquals("点: 1", state.playState.currentPlayer.scoreText)
+        assertNull(state.boardState.cells.flatMap { it.players }.single { it.playerId == thief.id }.carriedFoodType)
+        assertTrue(state.boardState.cells.single { it.position == victim.nestPosition }.players.any { it.playerId == thief.id })
+
+        viewModel.carry()
+        assertEquals(1, thief.score)
+        assertEquals(1, thief.storedFoods.size)
+        viewModel.finishTurnConsumptionAnimation(consumption.id)
+
+        state = viewModel.uiState.value
+        assertNull(state.boardState.cells.flatMap { it.players }.single { it.playerId == thief.id }.carriedFoodType)
+        assertEquals(victim.nestPosition, thief.position)
+    }
+
+    @Test
+    fun `robbery carry updates winning score before the normal result animation finishes`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+        val (thief, victim) = advanceToRobberyDecision(controller, viewModel)
+        thief.carryFood(FoodCard(FoodType.CENTIPEDE, emptyMap(), isFaceDown = false))
+        thief.storeFood()
+        viewModel.rob()
+
+        viewModel.carry()
+
+        val animatingState = viewModel.uiState.value
+        val consumption = requireNotNull(animatingState.turnConsumptionAnimation)
+        assertEquals(GameState.FINISHED, controller.engine!!.gameState)
+        assertEquals(4, thief.score)
+        assertEquals(0, victim.score)
+        assertEquals("点: 4", animatingState.playState.currentPlayer.scoreText)
+        assertEquals(victim.nestPosition, thief.position)
+        assertNull(animatingState.boardState.cells.flatMap { it.players }.single { it.playerId == thief.id }.carriedFoodType)
+        assertNull(animatingState.gameResult)
+        assertFalse(animatingState.showGameResultOverlay)
+        assertTrue(animatingState.visibleActions.isEmpty())
+
+        viewModel.finishTurnConsumptionAnimation(consumption.id)
+
+        val completedState = viewModel.uiState.value
+        val result = requireNotNull(completedState.gameResult)
+        assertTrue(completedState.showGameResultOverlay)
+        assertEquals(thief.id, result.winnerPlayerId)
+        assertEquals(4, result.players.single { it.playerId == thief.id }.score)
+        assertEquals(0, result.players.single { it.playerId == victim.id }.score)
+        assertEquals(victim.nestPosition, thief.position)
+        assertNull(completedState.boardState.cells.flatMap { it.players }.single { it.playerId == thief.id }.carriedFoodType)
     }
 
     @Test
@@ -647,6 +679,35 @@ class AndroidGameViewModelTest {
 
     private fun testViewModel(): AndroidGameViewModel =
         AndroidGameViewModel(testController())
+
+    private fun advanceToRobberyDecision(
+        controller: MoguraGameController,
+        viewModel: AndroidGameViewModel,
+    ): Pair<Player, Player> {
+        viewModel.startNewGame(2)
+        val engine = controller.engine!!
+        val thief = engine.players[0]
+        val victim = engine.players[1]
+        victim.carryFood(FoodCard(FoodType.EARTHWORM, emptyMap(), isFaceDown = false))
+        victim.storeFood()
+        victim.moveTo(Position(1, 1))
+        connectLeftNestToRightNest(engine)
+
+        engine.advancePhase()
+        viewModel.onCellClicked(victim.nestPosition)
+        viewModel.finishTurnConsumptionAnimation(
+            requireNotNull(viewModel.uiState.value.turnConsumptionAnimation).id,
+        )
+        engine.advancePhase()
+        viewModel.finishTurn()
+        viewModel.finishTurnConsumptionAnimation(
+            requireNotNull(viewModel.uiState.value.turnConsumptionAnimation).id,
+        )
+        engine.advancePhase()
+        viewModel.skip()
+        assertEquals(TurnPhase.DECIDE, engine.currentPhase)
+        return thief to victim
+    }
 
     private fun placeFoodForCapture(
         engine: GameEngine,

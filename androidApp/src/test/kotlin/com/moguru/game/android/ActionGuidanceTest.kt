@@ -8,6 +8,7 @@ import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
 import com.moguru.game.model.TileShape
 import com.moguru.game.presenter.ActionAvailability
+import com.moguru.game.presenter.FoodDecisionSource
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.util.FixedDiceRoller
 import com.moguru.game.util.FixedShuffler
@@ -177,6 +178,26 @@ class ActionGuidanceTest {
         assertFalse(instruction.contains("タベる"), instruction)
         assertFalse(instruction.contains("レンコウ"), instruction)
         assertFalse(instruction.contains("手番終了"), instruction)
+    }
+
+    @Test
+    fun `only stolen food carry guidance promises immediate scoring`() {
+        val state = decisionState(listOf(AndroidVisibleAction.EAT, AndroidVisibleAction.CARRY))
+        val stolen = state.copy(
+            playState = state.playState.copy(pendingDecisionSource = FoodDecisionSource.ROBBERY),
+        )
+        val captured = state.copy(
+            playState = state.playState.copy(pendingDecisionSource = FoodDecisionSource.CAPTURE),
+        )
+
+        val stolenInstruction = actionBarInstruction(stolen)
+
+        assertTrue(stolenInstruction.contains("タベる"), stolenInstruction)
+        assertTrue(stolenInstruction.contains("レンコウ"), stolenInstruction)
+        assertTrue(stolenInstruction.contains("即得点"), stolenInstruction)
+        assertFalse(actionBarInstruction(captured).contains("即得点"))
+        assertTrue(AndroidVisibleAction.CARRY.accessibilityLabel(TurnPhase.DECIDE, FoodDecisionSource.ROBBERY).contains("すぐ自分の巣へ移して得点"))
+        assertEquals("レンコウ（巣へ持ち帰る）", AndroidVisibleAction.CARRY.accessibilityLabel(TurnPhase.DECIDE, FoodDecisionSource.CAPTURE))
     }
 
     @Test

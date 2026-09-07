@@ -12,6 +12,7 @@ import com.moguru.game.model.TileShape
 import com.moguru.game.util.FixedDiceRoller
 import com.moguru.game.util.FixedShuffler
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -76,6 +77,11 @@ class EatAnimationEventTest {
         assertEquals(healthBefore, event.healthBefore)
         assertEquals(healthBefore + 2, event.healthAfter)
         assertTrue(victim.storedFoods.isEmpty())
+        assertEquals(0, victim.score)
+        assertEquals(0, thief.score)
+        assertTrue(thief.storedFoods.isEmpty())
+        assertFalse(thief.isCarrying)
+        assertEquals(victim.nestPosition, thief.position)
     }
 
     @Test

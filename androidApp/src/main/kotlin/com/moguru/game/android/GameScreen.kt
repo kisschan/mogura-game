@@ -100,6 +100,7 @@ import com.moguru.game.presenter.CaptureOutcomeKind
 import com.moguru.game.presenter.DigCandidateDisplay
 import com.moguru.game.presenter.DigTileChoice
 import com.moguru.game.presenter.EatAnimationEvent
+import com.moguru.game.presenter.FoodDecisionSource
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.presenter.RobberyTargetDisplay
 import com.moguru.game.presenter.displayName
@@ -1593,6 +1594,7 @@ private fun CompactDigPlacementControls(
 ) {
     val enabledCandidates = state.playState.digCandidates.filter { it.enabled }
     val rotationDegrees = state.playState.selectedRotation.steps * 90
+    val buttonHeight = compactActionButtonHeight(hasEndTurnHint = false, LocalDensity.current.fontScale)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -1604,7 +1606,7 @@ private fun CompactDigPlacementControls(
                     onClick = soundEffectClick { onChoice(candidate.choice) },
                     modifier = Modifier
                         .weight(0.72f)
-                        .height(COMPACT_DIG_BUTTON_HEIGHT),
+                        .height(buttonHeight),
                     contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp),
                     shape = RoundedCornerShape(8.dp),
                     border = BorderStroke(
@@ -1645,7 +1647,9 @@ private fun CompactDigPlacementControls(
             },
             modifier = Modifier
                 .weight(0.9f)
-                .height(COMPACT_DIG_BUTTON_HEIGHT),
+                .height(buttonHeight)
+                .testTag("dig-rotation-button")
+                .semantics { contentDescription = "右に90度回転、現在の向き ${rotationDegrees}度" },
             contentPadding = PaddingValues(0.dp),
             shape = RoundedCornerShape(8.dp),
             border = BorderStroke(2.dp, Color(0xFF9A7A52)),
@@ -1654,43 +1658,45 @@ private fun CompactDigPlacementControls(
                 contentColor = Color(0xFF2E2115),
             ),
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .semantics { contentDescription = "回転 ${rotationDegrees}度" },
-                contentAlignment = Alignment.Center,
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
             ) {
-                Text(
-                    text = "↺",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Black,
-                    maxLines = 1,
-                    textAlign = TextAlign.Center,
-                )
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 4.dp, bottom = 3.dp),
-                    shape = RoundedCornerShape(5.dp),
-                    border = BorderStroke(1.dp, Color(0xFF9A7A52)),
-                    color = Color(0xFFFFE8A8),
-                    contentColor = Color(0xFF2E2115),
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
                     Text(
-                        text = "${rotationDegrees}°",
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 0.dp),
-                        fontSize = 9.sp,
+                        text = "↻",
+                        fontSize = 20.sp,
+                        lineHeight = 22.sp,
                         fontWeight = FontWeight.Black,
                         maxLines = 1,
                     )
+                    Surface(
+                        shape = RoundedCornerShape(5.dp),
+                        border = BorderStroke(1.dp, Color(0xFF9A7A52)),
+                        color = Color(0xFFFFE8A8),
+                        contentColor = Color(0xFF2E2115),
+                    ) {
+                        Text(
+                            text = "${rotationDegrees}°",
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                            fontSize = 10.sp,
+                            lineHeight = 12.sp,
+                            fontWeight = FontWeight.Black,
+                            maxLines = 1,
+                        )
+                    }
                 }
+                Text("右に90°", fontSize = 10.sp, lineHeight = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
             }
         }
         Button(
             onClick = soundEffectClick(onClick = onConfirm),
             modifier = Modifier
                 .weight(1.05f)
-                .height(COMPACT_DIG_BUTTON_HEIGHT),
+                .height(buttonHeight),
             contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(
@@ -2210,6 +2216,7 @@ private fun ActionControls(
                 buttonHeight = buttonHeight,
                 modifier = Modifier.weight(1f),
                 testTag = primaryTag,
+                decisionSource = state.playState.pendingDecisionSource,
                 onClick = { viewModel.performVisibleAction(action) },
             )
         }
@@ -2223,6 +2230,7 @@ private fun ActionButton(
     buttonHeight: Dp,
     modifier: Modifier,
     testTag: String? = null,
+    decisionSource: FoodDecisionSource? = null,
     onClick: () -> Unit,
 ) {
     val colors = when (action) {
@@ -2250,7 +2258,7 @@ private fun ActionButton(
         modifier = taggedModifier
             .height(buttonHeight)
             .semantics {
-                contentDescription = action.accessibilityLabel(phase)
+                contentDescription = action.accessibilityLabel(phase, decisionSource)
             },
         contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
         shape = RoundedCornerShape(8.dp),
@@ -2292,9 +2300,16 @@ internal fun AndroidVisibleAction.displayLabel(phase: TurnPhase? = null): String
     AndroidVisibleAction.END_TURN -> "手番終了"
 }
 
-internal fun AndroidVisibleAction.accessibilityLabel(phase: TurnPhase? = null): String = when (this) {
+internal fun AndroidVisibleAction.accessibilityLabel(
+    phase: TurnPhase? = null,
+    decisionSource: FoodDecisionSource? = null,
+): String = when (this) {
     AndroidVisibleAction.EAT -> "タベる（食べる）"
-    AndroidVisibleAction.CARRY -> "レンコウ（巣へ持ち帰る）"
+    AndroidVisibleAction.CARRY -> if (decisionSource == FoodDecisionSource.ROBBERY) {
+        "レンコウ（エサをすぐ自分の巣へ移して得点）"
+    } else {
+        "レンコウ（巣へ持ち帰る）"
+    }
     AndroidVisibleAction.SKIP -> when (phase) {
         TurnPhase.MOVE -> "移動しない。その場に残って次のフェーズへ進む"
         TurnPhase.CAPTURE -> "捕獲しない。捕獲を省略して次のフェーズへ進む"
@@ -2405,7 +2420,7 @@ internal fun compactActionBarContentHeight(
         ACTION_BAR_CONTENT_GAP +
         when (mode) {
             ActionBarContentMode.STANDARD -> buttonHeight
-            ActionBarContentMode.DIG_PLACEMENT -> COMPACT_DIG_BUTTON_HEIGHT
+            ActionBarContentMode.DIG_PLACEMENT -> maxOf(COMPACT_DIG_BUTTON_HEIGHT, buttonHeight)
         }
 
 internal fun compactActionBarHeight(
@@ -2495,7 +2510,11 @@ internal fun actionBarInstruction(state: AndroidGameUiState): String {
         }
         TurnPhase.DECIDE -> when {
             actions.canRob -> "次：エサを選び「強奪」"
-            actions.canEat && actions.canCarry -> "次：「タベる」か「レンコウ」を選択"
+            actions.canEat && actions.canCarry -> if (state.playState.pendingDecisionSource == FoodDecisionSource.ROBBERY) {
+                "次：「タベる」か「レンコウ」（即得点）"
+            } else {
+                "次：「タベる」か「レンコウ」を選択"
+            }
             actions.canEat -> "次：巣のエサを「タベる」か「手番終了」"
             else -> "次：「手番終了」で次の人へ"
         }
