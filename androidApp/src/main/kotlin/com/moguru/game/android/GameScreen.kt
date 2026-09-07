@@ -116,8 +116,8 @@ internal const val BOARD_CURRENT_PLAYER_OUTLINE_Z = 75f
 internal const val BOARD_CLICK_TARGET_Z = 80f
 
 internal val MOBILE_PLAY_HUD_HEIGHT = 56.dp
-internal val MOBILE_PLAY_ACTION_BAR_HEIGHT = 104.dp
-internal val MOBILE_PLAY_DIG_ACTION_BAR_HEIGHT = 104.dp
+internal val MOBILE_PLAY_ACTION_BAR_HEIGHT = 120.dp
+internal val MOBILE_PLAY_DIG_ACTION_BAR_HEIGHT = 110.dp
 internal val MOBILE_PLAY_HORIZONTAL_PADDING = 8.dp
 internal val MOBILE_PLAY_VERTICAL_PADDING = 4.dp
 internal val MOBILE_PLAY_GAP = 4.dp
@@ -128,8 +128,14 @@ internal val EVENT_STRIP_HEIGHT = 40.dp
 internal val COMPACT_ACTION_BUTTON_HEIGHT = 44.dp
 internal val COMPACT_DIG_BUTTON_HEIGHT = 44.dp
 internal val RESULT_EVENT_STRIP_HEIGHT = 52.dp
+internal const val NEXT_ACTION_LINE_HEIGHT_SP = 16
+internal const val NEXT_ACTION_MAX_LINES = 2
+private const val NORMAL_EVENT_LINE_HEIGHT_SP = 12
+private val NEXT_ACTION_EVENT_GAP = 2.dp
 internal val MOBILE_PLAY_RESULT_ACTION_BAR_HEIGHT =
     ACTION_BAR_VERTICAL_PADDING * 2f +
+        NEXT_ACTION_LINE_HEIGHT_SP.dp * NEXT_ACTION_MAX_LINES.toFloat() +
+        NEXT_ACTION_EVENT_GAP +
         RESULT_EVENT_STRIP_HEIGHT +
         ACTION_BAR_CONTENT_GAP +
         COMPACT_ACTION_BUTTON_HEIGHT
@@ -1271,6 +1277,7 @@ private fun GameplayActionBar(
                 verticalArrangement = Arrangement.spacedBy(ACTION_BAR_CONTENT_GAP),
             ) {
                 EventStrip(
+                    instruction = actionBarInstruction(state),
                     text = latestEventText(state),
                     captureOutcome = state.playState.captureOutcome,
                     hasHistory = state.logs.isNotEmpty(),
@@ -1285,6 +1292,7 @@ private fun GameplayActionBar(
                     )
                     state.playState.captureTargets.size > 1 && state.visibleActions.contains(AndroidVisibleAction.CAPTURE) ->
                         CompactTargetActionRow(
+                            phase = activePhase,
                             labels = state.playState.captureTargets.map { captureTargetLabel(it, state.playState.captureTargets.size) },
                             selectedIndex = state.playState.captureTargets.indexOfFirst { it.selected },
                             onSelect = viewModel::selectCaptureTarget,
@@ -1295,6 +1303,7 @@ private fun GameplayActionBar(
                         )
                     state.playState.robberyTargets.size > 1 && state.visibleActions.contains(AndroidVisibleAction.ROB) ->
                         CompactTargetActionRow(
+                            phase = activePhase,
                             labels = state.playState.robberyTargets.map {
                                 "${robberyOwnerLabel(it)} ${robberyTargetLabel(it, state.playState.robberyTargets.size)}"
                             },
@@ -1315,16 +1324,6 @@ private fun GameplayActionBar(
                         onExtraAction = { action -> viewModel.performVisibleAction(action) },
                     )
                     state.visibleActions.isNotEmpty() -> ActionControls(state = state, viewModel = viewModel)
-                    else -> Text(
-                        text = actionBarInstruction(state),
-                        modifier = Modifier.fillMaxWidth(),
-                        color = Color(0xFF4B3826),
-                        fontSize = 13.sp,
-                        lineHeight = 15.sp,
-                        fontWeight = FontWeight.Black,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
                 }
             }
         }
@@ -1339,50 +1338,73 @@ private fun GameplayActionBar(
 
 @Composable
 private fun EventStrip(
+    instruction: String,
     text: String?,
     captureOutcome: CaptureOutcomeDisplay?,
     hasHistory: Boolean,
     onHistoryClick: () -> Unit,
 ) {
+    val fontScale = LocalDensity.current.fontScale
     val presentation = eventStripPresentation(
         outcome = captureOutcome,
-        fontScale = LocalDensity.current.fontScale,
+        fontScale = fontScale,
     )
     val containerColor = presentation.containerArgb?.let(::Color) ?: Color.Transparent
     val border = presentation.borderArgb?.let { BorderStroke(1.dp, Color(it)) }
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(actionGuidanceStripHeight(captureOutcome != null, fontScale)),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Surface(
-            modifier = Modifier
-                .weight(1f)
-                .height(presentation.stripHeight),
-            shape = RoundedCornerShape(6.dp),
-            color = containerColor,
-            border = border,
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(NEXT_ACTION_EVENT_GAP),
         ) {
             Text(
-                text = text.orEmpty(),
+                text = instruction,
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(
-                        horizontal = if (captureOutcome == null) 0.dp else 6.dp,
-                        vertical = if (captureOutcome == null) 2.dp else RESULT_EVENT_STRIP_VERTICAL_PADDING,
-                    ),
-                color = Color(presentation.contentArgb),
-                fontSize = if (captureOutcome == null) 11.sp else 10.sp,
-                lineHeight = if (captureOutcome == null) 12.sp else RESULT_BANNER_LINE_HEIGHT_SP.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = presentation.maxLines,
+                    .fillMaxWidth()
+                    .height(NEXT_ACTION_LINE_HEIGHT_SP.dp * NEXT_ACTION_MAX_LINES.toFloat() * fontScale)
+                    .testTag("next-action-instruction"),
+                color = Color(0xFF2E2115),
+                fontSize = 13.sp,
+                lineHeight = NEXT_ACTION_LINE_HEIGHT_SP.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = NEXT_ACTION_MAX_LINES,
                 overflow = TextOverflow.Ellipsis,
             )
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(if (captureOutcome == null) normalEventTextHeight(fontScale) else presentation.stripHeight),
+                shape = RoundedCornerShape(6.dp),
+                color = containerColor,
+                border = border,
+            ) {
+                Text(
+                    text = text.orEmpty(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .testTag("latest-event")
+                        .padding(
+                            horizontal = if (captureOutcome == null) 0.dp else 6.dp,
+                            vertical = RESULT_EVENT_STRIP_VERTICAL_PADDING,
+                        ),
+                    color = Color(presentation.contentArgb),
+                    fontSize = if (captureOutcome == null) 11.sp else 10.sp,
+                    lineHeight = if (captureOutcome == null) NORMAL_EVENT_LINE_HEIGHT_SP.sp else RESULT_BANNER_LINE_HEIGHT_SP.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = presentation.maxLines,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         if (hasHistory) {
             TextButton(
                 onClick = soundEffectClick(onClick = onHistoryClick),
-                modifier = Modifier.height(presentation.stripHeight),
+                modifier = Modifier.height(EVENT_STRIP_HEIGHT),
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
             ) {
                 Text("履歴", fontSize = 10.sp, fontWeight = FontWeight.Black, maxLines = 1)
@@ -1683,6 +1705,7 @@ private fun CompactDigPlacementControls(
 
 @Composable
 private fun CompactTargetActionRow(
+    phase: TurnPhase?,
     labels: List<String>,
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
@@ -1694,6 +1717,9 @@ private fun CompactTargetActionRow(
     val selected = selectedIndex.takeIf { it in labels.indices } ?: 0
     val next = if (labels.isEmpty()) 0 else (selected + 1) % labels.size
     val showTargetCycler = labels.size > 1
+    val buttonHeight = compactActionButtonHeight(
+        hasEarlyEndTurnAction(phase, extraActions), LocalDensity.current.fontScale,
+    )
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -1704,7 +1730,7 @@ private fun CompactTargetActionRow(
                 onClick = soundEffectClick { onSelect(next) },
                 modifier = Modifier
                     .weight(1.35f)
-                    .height(COMPACT_ACTION_BUTTON_HEIGHT),
+                    .height(buttonHeight),
                 contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
                 shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(2.dp, Color(0xFF158A45)),
@@ -1729,6 +1755,8 @@ private fun CompactTargetActionRow(
         }
         ActionButton(
             action = action,
+            phase = phase,
+            buttonHeight = buttonHeight,
             modifier = Modifier.weight(1f),
             testTag = "primary-action",
             onClick = onAction,
@@ -1736,6 +1764,8 @@ private fun CompactTargetActionRow(
         extraActions.forEach { extraAction ->
             ActionButton(
                 action = extraAction,
+                phase = phase,
+                buttonHeight = buttonHeight,
                 modifier = Modifier.weight(1f),
                 onClick = { onExtraAction(extraAction) },
             )
@@ -1754,6 +1784,9 @@ private fun CompactBoardActionRow(
     onExtraAction: (AndroidVisibleAction) -> Unit,
 ) {
     val selectedBoardAction = selectedPrimaryBoardAction(boardActions, selectedIndex) ?: return
+    val buttonHeight = compactActionButtonHeight(
+        hasEarlyEndTurnAction(phase, extraActions), LocalDensity.current.fontScale,
+    )
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -1771,7 +1804,7 @@ private fun CompactBoardActionRow(
                 },
                 modifier = Modifier
                     .weight(1f)
-                    .height(COMPACT_ACTION_BUTTON_HEIGHT)
+                    .height(buttonHeight)
                     .semantics {
                         contentDescription = selectorDescription
                     },
@@ -1798,7 +1831,7 @@ private fun CompactBoardActionRow(
             modifier = Modifier
                 .weight(if (phase == TurnPhase.MOVE) 1.6f else 1.2f)
                 .testTag("primary-action")
-                .height(COMPACT_ACTION_BUTTON_HEIGHT),
+                .height(buttonHeight),
             contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(
@@ -1813,16 +1846,18 @@ private fun CompactBoardActionRow(
                     selectedBoardAction.label
                 },
                 fontSize = 13.sp,
-                lineHeight = 15.sp,
+                lineHeight = 14.sp,
                 fontWeight = FontWeight.Black,
                 textAlign = TextAlign.Center,
-                maxLines = 2,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
         }
         extraActions.forEach { action ->
             ActionButton(
                 action = action,
+                phase = phase,
+                buttonHeight = buttonHeight,
                 modifier = Modifier.weight(1f),
                 onClick = { onExtraAction(action) },
             )
@@ -2158,6 +2193,10 @@ private fun ActionControls(
     state: AndroidGameUiState,
     viewModel: AndroidGameViewModel,
 ) {
+    val phase = state.playState.actionAvailability.activePhase
+    val buttonHeight = compactActionButtonHeight(
+        hasEarlyEndTurnAction(phase, state.visibleActions), LocalDensity.current.fontScale,
+    )
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -2167,6 +2206,8 @@ private fun ActionControls(
         state.visibleActions.forEach { action ->
             ActionButton(
                 action = action,
+                phase = phase,
+                buttonHeight = buttonHeight,
                 modifier = Modifier.weight(1f),
                 testTag = primaryTag,
                 onClick = { viewModel.performVisibleAction(action) },
@@ -2178,6 +2219,8 @@ private fun ActionControls(
 @Composable
 private fun ActionButton(
     action: AndroidVisibleAction,
+    phase: TurnPhase?,
+    buttonHeight: Dp,
     modifier: Modifier,
     testTag: String? = null,
     onClick: () -> Unit,
@@ -2205,38 +2248,64 @@ private fun ActionButton(
     Button(
         onClick = soundEffectClick(onClick = onClick),
         modifier = taggedModifier
-            .height(COMPACT_ACTION_BUTTON_HEIGHT)
+            .height(buttonHeight)
             .semantics {
-                contentDescription = action.accessibilityLabel()
+                contentDescription = action.accessibilityLabel(phase)
             },
         contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
         shape = RoundedCornerShape(8.dp),
         colors = colors,
     ) {
-        Text(
-            action.displayLabel(),
-            fontSize = 13.sp,
-            lineHeight = 15.sp,
-            fontWeight = FontWeight.Black,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                action.displayLabel(phase),
+                fontSize = 13.sp,
+                lineHeight = 15.sp,
+                fontWeight = FontWeight.Black,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (action == AndroidVisibleAction.END_TURN && phase in listOf(TurnPhase.MOVE, TurnPhase.CAPTURE)) {
+                Text(
+                    "残りを省略", fontSize = 10.sp, lineHeight = 12.sp,
+                    textAlign = TextAlign.Center, maxLines = 2,
+                )
+            }
+        }
     }
 }
 
-internal fun AndroidVisibleAction.displayLabel(): String = when (this) {
+internal fun AndroidVisibleAction.displayLabel(phase: TurnPhase? = null): String = when (this) {
     AndroidVisibleAction.CAPTURE -> "捕獲"
     AndroidVisibleAction.ROB -> "強奪"
     AndroidVisibleAction.EAT -> "タベる"
     AndroidVisibleAction.CARRY -> "レンコウ"
-    AndroidVisibleAction.SKIP -> "スキップ"
-    AndroidVisibleAction.END_TURN -> "ターン終了"
+    AndroidVisibleAction.SKIP -> when (phase) {
+        TurnPhase.DIG -> "移動へ進む"
+        TurnPhase.MOVE -> "移動しない"
+        TurnPhase.CAPTURE -> "捕獲しない"
+        TurnPhase.DECIDE -> "タベずに終了"
+        TurnPhase.END -> "手番終了"
+        null -> "次へ進む"
+    }
+    AndroidVisibleAction.END_TURN -> "手番終了"
 }
 
-internal fun AndroidVisibleAction.accessibilityLabel(): String = when (this) {
+internal fun AndroidVisibleAction.accessibilityLabel(phase: TurnPhase? = null): String = when (this) {
     AndroidVisibleAction.EAT -> "タベる（食べる）"
     AndroidVisibleAction.CARRY -> "レンコウ（巣へ持ち帰る）"
-    else -> displayLabel()
+    AndroidVisibleAction.SKIP -> when (phase) {
+        TurnPhase.MOVE -> "移動しない。その場に残って次のフェーズへ進む"
+        TurnPhase.CAPTURE -> "捕獲しない。捕獲を省略して次のフェーズへ進む"
+        else -> displayLabel(phase)
+    }
+    AndroidVisibleAction.END_TURN -> if (phase in listOf(TurnPhase.MOVE, TurnPhase.CAPTURE)) {
+        "手番終了。残りの行動を行わずに手番を終えて、次の人へ交代する"
+    } else {
+        "手番終了。次の人へ交代する"
+    }
+    else -> displayLabel(phase)
 }
 
 internal fun audioVolumePercentLabel(volume: Float): String =
@@ -2253,15 +2322,6 @@ internal fun audioSettingsButtonContentDescription(settings: AndroidAudioSetting
     val normalized = settings.normalized()
     return "音量設定: BGM ${audioVolumeSummaryLabel(normalized.bgmVolume)}、" +
         "効果音 ${audioVolumeSummaryLabel(normalized.soundEffectVolume)}"
-}
-
-private fun phaseInstruction(phase: TurnPhase?): String = when (phase) {
-    TurnPhase.DIG -> "ハイライトされた隣の穴タイルを選んで掘る"
-    TurnPhase.MOVE -> "移動先を選び「このマスへ移動」で確定"
-    TurnPhase.CAPTURE -> "捕獲対象を確認して捕獲する"
-    TurnPhase.DECIDE -> "タベる/レンコウ/強奪を選択"
-    TurnPhase.END -> "ターン終了を押してください"
-    null -> ""
 }
 
 internal fun playBoardMaxWidthForHeight(availableHeight: Dp): Dp =
@@ -2309,35 +2369,55 @@ private fun actionBarHeightForState(state: AndroidGameUiState, fontScale: Float)
     } else {
         ActionBarContentMode.STANDARD
     }
-    val eventStripHeight = if (state.playState.captureOutcome == null) {
-        EVENT_STRIP_HEIGHT
-    } else {
-        resultEventStripHeight(fontScale)
-    }
-    return compactActionBarHeight(mode, eventStripHeight)
+    val eventStripHeight = actionGuidanceStripHeight(state.playState.captureOutcome != null, fontScale)
+    val buttonHeight = compactActionButtonHeight(
+        hasEarlyEndTurnAction(state.playState.actionAvailability.activePhase, state.visibleActions), fontScale,
+    )
+    return compactActionBarHeight(mode, eventStripHeight, buttonHeight)
+}
+
+private fun hasEarlyEndTurnAction(phase: TurnPhase?, actions: List<AndroidVisibleAction>): Boolean =
+    phase in listOf(TurnPhase.MOVE, TurnPhase.CAPTURE) && AndroidVisibleAction.END_TURN in actions
+
+internal fun compactActionButtonHeight(hasEndTurnHint: Boolean, fontScale: Float = 1f): Dp =
+    maxOf(COMPACT_ACTION_BUTTON_HEIGHT, (if (hasEndTurnHint) 54.dp else COMPACT_ACTION_BUTTON_HEIGHT) * fontScale)
+
+private fun normalEventTextHeight(fontScale: Float): Dp =
+    NORMAL_EVENT_LINE_HEIGHT_SP.dp * fontScale + RESULT_EVENT_STRIP_VERTICAL_PADDING * 2f
+
+/** Reserve two instruction lines independently of the latest event or capture result. */
+internal fun actionGuidanceStripHeight(hasCaptureOutcome: Boolean, fontScale: Float = 1f): Dp {
+    val eventHeight = if (hasCaptureOutcome) resultEventStripHeight(fontScale) else normalEventTextHeight(fontScale)
+    return maxOf(
+        52.dp,
+        NEXT_ACTION_LINE_HEIGHT_SP.dp * NEXT_ACTION_MAX_LINES.toFloat() * fontScale +
+            NEXT_ACTION_EVENT_GAP + eventHeight,
+    )
 }
 
 internal fun compactActionBarContentHeight(
     mode: ActionBarContentMode,
-    eventStripHeight: Dp = EVENT_STRIP_HEIGHT,
+    eventStripHeight: Dp = actionGuidanceStripHeight(hasCaptureOutcome = false),
+    buttonHeight: Dp = COMPACT_ACTION_BUTTON_HEIGHT,
 ): Dp =
     ACTION_BAR_VERTICAL_PADDING * 2 +
         eventStripHeight +
         ACTION_BAR_CONTENT_GAP +
         when (mode) {
-            ActionBarContentMode.STANDARD -> COMPACT_ACTION_BUTTON_HEIGHT
+            ActionBarContentMode.STANDARD -> buttonHeight
             ActionBarContentMode.DIG_PLACEMENT -> COMPACT_DIG_BUTTON_HEIGHT
         }
 
 internal fun compactActionBarHeight(
     mode: ActionBarContentMode,
-    eventStripHeight: Dp = EVENT_STRIP_HEIGHT,
+    eventStripHeight: Dp = actionGuidanceStripHeight(hasCaptureOutcome = false),
+    buttonHeight: Dp = COMPACT_ACTION_BUTTON_HEIGHT,
 ): Dp {
     val baseHeight = when (mode) {
         ActionBarContentMode.STANDARD -> MOBILE_PLAY_ACTION_BAR_HEIGHT
         ActionBarContentMode.DIG_PLACEMENT -> MOBILE_PLAY_DIG_ACTION_BAR_HEIGHT
     }
-    return maxOf(baseHeight, compactActionBarContentHeight(mode, eventStripHeight))
+    return maxOf(baseHeight, compactActionBarContentHeight(mode, eventStripHeight, buttonHeight))
 }
 
 internal fun compactTargetActionSlotCount(targetCount: Int): Int =
@@ -2368,12 +2448,7 @@ private fun latestEventText(state: AndroidGameUiState): String? =
     state.gameResult?.let(::gameResultEventText)
         ?: resultBannerText(state.playState.captureOutcome)
         ?: state.lastMessage
-        ?: drawnDigTargetInstruction(
-            phase = state.playState.actionAvailability.activePhase,
-            candidates = state.playState.digCandidates,
-        )
         ?: state.logs.lastOrNull()
-        ?: phaseInstruction(state.playState.actionAvailability.activePhase)
 
 internal fun drawnDigTargetInstruction(
     phase: TurnPhase?,
@@ -2386,20 +2461,48 @@ internal fun drawnDigTargetInstruction(
             !candidate.enabled
     } ?: return null
     val shape = drawn.shape ?: return null
-    return "山札: ${shape.displayName()}。確認してから掘る場所を選んでください。"
+    return "次：掘る場所を選択（山札：${shape.displayName()}）"
 }
 
-private fun actionBarInstruction(state: AndroidGameUiState): String =
-    state.gameResult?.let { gameResultActionInstruction() }
-        ?: if (state.boardState.cells.any { isBoardPrimaryActionCell(it, state.playState.actionAvailability.activePhase) }) {
-            phaseInstruction(state.playState.actionAvailability.activePhase)
+internal fun actionBarInstruction(state: AndroidGameUiState): String {
+    if (state.gameResult != null) return gameResultActionInstruction()
+    if (state.turnConsumptionAnimation != null) return "手番の消費体力を反映中"
+    if (state.eatAnimation != null) return "タベる効果で体力を回復中"
+    if (state.captureAnimation != null) return "捕獲の結果を表示中"
+    if (state.playState.diceRouletteActive) return "捕獲判定中：中央の表示を確認"
+    if (state.showDigControls) return "次：タイルと向きを選び「置く」で確定"
+
+    val actions = state.playState.actionAvailability
+    val hasBoardTarget = state.boardState.cells.any { isBoardPrimaryActionCell(it, actions.activePhase) }
+    return when (actions.activePhase) {
+        TurnPhase.DIG -> if (hasBoardTarget) {
+            drawnDigTargetInstruction(actions.activePhase, state.playState.digCandidates)
+                ?: "次：黄色の候補から掘る場所を選択"
+        } else if (actions.canSkip) {
+            "掘れる隣接タイルなし。「移動へ進む」"
         } else {
-            when (state.playState.actionAvailability.activePhase) {
-                TurnPhase.DIG -> "掘れる隣接タイルなし"
-                TurnPhase.MOVE -> "移動できるマスなし"
-                else -> phaseInstruction(state.playState.actionAvailability.activePhase)
-            }
+            "掘れる隣接タイルなし"
         }
+        TurnPhase.MOVE -> if (hasBoardTarget) {
+            "次：移動先を選び「このマスへ移動」で確定"
+        } else {
+            "移動できるマスなし。「移動しない」で進む"
+        }
+        TurnPhase.CAPTURE -> if (actions.canCapture) {
+            "次：エサを捕獲するか「捕獲しない」"
+        } else {
+            "捕獲できるエサなし。「捕獲しない」で進む"
+        }
+        TurnPhase.DECIDE -> when {
+            actions.canRob -> "次：エサを選び「強奪」"
+            actions.canEat && actions.canCarry -> "次：「タベる」か「レンコウ」を選択"
+            actions.canEat -> "次：巣のエサを「タベる」か「手番終了」"
+            else -> "次：「手番終了」で次の人へ"
+        }
+        TurnPhase.END -> "次：「手番終了」で次の人へ"
+        null -> ""
+    }
+}
 
 internal fun gameResultTitle(result: AndroidGameResultUiState): String =
     result.winnerName?.let { "$it の勝利" } ?: "ゲーム終了"

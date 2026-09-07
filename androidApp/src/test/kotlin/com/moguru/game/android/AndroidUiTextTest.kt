@@ -326,7 +326,7 @@ class AndroidUiTextTest {
         )
 
         assertEquals(
-            "山札: L字タイル。確認してから掘る場所を選んでください。",
+            "次：掘る場所を選択（山札：L字タイル）",
             drawnDigTargetInstruction(TurnPhase.DIG, listOf(drawn)),
         )
         assertNull(drawnDigTargetInstruction(TurnPhase.MOVE, listOf(drawn)))

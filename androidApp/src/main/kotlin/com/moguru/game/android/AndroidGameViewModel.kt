@@ -599,7 +599,10 @@ class AndroidGameViewModel(
             if (actions.canRob) add(AndroidVisibleAction.ROB)
             if (actions.canEat) add(AndroidVisibleAction.EAT)
             if (actions.canCarry) add(AndroidVisibleAction.CARRY)
-            if (actions.canSkip) add(AndroidVisibleAction.SKIP)
+            // At these stages skipping offers the same choice as ending the turn.
+            val skipDuplicatesEnd = actions.canEndTurn &&
+                actions.activePhase in listOf(TurnPhase.DECIDE, TurnPhase.END)
+            if (actions.canSkip && !skipDuplicatesEnd) add(AndroidVisibleAction.SKIP)
             if (actions.canEndTurn) add(AndroidVisibleAction.END_TURN)
         }
     }
