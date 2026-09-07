@@ -1930,27 +1930,13 @@ private fun BoardView(
                     state.captureAnimation?.event?.playerId == player.playerId ||
                     state.eatAnimation?.playerId == player.playerId
                 ) return@forEachIndexed
-                Box(
+                BoardPlayerToken(
+                    player = player,
+                    pieceAlpha = boardPieceAlpha,
                     modifier = Modifier
                         .boardRect(maxWidth, maxHeight, playerRect(cell.position, index, cell.players.size))
                         .zIndex(BOARD_PLAYER_BASE_Z + index),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(999.dp))
-                            .border(2.dp, playerAccentColor(player.playerId), RoundedCornerShape(999.dp))
-                            .padding(2.dp),
-                    ) {
-                        BoardPlayerImage(
-                            playerId = player.playerId,
-                            contentDescription = player.accessibilityLabel,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .graphicsLayer { alpha = boardPieceAlpha },
-                        )
-                    }
-                }
+                )
             }
         }
 
@@ -2556,7 +2542,12 @@ private fun cellDescription(cell: AndroidBoardCellUiState): String =
             )
         }
         if (cell.players.isNotEmpty()) {
-            add("プレイヤー ${cell.players.joinToString { it.accessibilityLabel }}")
+            add("プレイヤー ${cell.players.joinToString { player ->
+                listOfNotNull(
+                    player.accessibilityLabel,
+                    player.carriedFoodType?.let(::carriedFoodContentDescription),
+                ).joinToString("、")
+            }}")
         }
         cell.highlight?.let { tone ->
             add(tone.boardLabel())

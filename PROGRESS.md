@@ -3,6 +3,10 @@
 最終更新: 2026-09-07
 
 ## 現在の状況
+- [x] Androidの全プレイヤー駒に所持エサ情報を渡し、レンコウ中の正本エサタイルを手元（下中央）に駒幅40%の正方形で表示する
+- [x] レンコウ表示を駒の移動・手番交代・帰巣時の納品に同期し、「透過」へ連動させる。読み上げにエサ名とレンコウ中である旨を追加する
+- [x] レンコウ表示の状態遷移を検証する単体テスト4件と、正方形配置・非表示・タップ・透過を確認するComposeテスト4件を追加する
+- コミット範囲（2026-09-07）: Androidレンコウ表示、関連テスト、盤面トークン規約・進捗記録の7ファイル
 - [x] Androidの移動を「盤面で選択 → このマスへ移動で確定」に統一。再タップでは移動せず、最初の候補を仮選択し、単一候補でも選択枠を表示する
 - [x] 移動候補の切替を「次の移動先」と明記し、確定ボタンに列・行を2行目で表示。操作バーの高さを維持して確定ボタンの横幅を確保する
 - [x] 移動の読み上げ説明・遊び方・`AGENT.md`の操作規約を更新し、単体テスト2件とCompose回帰テスト9件を追加する
@@ -77,6 +81,12 @@
 - [x] Androidの移動候補が複数ある局面でも「このマスへ移動」を表示し、操作バーで移動先を切り替え、選択中マスを緑の内枠で確認して実行できるようにする
 
 ## テスト結果
+- 最終実行日: 2026-09-07（レンコウ中エサ表示）
+- TDD確認: 表示用の所持情報を追加する前に `CarriedFoodUiStateTest` を追加し、`carriedFoodType` 未定義によるコンパイル失敗を確認後、実装して成功
+- 検証コピーで `:core:test :androidApp:testDebugUnitTest :androidApp:compileDebugAndroidTestKotlin --no-daemon --max-workers=2` を実行し `BUILD SUCCESSFUL`（core 245件・Android 134件、計379件・失敗0・スキップ0）。前回同様、署名情報を読み込まない隔離環境とJDK 21を使用し、元設定を検査するcoreのconfigテストは除外
+- 全プレイヤーの所持伝播、捕獲からレンコウ選択後の手番消耗演出中/終了後の保持、移動追従、巣への納品後の非表示を単体テストで確認。追加したComposeテスト4件はコンパイル成功
+- 未実施: 接続端末・エミュレーターがないためComposeテスト実行と実画面確認。補助HTMLプレビューの表示もブラウザーのローカルファイル制限で未実施
+- 次の作業: 端末上で `CarriedFoodComposeTest` と盤面全体の表示を確認し、モグラ4種・5種のエサ・小画面・透過時の手元の見やすさを確認する
 - 最終実行日: 2026-09-07
 - Android移動操作のTDD確認: 変更前ソースの検証コピーで、追加した「単一移動候補も選択中になる」単体テストの失敗を確認後、変更後ソースで成功を確認
 - 検証方法: 通常のAndroidビルド設定が署名情報を自動ロードするため、ソース・公開ビルド定義・必要リソースだけを `.codex-analysis/move-selection/workspace` へコピーして実行。署名情報の読み込みを除去し、Gradle設定とキャッシュを分離。JDK・コンパイルターゲットは検証コピー内のみ21に揃え、元のビルド設定は変更しない
@@ -216,11 +226,14 @@
 - `androidApp/src/main/kotlin/com/moguru/game/android/MainActivity.kt`
 - `androidApp/src/main/kotlin/com/moguru/game/android/AndroidGameViewModel.kt`
 - `androidApp/src/main/kotlin/com/moguru/game/android/GameScreen.kt`
+- `androidApp/src/main/kotlin/com/moguru/game/android/BoardPlayerToken.kt`
 - `androidApp/src/main/kotlin/com/moguru/game/android/RulesScreen.kt`
 - `androidApp/src/test/kotlin/com/moguru/game/android/AndroidGameViewModelTest.kt`
 - `androidApp/src/test/kotlin/com/moguru/game/android/MobileGameplayLayoutContractTest.kt`
 - `androidApp/src/androidTest/kotlin/com/moguru/game/android/MobileGameplayComposeTest.kt`
 - `androidApp/src/androidTest/kotlin/com/moguru/game/android/MoveSelectionComposeTest.kt`
+- `androidApp/src/test/kotlin/com/moguru/game/android/CarriedFoodUiStateTest.kt`
+- `androidApp/src/androidTest/kotlin/com/moguru/game/android/CarriedFoodComposeTest.kt`
 - `androidApp/src/main/res/drawable-nodpi/`
 - `androidApp/build.gradle.kts`
 - `.gitignore`

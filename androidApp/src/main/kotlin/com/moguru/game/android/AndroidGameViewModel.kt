@@ -122,6 +122,7 @@ data class AndroidPlayerTokenUiState(
     val playerId: Int,
     val accessibilityLabel: String,
     val isCurrent: Boolean,
+    val carriedFoodType: FoodType? = null,
 )
 
 data class AndroidConnectionEdgeUiState(
@@ -667,6 +668,7 @@ class AndroidGameViewModel(
                                         isCurrent = player == currentPlayer,
                                     ),
                                     isCurrent = player == controller.currentPlayer,
+                                    carriedFoodType = player.carriedFood?.type,
                                 )
                             },
                             highlight = highlights[position],
