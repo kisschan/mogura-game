@@ -1,8 +1,29 @@
 # PROGRESS.md
 
-最終更新: 2026-08-23
+最終更新: 2026-09-07
 
 ## 現在の状況
+- [x] PR #64レビュー対応: 食事音の再生済みイベントをViewModelで保持し、Activity/Effect再生成時の二重再生を防止。次ゲームの食事音と古いイベントの再抑止も確認する
+- [x] Android `versionCode` / `versionName` を `15` から `16` に更新。UI改善と強奪後レンコウの修正をmain向け通常PRへまとめる
+- [x] PR用ブランチ `codex/android-ui-v16` を最新main `42e4644` から作成し、食事・消耗演出とUI改善を統合。mainのActivity再生成時の失敗音重複防止を保持する
+- [x] ⑧の回転アイコンを時計回りの「↻」に合わせ、「右に90°」と現在角度を併記。読み上げも方向と角度を明示し、文字拡大時は掘る操作行の高さを調整する
+- [x] ⑧のCompose回帰テスト4件を追加。L字タイルで時計回り4回の一周、配置確定前のゲーム進行不変、確定後の接続方向、360×740の標準/文字1.5倍表示を検証する
+- [x] ⑤を遊び方に合わせ、強奪後レンコウをエサだけの即時貯蔵・得点に変更。モグラは相手巣に残り、所持状態にならない。要件8章・`AGENT.md`・`CLAUDE.md`に明記し、Androidの案内と読み上げにも即得点を反映
+- [x] ⑤の得点移転・選択カード・重複操作・位置維持・勝利得点・既存の体力消耗順を確認。通常捕獲のレンコウと強奪後にタベる挙動の回帰テストも補強
+- コミット済み（③④）: `23c7da1` `fix(android): 操作の省略と終了を区別し次操作を常時案内`
+- [x] Androidの③スキップ/終了の意味を明確化。「移動しない」「捕獲しない」など段階別の名称にし、早期の「手番終了」には「残りを省略」を併記。ENDと巣の任意食事では終了ボタンを1つに統合する
+- [x] Androidの④次操作案内を直近イベント・捕獲結果から分離して常時表示。掘る場所選択/配置待ち、移動確定、捕獲、強奪、巣の食事、演出中を状態に合わせて案内する
+- [x] 文字拡大時は標準操作行の高さも拡張し、移動先座標と早期終了の補足の折り返しに対応。通常バー120dp・配置待ち110dp・捕獲結果144dpを基準に盤面を残り領域へ収める
+- コミット範囲（③④、2026-09-07）: `AndroidGameViewModel.kt`、`GameScreen.kt`、`RulesScreen.kt`、新規 `ActionGuidanceTest.kt` / `ActionGuidanceComposeTest.kt`、既存UI文言・レイアウト契約テスト、`AGENT.md`、本記録の9ファイル
+- コミット済み（②）: `85308f6` `fix(android): レンコウ中のエサをモグラの手元に表示`
+- [x] Androidの全プレイヤー駒に所持エサ情報を渡し、レンコウ中の正本エサタイルを手元（下中央）に駒幅40%の正方形で表示する
+- [x] レンコウ表示を駒の移動・手番交代・帰巣時の納品に同期し、「透過」へ連動させる。読み上げにエサ名とレンコウ中である旨を追加する
+- [x] レンコウ表示の状態遷移を検証する単体テスト4件と、正方形配置・非表示・タップ・透過を確認するComposeテスト4件を追加する
+- コミット範囲（2026-09-07）: Androidレンコウ表示、関連テスト、盤面トークン規約・進捗記録の7ファイル
+- [x] Androidの移動を「盤面で選択 → このマスへ移動で確定」に統一。再タップでは移動せず、最初の候補を仮選択し、単一候補でも選択枠を表示する
+- [x] 移動候補の切替を「次の移動先」と明記し、確定ボタンに列・行を2行目で表示。操作バーの高さを維持して確定ボタンの横幅を確保する
+- [x] 移動の読み上げ説明・遊び方・`AGENT.md`の操作規約を更新し、単体テスト2件とCompose回帰テスト9件を追加する
+- コミット範囲（2026-09-07）: Android移動UI修正、関連テスト、遊び方・操作規約・進捗記録の6ファイル
 - [x] 次回AABリリース用にAndroid `versionCode` / `versionName` を `11` に更新
 - [x] 盤面、穴タイル、エサ、プレイヤーのモデル実装
 - [x] 移動、タイル配置、ターン進行のエンジン実装
@@ -73,6 +94,35 @@
 - [x] Androidの移動候補が複数ある局面でも「このマスへ移動」を表示し、操作バーで移動先を切り替え、選択中マスを緑の内枠で確認して実行できるようにする
 
 ## テスト結果
+- 最終実行日: 2026-09-07（PR #64の食事効果音レビュー対応）
+- TDD: 単体・Compose回帰テストを先に追加し、ViewModelのイベント消費APIが未実装のコンパイル失敗を確認後に実装。隔離検証はcore 247件・Android 151件成功、Desktop 51件成功・任意プレビュー3件スキップ、Composeテストソースのコンパイル成功。独立レビューでも問題なし
+- 最終実行日: 2026-09-07（main統合後のv16）
+- PR用ブランチの隔離検証でcore 247件・Android 150件成功、Desktop 54件中51件成功・任意プレビュー3件スキップ。Composeテストソースのコンパイル成功。音声合成のPythonテストも9件成功
+- mainの失敗音重複防止を保持していることを独立レビューで確認。署名情報を読み込まないJDK 21の検証条件と、実端末検証未実施の制約は下記のとおり
+- 最終実行日: 2026-09-07（⑤強奪後レンコウの即時得点・⑧回転方向表示）
+- TDD確認: 旧処理に対して即時貯蔵・得点と案内のテストがcore 4件、Android 3件失敗することを確認してから実装。新規4件と既存テスト更新を含めて成功
+- 署名情報を読み込まない隔離コピーにdesktopも追加し、`:core:test :androidApp:testDebugUnitTest :androidApp:compileDebugAndroidTestKotlin :desktop:test` が `BUILD SUCCESSFUL`。core 247件・Android 150件は全成功、Desktop 54件中51件成功・3件スキップ（合計451件中448件成功・3件スキップ）
+- ⑧反映後も上記タスクの成功を確認。追加した回転Composeテスト4件はコンパイル成功。Desktopのスキップ3件は明示要求時だけ画像を書き出す任意プレビューテスト
+- 未実施: 端末・エミュレーター未接続のためComposeテスト実行と実画面確認。元チェックアウトの署名付きビルドは実行していない
+- コミット範囲（⑤⑧、2026-09-07）: 強奪後レンコウの即時得点、回転方向表示、関連テスト・要件・表示説明の13ファイル。追加ファイルは `DigRotationComposeTest.kt`。次は端末上で回転操作・文字拡大時の表示と強奪後の得点表示を確認する
+- 最終実行日: 2026-09-07（③操作の省略/終了と④常時操作案内）
+- TDD確認: 案内と結果を同時表示する高さ契約テストを先に追加し、`actionGuidanceStripHeight` 未定義の失敗を確認後に実装。段階別操作と案内の単体テスト13件、レイアウト契約1件、Composeテスト9件を追加
+- 署名情報を読み込まない既存の隔離検証コピーで `:core:test :androidApp:testDebugUnitTest :androidApp:compileDebugAndroidTestKotlin` 成功（core 245件・Android 148件、計393件、失敗0・スキップ0）。JDK 21を使用し、元設定を検査するcoreのconfigテストは除外
+- レビューで見つかった拡大文字のボタン高さ不足と移動先座標の省略を修正。Composeテストは360×740・390×844、文字倍率1.2/1.5、案内とログの分離、履歴、ENDの重複排除、掘る配置、捕獲後の案内を対象とし、コンパイル成功
+- 未実施・次の作業: 接続端末・エミュレーターがないため実画面確認とComposeテスト実行は未実施。端末上で `ActionGuidanceComposeTest` と従来の移動・レンコウ表示テストを実行する
+- 最終実行日: 2026-09-07（レンコウ中エサ表示）
+- TDD確認: 表示用の所持情報を追加する前に `CarriedFoodUiStateTest` を追加し、`carriedFoodType` 未定義によるコンパイル失敗を確認後、実装して成功
+- 検証コピーで `:core:test :androidApp:testDebugUnitTest :androidApp:compileDebugAndroidTestKotlin --no-daemon --max-workers=2` を実行し `BUILD SUCCESSFUL`（core 245件・Android 134件、計379件・失敗0・スキップ0）。前回同様、署名情報を読み込まない隔離環境とJDK 21を使用し、元設定を検査するcoreのconfigテストは除外
+- 全プレイヤーの所持伝播、捕獲からレンコウ選択後の手番消耗演出中/終了後の保持、移動追従、巣への納品後の非表示を単体テストで確認。追加したComposeテスト4件はコンパイル成功
+- 未実施: 接続端末・エミュレーターがないためComposeテスト実行と実画面確認。補助HTMLプレビューの表示もブラウザーのローカルファイル制限で未実施
+- 次の作業: 端末上で `CarriedFoodComposeTest` と盤面全体の表示を確認し、モグラ4種・5種のエサ・小画面・透過時の手元の見やすさを確認する
+- 最終実行日: 2026-09-07
+- Android移動操作のTDD確認: 変更前ソースの検証コピーで、追加した「単一移動候補も選択中になる」単体テストの失敗を確認後、変更後ソースで成功を確認
+- 検証方法: 通常のAndroidビルド設定が署名情報を自動ロードするため、ソース・公開ビルド定義・必要リソースだけを `.codex-analysis/move-selection/workspace` へコピーして実行。署名情報の読み込みを除去し、Gradle設定とキャッシュを分離。JDK・コンパイルターゲットは検証コピー内のみ21に揃え、元のビルド設定は変更しない
+- 実行: 検証コピーで `:core:test :androidApp:testDebugUnitTest :androidApp:compileDebugAndroidTestKotlin --no-daemon --max-workers=2`。結果は `BUILD SUCCESSFUL`（core 245件・Android 130件、計375件・失敗0・スキップ0）。コピー対象外の元ビルド設定を検査するcoreのconfigテストは除外
+- 新規Composeテスト9件を含む計測テストソースのコンパイル成功。盤面タップ・再タップ・候補循環で位置/HP/手番/段階が変わらないこと、ボタン確定、単一/0候補、選択初期化、掘る/捕獲回帰、360×740・390×844での表示範囲と文字切れを検証するテストを追加
+- 未実施: 接続端末・エミュレーターがないため、Composeテスト実行および実画面でのレイアウト確認。元チェックアウトの通常ビルドと署名APK作成は実行していない
+- 差分確認: 対象ファイルの `git diff --check` 成功。次の作業は端末上で `MoveSelectionComposeTest` を実行し、移動操作と2サイズの表示を確認する
 - 最終実行日: 2026-08-23
 - TDD確認: 2人戦の体力切れ勝利と、3〜4人戦で最後の1人になっても得点未達なら継続する回帰テストを先に更新。初回実行は作業開始前から変更されていた `GradlePropertiesTest.kt` の `assertFalse` import不足で対象テスト実行前に停止
 - `GradlePropertiesTest.kt` に不足していた `assertFalse` importだけを追加後、通常の `.\gradlew.bat test` を実行
@@ -205,10 +255,14 @@
 - `androidApp/src/main/kotlin/com/moguru/game/android/MainActivity.kt`
 - `androidApp/src/main/kotlin/com/moguru/game/android/AndroidGameViewModel.kt`
 - `androidApp/src/main/kotlin/com/moguru/game/android/GameScreen.kt`
+- `androidApp/src/main/kotlin/com/moguru/game/android/BoardPlayerToken.kt`
 - `androidApp/src/main/kotlin/com/moguru/game/android/RulesScreen.kt`
 - `androidApp/src/test/kotlin/com/moguru/game/android/AndroidGameViewModelTest.kt`
 - `androidApp/src/test/kotlin/com/moguru/game/android/MobileGameplayLayoutContractTest.kt`
 - `androidApp/src/androidTest/kotlin/com/moguru/game/android/MobileGameplayComposeTest.kt`
+- `androidApp/src/androidTest/kotlin/com/moguru/game/android/MoveSelectionComposeTest.kt`
+- `androidApp/src/test/kotlin/com/moguru/game/android/CarriedFoodUiStateTest.kt`
+- `androidApp/src/androidTest/kotlin/com/moguru/game/android/CarriedFoodComposeTest.kt`
 - `androidApp/src/main/res/drawable-nodpi/`
 - `androidApp/build.gradle.kts`
 - `.gitignore`

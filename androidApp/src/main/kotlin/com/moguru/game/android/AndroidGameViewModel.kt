@@ -15,9 +15,11 @@ import com.moguru.game.model.Rotation
 import com.moguru.game.model.TileShape
 import com.moguru.game.presenter.DigTileChoice
 import com.moguru.game.presenter.CaptureAnimationEvent
+import com.moguru.game.presenter.EatAnimationEvent
 import com.moguru.game.presenter.GameActionResult
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.presenter.PlayScreenUiState
+import com.moguru.game.presenter.TurnConsumptionAnimationEvent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,6 +40,8 @@ data class AndroidGameUiState(
     val gameResult: AndroidGameResultUiState?,
     val showGameResultOverlay: Boolean,
     val captureAnimation: AndroidCaptureAnimationUiState? = null,
+    val eatAnimation: EatAnimationEvent? = null,
+    val turnConsumptionAnimation: TurnConsumptionAnimationEvent? = null,
 )
 
 /** Keeps the original stack visible until the resolved capture has finished moving. */
@@ -75,6 +79,16 @@ data class AndroidHungerMarkerUiState(
     val playerId: Int,
     val health: Int,
     val isCurrent: Boolean,
+    /** Stable meter lane based on engine player order; draw order is handled separately. */
+    val layoutIndex: Int,
+)
+
+private data class AndroidTurnConsumptionDisplaySnapshot(
+    val playState: PlayScreenUiState,
+    val boardState: AndroidBoardUiState,
+    val hungerMarkers: List<AndroidHungerMarkerUiState>,
+    val logs: List<String>,
+    val lastMessage: String?,
 )
 
 data class AndroidBoardUiState(
@@ -108,6 +122,7 @@ data class AndroidPlayerTokenUiState(
     val playerId: Int,
     val accessibilityLabel: String,
     val isCurrent: Boolean,
+    val carriedFoodType: FoodType? = null,
 )
 
 data class AndroidConnectionEdgeUiState(
@@ -146,6 +161,11 @@ class AndroidGameViewModel(
     private var gameResultOverlayDismissed = false
     private var captureAnimation: AndroidCaptureAnimationUiState? = null
     private val captureFailureSoundEffectTrigger = CaptureFailureSoundEffectTrigger()
+    private var eatAnimation: EatAnimationEvent? = null
+    private val eatRecoverySoundEffectTrigger = EatRecoverySoundEffectTrigger()
+    private var turnConsumptionAnimation: TurnConsumptionAnimationEvent? = null
+    private var turnConsumptionDisplaySnapshot: AndroidTurnConsumptionDisplaySnapshot? = null
+    private var turnConsumptionPostMessage: String? = null
 
     private val _uiState = MutableStateFlow(
         snapshot(
@@ -189,6 +209,8 @@ class AndroidGameViewModel(
 
     fun startSelectedGame() {
         captureAnimation = null
+        eatAnimation = null
+        clearTurnConsumptionAnimation()
         gameResultOverlayDismissed = false
         val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
         _uiState.value = snapshot(
@@ -199,6 +221,8 @@ class AndroidGameViewModel(
 
     fun startNewGame(playerCount: Int) {
         captureAnimation = null
+        eatAnimation = null
+        clearTurnConsumptionAnimation()
         gameResultOverlayDismissed = false
         resetSetupDefaults(playerCount)
         val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
@@ -210,6 +234,8 @@ class AndroidGameViewModel(
 
     fun returnToSetup() {
         captureAnimation = null
+        eatAnimation = null
+        clearTurnConsumptionAnimation()
         gameResultOverlayDismissed = false
         _uiState.value = snapshot(
             isGameStarted = false,
@@ -224,7 +250,7 @@ class AndroidGameViewModel(
     }
 
     fun onCellClicked(position: Position) {
-        if (captureAnimation != null) return
+        if (animationInProgress()) return
         val engine = controller.engine ?: return refresh(null)
         val result = when (engine.currentPhase) {
             TurnPhase.DIG -> controller.digAt(position, _uiState.value.playState.selectedRotation)
@@ -278,7 +304,7 @@ class AndroidGameViewModel(
      * 連打などで既に確定済みの場合は黙って無視する。
      */
     fun stopDiceRoulette() {
-        if (captureAnimation != null) return
+        if (animationInProgress()) return
         val result = controller.rollCaptureDice()
         if (result.success) refresh(null)
     }
@@ -288,7 +314,7 @@ class AndroidGameViewModel(
      * 再コンポーズによる重複呼び出しは黙って無視する。
      */
     fun finishDiceRoulette() {
-        if (captureAnimation != null || !_uiState.value.isGameStarted) return
+        if (animationInProgress() || !_uiState.value.isGameStarted) return
         val boardBefore = AndroidBoardUiState(buildBoardCells())
         val result = controller.resolveCaptureRoll()
         if (result.success) {
@@ -311,6 +337,11 @@ class AndroidGameViewModel(
         event: CaptureAnimationEvent?,
     ): AndroidSoundEffect? = captureFailureSoundEffectTrigger.soundEffectFor(event)
 
+    /** Keep played meal IDs across Activity recreation, just like capture sounds. */
+    internal fun eatRecoverySoundEffectFor(
+        event: EatAnimationEvent?,
+    ): AndroidSoundEffect? = eatRecoverySoundEffectTrigger.soundEffectFor(event)
+
     /** An old completion callback must never finish a newer capture or advance twice. */
     fun finishCaptureAnimation(eventId: Long) {
         if (captureAnimation?.event?.id != eventId) return
@@ -319,7 +350,44 @@ class AndroidGameViewModel(
     }
 
     fun eat() {
-        runAction { controller.eatPendingFood() }
+        if (animationInProgress()) return
+        val result = controller.eatPendingFood()
+        if (!result.success) {
+            refresh(result.message)
+            return
+        }
+
+        val event = result.eatAnimation
+        if (event == null) {
+            resolveAfterSuccessfulAction(result.message)
+            return
+        }
+
+        eatAnimation = event
+        // Keep the just-finished DECIDE state visible until the one-shot playback ends.
+        refresh(result.message)
+    }
+
+    /** An old completion callback must never finish a newer meal or advance twice. */
+    fun finishEatAnimation(eventId: Long) {
+        if (eatAnimation?.id != eventId) return
+        eatAnimation = null
+        resolveAfterSuccessfulAction(_uiState.value.lastMessage)
+    }
+
+    /** Stale or duplicate callbacks must never advance the next turn twice. */
+    fun finishTurnConsumptionAnimation(eventId: Long) {
+        if (turnConsumptionAnimation?.id != eventId) return
+        val postMessage = turnConsumptionPostMessage
+        clearTurnConsumptionAnimation()
+        if (controller.engine?.gameState == GameState.PLAYING) {
+            // Continue automatic phase skipping only after this playback has fully finished.
+            // A following turn consumption is captured by resolveAfterSuccessfulAction and
+            // becomes the next serialized animation instead of overlapping this one.
+            resolveAfterSuccessfulAction(postMessage)
+        } else {
+            refresh(postMessage)
+        }
     }
 
     fun carry() {
@@ -335,10 +403,15 @@ class AndroidGameViewModel(
     }
 
     private fun runAction(action: () -> GameActionResult) {
-        if (captureAnimation != null) return
+        if (animationInProgress()) return
+        val displayBeforeAction = displayedTurnConsumptionSnapshot()
         val result = action()
         if (result.success) {
-            resolveAfterSuccessfulAction(result.message)
+            resolveAfterSuccessfulAction(
+                message = result.message,
+                directTurnConsumption = result.turnConsumptionAnimation,
+                directDisplaySnapshot = displayBeforeAction,
+            )
         } else {
             refresh(result.message)
         }
@@ -348,10 +421,36 @@ class AndroidGameViewModel(
      * ユーザー操作の解決後に、選択肢の無いフェーズを自動で進める。
      * 自動進行が発火したらメッセージはログ（「○○ の番です」等）に委ねる。
      */
-    private fun resolveAfterSuccessfulAction(message: String?) {
+    private fun resolveAfterSuccessfulAction(
+        message: String?,
+        directTurnConsumption: TurnConsumptionAnimationEvent? = null,
+        directDisplaySnapshot: AndroidTurnConsumptionDisplaySnapshot? = null,
+    ) {
+        if (directTurnConsumption != null) {
+            val postMessage = messageForCurrentTurn(message)
+            holdTurnConsumptionAnimation(
+                event = directTurnConsumption,
+                displaySnapshot = directDisplaySnapshot ?: displayedTurnConsumptionSnapshot(),
+                postMessage = postMessage,
+            )
+            refresh(postMessage)
+            return
+        }
+
+        // This must come from the controller's live pre-auto state, never the possibly
+        // frozen _uiState. It keeps chained consumption animations exactly one turn apart.
+        val displayBeforeAutoAdvance = liveTurnConsumptionSnapshot(messageForCurrentTurn(message))
         val autoResult = controller.autoAdvanceWhileNoChoice()
         val resolvedMessage = if (autoResult != null) null else message
-        refresh(messageForCurrentTurn(resolvedMessage))
+        val postMessage = messageForCurrentTurn(resolvedMessage)
+        autoResult?.turnConsumptionAnimation?.let { event ->
+            holdTurnConsumptionAnimation(
+                event = event,
+                displaySnapshot = displayBeforeAutoAdvance,
+                postMessage = postMessage,
+            )
+        }
+        refresh(postMessage)
     }
 
     private fun messageForCurrentTurn(message: String?): String? {
@@ -374,8 +473,11 @@ class AndroidGameViewModel(
         isGameStarted: Boolean,
         lastMessage: String?,
     ): AndroidGameUiState {
-        val playState = controller.playScreenUiState()
-        val gameResult = buildGameResult(isGameStarted)
+        val frozenDisplay = turnConsumptionDisplaySnapshot
+        val playState = frozenDisplay?.playState ?: controller.playScreenUiState()
+        // Winner/elimination copy must not leak through the event strip or action bar
+        // before the final health marker movement has completed.
+        val gameResult = if (turnConsumptionAnimation != null) null else buildGameResult(isGameStarted)
         return AndroidGameUiState(
             isGameStarted = isGameStarted,
             selectedPlayerCount = selectedPlayerCount,
@@ -383,19 +485,70 @@ class AndroidGameViewModel(
             selectedStartPlayerIndex = selectedStartPlayerIndex,
             canStartGame = canStartConfiguredGame(),
             playState = playState,
-            boardState = captureAnimation?.boardBefore ?: AndroidBoardUiState(
+            boardState = frozenDisplay?.boardState
+                ?: captureAnimation?.boardBefore
+                ?: AndroidBoardUiState(
+                    cells = if (isGameStarted) buildBoardCells() else emptyList(),
+                ),
+            hungerMarkers = frozenDisplay?.hungerMarkers
+                ?: if (isGameStarted) buildHungerMarkers() else emptyList(),
+            visibleActions = if (isGameStarted && !animationInProgress()) visibleActions(playState) else emptyList(),
+            showDigControls = isGameStarted && !animationInProgress() && playState.digCandidates.any { it.enabled },
+            logs = frozenDisplay?.logs
+                ?: if (isGameStarted) controller.logs.takeLast(5) else emptyList(),
+            lastMessage = if (frozenDisplay != null) frozenDisplay.lastMessage else lastMessage,
+            gameResult = gameResult,
+            showGameResultOverlay = gameResult != null &&
+                turnConsumptionAnimation == null &&
+                !gameResultOverlayDismissed,
+            captureAnimation = captureAnimation,
+            eatAnimation = eatAnimation,
+            turnConsumptionAnimation = turnConsumptionAnimation,
+        )
+    }
+
+    private fun holdTurnConsumptionAnimation(
+        event: TurnConsumptionAnimationEvent,
+        displaySnapshot: AndroidTurnConsumptionDisplaySnapshot,
+        postMessage: String?,
+    ) {
+        turnConsumptionDisplaySnapshot = displaySnapshot
+        turnConsumptionPostMessage = postMessage
+        turnConsumptionAnimation = event
+    }
+
+    private fun clearTurnConsumptionAnimation() {
+        turnConsumptionAnimation = null
+        turnConsumptionDisplaySnapshot = null
+        turnConsumptionPostMessage = null
+    }
+
+    private fun displayedTurnConsumptionSnapshot(): AndroidTurnConsumptionDisplaySnapshot {
+        val displayed = _uiState.value
+        return AndroidTurnConsumptionDisplaySnapshot(
+            playState = displayed.playState,
+            boardState = displayed.boardState,
+            hungerMarkers = displayed.hungerMarkers,
+            logs = displayed.logs,
+            lastMessage = displayed.lastMessage,
+        )
+    }
+
+    private fun liveTurnConsumptionSnapshot(lastMessage: String?): AndroidTurnConsumptionDisplaySnapshot {
+        val isGameStarted = _uiState.value.isGameStarted
+        return AndroidTurnConsumptionDisplaySnapshot(
+            playState = controller.playScreenUiState(),
+            boardState = AndroidBoardUiState(
                 cells = if (isGameStarted) buildBoardCells() else emptyList(),
             ),
             hungerMarkers = if (isGameStarted) buildHungerMarkers() else emptyList(),
-            visibleActions = if (isGameStarted && captureAnimation == null) visibleActions(playState) else emptyList(),
-            showDigControls = isGameStarted && playState.digCandidates.any { it.enabled },
             logs = if (isGameStarted) controller.logs.takeLast(5) else emptyList(),
             lastMessage = lastMessage,
-            gameResult = gameResult,
-            showGameResultOverlay = gameResult != null && !gameResultOverlayDismissed,
-            captureAnimation = captureAnimation,
         )
     }
+
+    private fun animationInProgress(): Boolean =
+        captureAnimation != null || eatAnimation != null || turnConsumptionAnimation != null
 
     private fun buildGameResult(isGameStarted: Boolean): AndroidGameResultUiState? {
         val engine = controller.engine ?: return null
@@ -452,7 +605,10 @@ class AndroidGameViewModel(
             if (actions.canRob) add(AndroidVisibleAction.ROB)
             if (actions.canEat) add(AndroidVisibleAction.EAT)
             if (actions.canCarry) add(AndroidVisibleAction.CARRY)
-            if (actions.canSkip) add(AndroidVisibleAction.SKIP)
+            // At these stages skipping offers the same choice as ending the turn.
+            val skipDuplicatesEnd = actions.canEndTurn &&
+                actions.activePhase in listOf(TurnPhase.DECIDE, TurnPhase.END)
+            if (actions.canSkip && !skipDuplicatesEnd) add(AndroidVisibleAction.SKIP)
             if (actions.canEndTurn) add(AndroidVisibleAction.END_TURN)
         }
     }
@@ -460,15 +616,20 @@ class AndroidGameViewModel(
     private fun buildHungerMarkers(): List<AndroidHungerMarkerUiState> {
         val engine = controller.engine ?: return emptyList()
         val currentPlayer = controller.currentPlayer
-        val activePlayers = engine.players
-            .filter { !it.isEliminated }
+        val activePlayers = engine.players.mapIndexedNotNull { layoutIndex, player ->
+            if (player.isEliminated) null else player to layoutIndex
+        }
 
-        return (activePlayers.filter { it != currentPlayer } + activePlayers.filter { it == currentPlayer })
-            .map { player ->
+        // Draw the current marker last for z-order without changing its meter lane.
+        return (
+            activePlayers.filter { (player) -> player != currentPlayer } +
+                activePlayers.filter { (player) -> player == currentPlayer }
+            ).map { (player, layoutIndex) ->
                 AndroidHungerMarkerUiState(
                     playerId = player.id,
                     health = player.health,
                     isCurrent = player == controller.currentPlayer,
+                    layoutIndex = layoutIndex,
                 )
             }
     }
@@ -516,6 +677,7 @@ class AndroidGameViewModel(
                                         isCurrent = player == currentPlayer,
                                     ),
                                     isCurrent = player == controller.currentPlayer,
+                                    carriedFoodType = player.carriedFood?.type,
                                 )
                             },
                             highlight = highlights[position],

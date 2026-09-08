@@ -635,6 +635,9 @@ class MoguraGameControllerTest {
 
         assertTrue(result.success)
         assertEquals(FoodType.EARTHWORM, player.carriedFood?.type)
+        assertTrue(player.storedFoods.isEmpty())
+        assertEquals(0, player.score)
+        assertEquals(Position(1, 1), player.position)
         assertNull(controller.pendingFoodDecision)
         assertEquals(TurnPhase.END, engine.currentPhase)
     }
@@ -1435,26 +1438,93 @@ class MoguraGameControllerTest {
     }
 
     @Test
-    fun `carrying robbed food scores only after returning to own nest`() {
+    fun `carrying robbed food stores and scores immediately without moving the thief`() {
         val controller = testController()
-        val (thief, _) = advanceToRobberyDecision(controller)
-        controller.robSelectedFood()
+        val (thief, victim) = advanceToRobberyDecision(controller)
+        val stolen = victim.storedFoods.single()
+        val healthBefore = thief.health
+        assertEquals(1, victim.score)
+        assertTrue(controller.robSelectedFood().success)
 
         val carry = controller.carryPendingFood()
 
         assertTrue(carry.success)
-        assertTrue(thief.isCarrying)
-        assertTrue(thief.storedFoods.isEmpty())
-        assertEquals(0, thief.score)
+        assertFalse(thief.isCarrying)
+        assertNull(thief.carriedFood)
+        assertEquals(listOf(stolen), thief.storedFoods)
+        assertEquals(1, thief.score)
+        assertTrue(victim.storedFoods.isEmpty())
+        assertEquals(0, victim.score)
+        assertEquals(victim.nestPosition, thief.position)
+        assertEquals(healthBefore, thief.health)
+        assertNull(controller.pendingFoodDecision)
+        assertNull(controller.pendingFoodDecisionSource)
         assertEquals(TurnPhase.END, controller.engine!!.currentPhase)
 
-        thief.moveTo(thief.nestPosition)
+        val repeatedCarry = controller.carryPendingFood()
+
+        assertFalse(repeatedCarry.success)
+        assertEquals(listOf(stolen), thief.storedFoods)
+        assertEquals(1, thief.score)
+        assertEquals(victim.nestPosition, thief.position)
+        assertEquals(healthBefore, thief.health)
+
+        assertTrue(controller.finishTurn().success)
+        assertFalse(thief.isCarrying)
+        assertEquals(listOf(stolen), thief.storedFoods)
+        assertEquals(1, thief.score)
+        assertEquals(victim.nestPosition, thief.position)
+    }
+
+    @Test
+    fun `robbed food can reach the winning score without a return journey`() {
+        val controller = testController()
+        val (thief, victim) = advanceToRobberyDecision(controller)
+        thief.carryFood(FoodCard(FoodType.CENTIPEDE, emptyMap(), isFaceDown = false))
+        thief.storeFood()
+        assertEquals(3, thief.score)
+        assertTrue(controller.robSelectedFood().success)
+
+        assertTrue(controller.carryPendingFood().success)
+
+        val engine = controller.engine!!
+        assertEquals(4, thief.score)
+        assertEquals(thief, engine.checkWinCondition())
+        assertEquals(victim.nestPosition, thief.position)
+        assertFalse(thief.isCarrying)
+        assertEquals(GameState.PLAYING, engine.gameState)
+
+        assertTrue(controller.finishTurn().success)
+
+        assertEquals(GameState.FINISHED, engine.gameState)
+        assertEquals(thief, engine.checkWinCondition())
+        assertEquals(victim.nestPosition, thief.position)
+        assertEquals(4, thief.score)
+    }
+
+    @Test
+    fun `winning robbery score does not exempt a one health thief from turn consumption`() {
+        val controller = testController()
+        val (thief, victim) = advanceToRobberyDecision(controller)
+        thief.carryFood(FoodCard(FoodType.CENTIPEDE, emptyMap(), isFaceDown = false))
+        thief.storeFood()
+        repeat(thief.health - 1) { thief.reduceHealth(isOnSurface = false) }
+        assertTrue(controller.robSelectedFood().success)
+        assertTrue(controller.carryPendingFood().success)
+        val engine = controller.engine!!
+        assertEquals(4, thief.score)
+        assertEquals(thief, engine.checkWinCondition())
+        assertEquals(1, thief.health)
+
         val finish = controller.finishTurn()
 
         assertTrue(finish.success)
-        assertFalse(thief.isCarrying)
-        assertEquals(FoodType.EARTHWORM, thief.storedFoods.single().type)
-        assertEquals(1, thief.score)
+        assertEquals(1, finish.turnConsumptionAnimation?.actualConsumption)
+        assertEquals(0, thief.health)
+        assertTrue(thief.isEliminated)
+        assertEquals(4, thief.score)
+        assertEquals(GameState.FINISHED, engine.gameState)
+        assertEquals(victim, engine.checkWinCondition())
     }
 
     @Test
@@ -1478,6 +1548,15 @@ class MoguraGameControllerTest {
         assertEquals(FoodType.EARTHWORM, controller.pendingFoodDecision?.type)
         assertEquals(listOf(FoodType.BEETLE_LARVA), victim.storedFoods.map { it.type })
         assertFalse(thief.isCarrying)
+
+        assertTrue(controller.carryPendingFood().success)
+
+        assertEquals(listOf(FoodType.EARTHWORM), thief.storedFoods.map { it.type })
+        assertEquals(listOf(FoodType.BEETLE_LARVA), victim.storedFoods.map { it.type })
+        assertEquals(1, thief.score)
+        assertEquals(1, victim.score)
+        assertFalse(thief.isCarrying)
+        assertEquals(victim.nestPosition, thief.position)
     }
 
     @Test

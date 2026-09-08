@@ -5,10 +5,15 @@ import java.awt.Rectangle
 import kotlin.math.roundToInt
 
 fun hungerMeterMarkerCenter(health: Int, maxHealth: Int, rect: Rectangle): Point {
+    return hungerMeterMarkerCenter(health.toDouble(), maxHealth, rect)
+}
+
+/** Continuous form used while a marker travels between two health values. */
+internal fun hungerMeterMarkerCenter(health: Double, maxHealth: Int, rect: Rectangle): Point {
     require(maxHealth > 0) { "maxHealth must be greater than 0" }
 
-    val clampedHealth = health.coerceIn(0, maxHealth)
-    val progress = (maxHealth - clampedHealth).toDouble() / maxHealth
+    val clampedHealth = health.coerceIn(0.0, maxHealth.toDouble())
+    val progress = (maxHealth - clampedHealth) / maxHealth
     val left = rect.x + (rect.width * HUNGER_METER_LEFT_RATIO).roundToInt()
     val right = rect.x + (rect.width * HUNGER_METER_RIGHT_RATIO).roundToInt()
     val top = rect.y + (rect.height * HUNGER_METER_TOP_RATIO).roundToInt()

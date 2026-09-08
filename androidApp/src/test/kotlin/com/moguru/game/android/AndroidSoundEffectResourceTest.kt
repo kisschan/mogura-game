@@ -11,6 +11,7 @@ class AndroidSoundEffectResourceTest {
 
         assertEquals(AndroidSoundEffect.entries.toSet(), resources.keys)
         assertEquals(R.raw.capture_failure, resources[AndroidSoundEffect.CAPTURE_FAILURE])
+        assertEquals(R.raw.eat_recovery, resources[AndroidSoundEffect.EAT_RECOVERY])
         assertTrue(resources.values.all { it != 0 })
     }
 }

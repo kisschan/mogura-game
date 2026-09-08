@@ -70,6 +70,8 @@ internal enum class BoardPaintLayer {
     PLAYERS,
     CURRENT_PLAYER_OUTLINE,
     CAPTURE_ANIMATION,
+    EAT_ANIMATION,
+    TURN_CONSUMPTION_ANIMATION,
     HOVER_PREVIEW,
 }
 
@@ -80,6 +82,8 @@ internal val boardPaintLayerOrder = listOf(
     BoardPaintLayer.PLAYERS,
     BoardPaintLayer.CURRENT_PLAYER_OUTLINE,
     BoardPaintLayer.CAPTURE_ANIMATION,
+    BoardPaintLayer.EAT_ANIMATION,
+    BoardPaintLayer.TURN_CONSUMPTION_ANIMATION,
     BoardPaintLayer.HOVER_PREVIEW,
 )
 
@@ -93,9 +97,15 @@ internal const val DESKTOP_CONFIRM_DIG_LABEL = "置く"
 class MoguraGameFrame(
     private val controller: MoguraGameController,
     private val backgroundMusic: BackgroundMusicPlayer = defaultBackgroundMusicPlayer(BACKGROUND_MUSIC_PATH),
+    private val eatRecoverySound: EatRecoverySoundPlayer = defaultEatRecoverySoundPlayer(),
 ) : JFrame(APP_TITLE) {
     private val assets = GuiAssets()
-    private val boardPanel = BoardPanel(controller, assets, ::handleBoardClick)
+    private val boardPanel = BoardPanel(
+        controller = controller,
+        assets = assets,
+        onCellClicked = ::handleBoardClick,
+        eatRecoverySound = eatRecoverySound,
+    )
     private val currentPlayerPanel = CurrentPlayerPanel(assets)
     private val deckSummaryPanel = DeckSummaryPanel(controller, assets)
     private val statusLabel = JLabel()
@@ -111,7 +121,19 @@ class MoguraGameFrame(
     private val skipButton = JButton("スキップ")
     private val endTurnButton = JButton("ターン終了")
     private val newGameButton = JButton("新しいゲーム")
-    private val refreshTimer = Timer(150) { refresh() }
+    private val actionAnimationFlow = DesktopActionAnimationFlow(
+        controller = controller,
+        boardPanel = boardPanel,
+        refresh = ::refresh,
+        blockInputs = ::blockInputsForAnimation,
+        showFailure = { message ->
+            Toolkit.getDefaultToolkit().beep()
+            showStatus(message)
+        },
+    )
+    private val refreshTimer = Timer(150) {
+        if (!boardPanel.isTurnConsumptionAnimating) refresh()
+    }
     private val digTileChoiceButtons = DigTileChoice.entries.associateWith { choice ->
         JToggleButton(choice.label())
     }
@@ -134,7 +156,8 @@ class MoguraGameFrame(
 
                 override fun windowClosing(event: WindowEvent) {
                     refreshTimer.stop()
-                    boardPanel.cancelCaptureAnimation()
+                    boardPanel.cancelAnimations()
+                    eatRecoverySound.close()
                     backgroundMusic.close()
                 }
             },
@@ -174,7 +197,8 @@ class MoguraGameFrame(
 
     override fun dispose() {
         refreshTimer.stop()
-        boardPanel.cancelCaptureAnimation()
+        boardPanel.cancelAnimations()
+        eatRecoverySound.close()
         backgroundMusic.close()
         super.dispose()
     }
@@ -481,15 +505,16 @@ class MoguraGameFrame(
         ) as? String ?: startLabels.first()
         val startPlayerIndex = startLabels.indexOf(startChoice).takeIf { it >= 0 } ?: 0
 
-        boardPanel.cancelCaptureAnimation()
+        boardPanel.cancelAnimations()
         controller.startNewGame(configs, startPlayerIndex)
         backgroundMusic.playLooping()
         refresh()
     }
 
     private fun handleBoardClick(position: Position) {
-        if (boardPanel.isCaptureAnimating) return
+        if (boardPanel.isAnimating) return
         val current = controller.engine ?: return
+        boardPanel.prepareTurnConsumptionAnimation()
         val result = when (current.currentPhase) {
             TurnPhase.DIG -> controller.digAt(position, selectedRotation())
             TurnPhase.MOVE -> controller.moveTo(position)
@@ -565,23 +590,13 @@ class MoguraGameFrame(
     }
 
     private fun runAction(action: () -> GameActionResult) {
-        if (boardPanel.isCaptureAnimating) return
+        if (boardPanel.isAnimating) return
+        boardPanel.prepareTurnConsumptionAnimation()
         handleActionResult(action())
     }
 
     private fun handleActionResult(result: GameActionResult) {
-        if (result.success) {
-            val playing = boardPanel.playCaptureAnimation {
-                controller.autoAdvanceWhileNoChoice()
-                refresh()
-            }
-            if (!playing) controller.autoAdvanceWhileNoChoice()
-        } else {
-            boardPanel.clearPreparedCaptureAnimation()
-            Toolkit.getDefaultToolkit().beep()
-            showStatus(result.message)
-        }
-        refresh()
+        actionAnimationFlow.handle(result)
     }
 
     private fun refresh() {
@@ -630,17 +645,12 @@ class MoguraGameFrame(
         refreshDigChoiceButtons(uiState.digCandidates)
         syncRotationButtons(uiState.digCandidates.any { it.enabled }, uiState.selectedRotation)
         refreshActionButtonStyles(actions)
-        if (boardPanel.isCaptureAnimating) {
-            listOf(
-                digGuideButton, confirmDigButton, moveGuideButton, captureButton, robButton,
-                eatButton, carryButton, skipButton, endTurnButton,
-            ).forEach { it.isEnabled = false }
-            digTileChoiceButtons.values.forEach { it.isEnabled = false }
-            rotationButtons.values.forEach { it.isEnabled = false }
+        if (boardPanel.isAnimating) {
+            blockInputsForAnimation()
         }
-        digGuideButton.isEnabled = !boardPanel.isCaptureAnimating
-        moveGuideButton.isEnabled = !boardPanel.isCaptureAnimating
-        newGameButton.isEnabled = !boardPanel.isCaptureAnimating
+        digGuideButton.isEnabled = !boardPanel.isAnimating
+        moveGuideButton.isEnabled = !boardPanel.isAnimating
+        newGameButton.isEnabled = !boardPanel.isAnimating
 
         logArea.text = controller.logs.joinToString("\n")
         logArea.caretPosition = logArea.document.length
@@ -650,8 +660,17 @@ class MoguraGameFrame(
         diceLabel.icon = diceImage?.let { ImageIcon(it.getScaledInstance(54, 54, Image.SCALE_SMOOTH)) }
         diceLabel.text = if (diceImage == null) dice?.toString() ?: "ダイス" else ""
 
-        deckSummaryPanel.repaint()
+        deckSummaryPanel.refreshFromController()
         boardPanel.repaint()
+    }
+
+    private fun blockInputsForAnimation() {
+        listOf(
+            digGuideButton, confirmDigButton, moveGuideButton, captureButton, robButton,
+            eatButton, carryButton, skipButton, endTurnButton, newGameButton,
+        ).forEach { it.isEnabled = false }
+        digTileChoiceButtons.values.forEach { it.isEnabled = false }
+        rotationButtons.values.forEach { it.isEnabled = false }
     }
 
     private fun refreshDigChoiceButtons(candidates: List<DigCandidateDisplay>) {
@@ -734,6 +753,8 @@ private class DeckSummaryPanel(
     private val controller: MoguraGameController,
     private val assets: GuiAssets,
 ) : JPanel() {
+    private var summary = controller.playScreenUiState().deckSummary
+
     init {
         preferredSize = Dimension(0, 154)
         maximumSize = Dimension(Short.MAX_VALUE.toInt(), 154)
@@ -748,7 +769,6 @@ private class DeckSummaryPanel(
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
         g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
 
-        val summary = controller.playScreenUiState().deckSummary
         val gap = 10
         val groupWidth = width - gap * 2
         val groupHeight = (height - gap * 3) / 2
@@ -770,6 +790,11 @@ private class DeckSummaryPanel(
             deckCount = summary.foodDrawCount,
             discardCount = summary.foodDiscardCount,
         )
+    }
+
+    fun refreshFromController() {
+        summary = controller.playScreenUiState().deckSummary
+        repaint()
     }
 
     private fun drawDeckGroup(
@@ -972,15 +997,27 @@ class BoardPanel(
     private val assets: GuiAssets,
     private val onCellClicked: (Position) -> Unit,
     private val nanoTime: () -> Long = System::nanoTime,
+    private val eatRecoverySound: EatRecoverySoundPlayer = NoOpEatRecoverySoundPlayer,
 ) : JPanel() {
     private var hoveredFoodPosition: Position? = null
     private var preparedCaptureBoard: CaptureBoardSnapshot? = null
+    private var preparedTurnConsumptionBoard: TurnConsumptionBoardSnapshot? = null
     private var captureAnimation: DesktopCaptureAnimation? = null
+    private var eatAnimation: DesktopEatAnimation? = null
+    private var turnConsumptionAnimation: DesktopTurnConsumptionAnimation? = null
+    private var lastEatAnimationEventId: Long? = null
+    private var lastTurnConsumptionAnimationEventId: Long? = null
     private val captureTimer = Timer(16) { advanceCaptureAnimation() }
+    private val eatTimer = Timer(16) { advanceEatAnimation() }
+    private val turnConsumptionTimer = Timer(16) { advanceTurnConsumptionAnimation() }
 
     val isCaptureAnimating: Boolean get() = captureAnimation != null
+    val isEatAnimating: Boolean get() = eatAnimation != null
+    val isTurnConsumptionAnimating: Boolean get() = turnConsumptionAnimation != null
+    val isAnimating: Boolean get() = isCaptureAnimating || isEatAnimating || isTurnConsumptionAnimating
 
     fun prepareCaptureAnimation() {
+        if (isAnimating) return
         val current = controller.engine ?: return
         preparedCaptureBoard = CaptureBoardSnapshot(
             foods = current.foodPositions.mapValues { (_, foods) -> foods.toList() },
@@ -996,7 +1033,26 @@ class BoardPanel(
         preparedCaptureBoard = null
     }
 
+    fun prepareTurnConsumptionAnimation() {
+        if (isAnimating) return
+        val current = controller.engine ?: return
+        val currentPlayer = controller.currentPlayer ?: return
+        preparedTurnConsumptionBoard = TurnConsumptionBoardSnapshot(
+            foods = current.foodPositions.mapValues { (_, foods) -> foods.toList() },
+            players = current.players.filter { !it.isEliminated }.map { player ->
+                CapturePlayerSnapshot(player.id, player.name, player.position)
+            },
+            phase = current.currentPhase,
+            currentPlayerId = currentPlayer.id,
+        )
+    }
+
+    fun clearPreparedTurnConsumptionAnimation() {
+        preparedTurnConsumptionBoard = null
+    }
+
     fun playCaptureAnimation(onFinished: () -> Unit): Boolean {
+        if (isAnimating) return false
         val snapshot = preparedCaptureBoard ?: return false
         preparedCaptureBoard = null
         val current = controller.engine ?: return false
@@ -1012,8 +1068,59 @@ class BoardPanel(
             startedAtNanos = nanoTime(),
             onFinished = onFinished,
         )
+        preparedTurnConsumptionBoard = null
         hoveredFoodPosition = null
         captureTimer.start()
+        repaint()
+        return true
+    }
+
+    fun playEatAnimation(event: EatAnimationEvent, onFinished: () -> Unit): Boolean {
+        if (isAnimating || lastEatAnimationEventId?.let { event.id <= it } == true) return false
+        val player = controller.engine?.players?.firstOrNull { it.id == event.playerId } ?: return false
+        if (player.isEliminated || player.health != event.healthAfter) return false
+
+        eatAnimation = DesktopEatAnimation(
+            event = event,
+            playerPosition = player.position,
+            startedAtNanos = nanoTime(),
+            onFinished = onFinished,
+        )
+        lastEatAnimationEventId = event.id
+        preparedCaptureBoard = null
+        preparedTurnConsumptionBoard = null
+        hoveredFoodPosition = null
+        runCatching { eatRecoverySound.play() }
+        eatTimer.start()
+        repaint()
+        return true
+    }
+
+    fun playTurnConsumptionAnimation(
+        event: TurnConsumptionAnimationEvent,
+        onFinished: () -> Unit,
+    ): Boolean {
+        if (isAnimating || lastTurnConsumptionAnimationEventId?.let { event.id <= it } == true) return false
+        val snapshot = preparedTurnConsumptionBoard ?: return false
+        preparedTurnConsumptionBoard = null
+        val player = controller.engine?.players?.firstOrNull { it.id == event.playerId } ?: return false
+        val playerSnapshot = snapshot.players.firstOrNull { it.id == event.playerId } ?: return false
+        if (
+            player.health != event.healthAfter ||
+            snapshot.currentPlayerId != event.playerId
+        ) return false
+
+        turnConsumptionAnimation = DesktopTurnConsumptionAnimation(
+            event = event,
+            board = snapshot,
+            playerPosition = playerSnapshot.position,
+            startedAtNanos = nanoTime(),
+            onFinished = onFinished,
+        )
+        lastTurnConsumptionAnimationEventId = event.id
+        preparedCaptureBoard = null
+        hoveredFoodPosition = null
+        turnConsumptionTimer.start()
         repaint()
         return true
     }
@@ -1022,6 +1129,34 @@ class BoardPanel(
         captureTimer.stop()
         captureAnimation = null
         preparedCaptureBoard = null
+        preparedTurnConsumptionBoard = null
+        hoveredFoodPosition = null
+        repaint()
+    }
+
+    fun cancelEatAnimation() {
+        eatTimer.stop()
+        eatAnimation = null
+        hoveredFoodPosition = null
+        repaint()
+    }
+
+    fun cancelTurnConsumptionAnimation() {
+        turnConsumptionTimer.stop()
+        turnConsumptionAnimation = null
+        hoveredFoodPosition = null
+        repaint()
+    }
+
+    fun cancelAnimations() {
+        captureTimer.stop()
+        eatTimer.stop()
+        turnConsumptionTimer.stop()
+        captureAnimation = null
+        eatAnimation = null
+        turnConsumptionAnimation = null
+        preparedCaptureBoard = null
+        preparedTurnConsumptionBoard = null
         hoveredFoodPosition = null
         repaint()
     }
@@ -1036,6 +1171,26 @@ class BoardPanel(
         repaint()
     }
 
+    internal fun advanceEatAnimation() {
+        val animation = eatAnimation ?: return
+        if (eatProgress(animation) >= 1f) {
+            eatTimer.stop()
+            eatAnimation = null
+            animation.onFinished()
+        }
+        repaint()
+    }
+
+    internal fun advanceTurnConsumptionAnimation() {
+        val animation = turnConsumptionAnimation ?: return
+        if (turnConsumptionProgress(animation) >= 1f) {
+            turnConsumptionTimer.stop()
+            turnConsumptionAnimation = null
+            animation.onFinished()
+        }
+        repaint()
+    }
+
     private fun captureProgress(animation: DesktopCaptureAnimation): Float {
         val duration = if (animation.event.kind == CaptureOutcomeKind.CAPTURED) {
             CAPTURE_SUCCESS_DURATION_MILLIS
@@ -1045,8 +1200,19 @@ class BoardPanel(
         return ((nanoTime() - animation.startedAtNanos) / (duration * 1_000_000.0)).toFloat().coerceIn(0f, 1f)
     }
 
+    private fun eatProgress(animation: DesktopEatAnimation): Float =
+        ((nanoTime() - animation.startedAtNanos) / (EAT_ANIMATION_DURATION_MILLIS * 1_000_000.0))
+            .toFloat()
+            .coerceIn(0f, 1f)
+
+    private fun turnConsumptionProgress(animation: DesktopTurnConsumptionAnimation): Float =
+        ((nanoTime() - animation.startedAtNanos) /
+            (TURN_CONSUMPTION_ANIMATION_DURATION_MILLIS * 1_000_000.0))
+            .toFloat()
+            .coerceIn(0f, 1f)
+
     override fun removeNotify() {
-        cancelCaptureAnimation()
+        cancelAnimations()
         super.removeNotify()
     }
 
@@ -1057,7 +1223,7 @@ class BoardPanel(
 
         addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(event: MouseEvent) {
-                if (isCaptureAnimating) return
+                if (isAnimating) return
                 imagePoint(event.point)?.let { point ->
                     positionAt(point)?.let(onCellClicked)
                 }
@@ -1118,6 +1284,8 @@ class BoardPanel(
                 BoardPaintLayer.PLAYERS -> drawPlayers(g)
                 BoardPaintLayer.CURRENT_PLAYER_OUTLINE -> drawCurrentPlayerOutline(g)
                 BoardPaintLayer.CAPTURE_ANIMATION -> drawCaptureAnimation(g)
+                BoardPaintLayer.EAT_ANIMATION -> drawEatAnimation(g)
+                BoardPaintLayer.TURN_CONSUMPTION_ANIMATION -> drawTurnConsumptionAnimation(g)
                 BoardPaintLayer.HOVER_PREVIEW -> drawHoveredFoodPreview(g)
             }
         }
@@ -1141,23 +1309,60 @@ class BoardPanel(
             drawPlaceholder(g, meterRect, "腹減り", Color(0xF3D48C))
         }
 
+        val displayedCurrentPlayer = turnConsumptionAnimation?.event?.playerId
+            ?.let { playerId -> players.firstOrNull { it.id == playerId } }
+            ?: currentPlayer
+        val animatedPlayerId = eatAnimation?.event?.playerId
+            ?: turnConsumptionAnimation?.event?.playerId
+        hungerMarkerLayout(
+            players = players,
+            currentPlayer = displayedCurrentPlayer,
+            meterRect = meterRect,
+            animatedEat = eatAnimation,
+            animatedConsumption = turnConsumptionAnimation,
+        ).forEach { (player, markerRect) ->
+            if (player.id != animatedPlayerId) {
+                drawHungerMarker(g, player, markerRect, player == displayedCurrentPlayer)
+            }
+        }
+    }
+
+    private fun hungerMarkerLayout(
+        players: List<Player>,
+        currentPlayer: Player?,
+        meterRect: Rectangle,
+        animatedEat: DesktopEatAnimation?,
+        animatedConsumption: DesktopTurnConsumptionAnimation?,
+    ): List<Pair<Player, Rectangle>> {
         val orderedPlayers = if (currentPlayer != null && currentPlayer in players) {
             players.filter { it != currentPlayer } + currentPlayer
         } else {
             players
         }
         val markerSize = (meterRect.height * HUNGER_MARKER_SCALE).roundToInt()
-        val centers = hungerMeterMarkerCenters(
-            healths = orderedPlayers.map { it.health },
-            maxHealth = Player.MAX_HEALTH,
-            rect = meterRect,
-        )
-
-        val markerRects = hungerMeterMarkerRects(centers, markerSize, meterRect)
-
-        orderedPlayers.zip(markerRects).forEach { (player, markerRect) ->
-            drawHungerMarker(g, player, markerRect, player == currentPlayer)
+        val consumptionFrame = animatedConsumption?.let { animation ->
+            turnConsumptionAnimationFrame(turnConsumptionProgress(animation))
         }
+        val centers = orderedPlayers.map { player ->
+            when {
+                player.id == animatedEat?.event?.playerId -> hungerMeterRecoveryCenter(
+                    healthBefore = requireNotNull(animatedEat).event.healthBefore,
+                    healthAfter = animatedEat.event.healthAfter,
+                    progress = eatProgress(animatedEat),
+                    maxHealth = Player.MAX_HEALTH,
+                    meterRect = meterRect,
+                )
+                player.id == animatedConsumption?.event?.playerId -> turnConsumptionMarkerCenter(
+                    event = requireNotNull(animatedConsumption).event,
+                    markerProgress = requireNotNull(consumptionFrame).markerProgress,
+                    maxHealth = Player.MAX_HEALTH,
+                    meterRect = meterRect,
+                )
+                else -> hungerMeterMarkerCenter(player.health, Player.MAX_HEALTH, meterRect)
+            }
+        }
+        val markerRects = hungerMeterMarkerRects(centers, markerSize, meterRect)
+        return orderedPlayers.zip(markerRects)
     }
 
     private fun drawHungerMarker(
@@ -1181,7 +1386,7 @@ class BoardPanel(
     }
 
     private fun highlights(): Set<Position> {
-        if (isCaptureAnimating) return emptySet()
+        if (isAnimating) return emptySet()
         val current = controller.engine ?: return emptySet()
         return when (current.currentPhase) {
             TurnPhase.DIG -> controller.pendingDigPlacement?.let { setOf(it.position) }
@@ -1225,14 +1430,23 @@ class BoardPanel(
     private fun drawPlayers(g: Graphics2D) {
         val current = controller.engine ?: return
         val animation = captureAnimation
-        val players = animation?.board?.players ?: current.players
-            .filter { !it.isEliminated }.map { CapturePlayerSnapshot(it.id, it.name, it.position) }
+        val consumptionPlayerId = turnConsumptionAnimation?.event?.playerId
+        val players = animation?.board?.players
+            ?: turnConsumptionAnimation?.board?.players
+            ?: current.players.filter { !it.isEliminated }
+                .map { CapturePlayerSnapshot(it.id, it.name, it.position) }
         players
             .groupBy { it.position }
             .forEach { (position, players) ->
                 val rect = cellRect(position) ?: return@forEach
                 players.zip(playerTokenRects(rect, players.size)).forEach playerLoop@{ (player, tokenRect) ->
-                    if (player.id == animation?.event?.playerId) return@playerLoop
+                    if (
+                        player.id == animation?.event?.playerId ||
+                        player.id == eatAnimation?.event?.playerId ||
+                        player.id == consumptionPlayerId
+                    ) {
+                        return@playerLoop
+                    }
                     val image = assets.playerImage(player.id)
                     if (image != null) {
                         drawImage(g, image, tokenRect, assets.visibleBounds(image))
@@ -1245,7 +1459,11 @@ class BoardPanel(
     }
 
     private fun drawCurrentPlayerOutline(g: Graphics2D) {
-        if (isCaptureAnimating) return
+        if (
+            isCaptureAnimating ||
+            turnConsumptionAnimation != null ||
+            eatAnimation?.event?.playerId == controller.currentPlayer?.id
+        ) return
         val current = controller.engine ?: return
         val currentPlayer = controller.currentPlayer?.takeUnless { it.isEliminated } ?: return
         val rect = cellRect(currentPlayer.position) ?: return
@@ -1265,8 +1483,12 @@ class BoardPanel(
     private fun drawFoods(g: Graphics2D) {
         val current = controller.engine ?: return
         val animation = captureAnimation
-        val foodPositions = animation?.board?.foods ?: current.foodPositions
-        val phase = animation?.board?.phase ?: current.currentPhase
+        val foodPositions = animation?.board?.foods
+            ?: turnConsumptionAnimation?.board?.foods
+            ?: current.foodPositions
+        val phase = animation?.board?.phase
+            ?: turnConsumptionAnimation?.board?.phase
+            ?: current.currentPhase
         foodPositions.forEach { (position, foods) ->
             val cellRect = cellRect(position) ?: return@forEach
             foods.asReversed().forEachIndexed foodLoop@{ reversedIndex, food ->
@@ -1354,6 +1576,144 @@ class BoardPanel(
         }
     }
 
+    private fun drawEatAnimation(g: Graphics2D) {
+        val animation = eatAnimation ?: return
+        val current = controller.engine ?: return
+        val player = current.players.firstOrNull { it.id == animation.event.playerId } ?: return
+        val playersAtSource = current.players.filter {
+            !it.isEliminated && it.position == animation.playerPosition
+        }
+        val playerIndex = playersAtSource.indexOfFirst { it.id == player.id }
+        val playerCell = cellRect(animation.playerPosition) ?: return
+        val tokenRects = playerTokenRects(playerCell, playersAtSource.size)
+        val pawnStart = tokenRects.getOrNull(playerIndex) ?: return
+        val progress = eatProgress(animation)
+        val frame = eatAnimationFrame(animation.event.actualRecovery, progress)
+        val pawnRect = scaleRectAroundCenter(pawnStart, frame.playerScale)
+
+        assets.playerImage(player.id)?.let { image ->
+            drawImage(g, image, pawnRect, assets.visibleBounds(image))
+        } ?: drawPlaceholder(g, pawnRect, player.name.take(1), playerColor(player.id))
+        drawPlayerNameBadge(g, pawnRect, player.name)
+        if (player == controller.currentPlayer) {
+            val oldStroke = g.stroke
+            g.color = Color(0xFFE66D)
+            g.stroke = BasicStroke(4f)
+            g.drawOval(pawnRect.x, pawnRect.y, pawnRect.width, pawnRect.height)
+            g.stroke = oldStroke
+        }
+
+        val meterRect = boardHungerMeterRect(imageRect())
+        val animatedMarkerRect = hungerMarkerLayout(
+            players = current.players,
+            currentPlayer = controller.currentPlayer,
+            meterRect = meterRect,
+            animatedEat = animation,
+            animatedConsumption = null,
+        ).firstOrNull { (candidate, _) -> candidate.id == player.id }?.second ?: return
+        drawHungerMarker(g, player, animatedMarkerRect, player == controller.currentPlayer)
+
+        val finalMarkerRect = hungerMarkerLayout(
+            players = current.players,
+            currentPlayer = controller.currentPlayer,
+            meterRect = meterRect,
+            animatedEat = null,
+            animatedConsumption = null,
+        ).firstOrNull { (candidate, _) -> candidate.id == player.id }?.second ?: return
+        val source = Point(pawnStart.centerX.roundToInt(), pawnStart.centerY.roundToInt())
+        val destination = Point(finalMarkerRect.centerX.roundToInt(), finalMarkerRect.centerY.roundToInt())
+        val iconSize = (min(playerCell.width, playerCell.height) * 0.34).roundToInt().coerceAtLeast(18)
+        frame.icons.forEach { icon ->
+            val iconRect = eatRecoveryIconRect(
+                start = source,
+                destination = destination,
+                travel = icon.progress,
+                scale = icon.scale,
+                lift = icon.lift,
+                iconSize = iconSize,
+            )
+            drawRecoveryMeatIcon(g, iconRect, icon.alpha)
+        }
+
+        val label = if (animation.event.actualRecovery > 0) {
+            "+${animation.event.actualRecovery}"
+        } else {
+            "満腹"
+        }
+        val labelFontSize = (meterRect.height * 0.20).toFloat().coerceIn(22f, 52f)
+        drawRecoveryLabel(
+            graphics = g,
+            text = label,
+            anchor = recoveryLabelAnchor(
+                destination = destination,
+                boardRect = imageRect(),
+                fontSize = labelFontSize,
+                avoidanceDistance = (finalMarkerRect.width * 0.90).roundToInt(),
+            ),
+            fontSize = labelFontSize,
+            alpha = frame.labelAlpha,
+            scale = frame.labelScale,
+            lift = frame.labelLift,
+        )
+    }
+
+    private fun drawTurnConsumptionAnimation(g: Graphics2D) {
+        val animation = turnConsumptionAnimation ?: return
+        val current = controller.engine ?: return
+        val player = current.players.firstOrNull { it.id == animation.event.playerId } ?: return
+        val playersAtSource = animation.board.players.filter { it.position == animation.playerPosition }
+        val playerIndex = playersAtSource.indexOfFirst { it.id == player.id }
+        val playerCell = cellRect(animation.playerPosition) ?: return
+        val pawnRect = playerTokenRects(playerCell, playersAtSource.size).getOrNull(playerIndex) ?: return
+
+        assets.playerImage(player.id)?.let { image ->
+            drawImage(g, image, pawnRect, assets.visibleBounds(image))
+        } ?: drawPlaceholder(g, pawnRect, player.name.take(1), playerColor(player.id))
+        drawPlayerNameBadge(g, pawnRect, player.name)
+        val oldStroke = g.stroke
+        g.color = Color(0xFFE66D)
+        g.stroke = BasicStroke(4f)
+        g.drawOval(pawnRect.x, pawnRect.y, pawnRect.width, pawnRect.height)
+        g.stroke = oldStroke
+
+        val progress = turnConsumptionProgress(animation)
+        val frame = turnConsumptionAnimationFrame(progress)
+        val meterRect = boardHungerMeterRect(imageRect())
+        val animatedMarkerRect = hungerMarkerLayout(
+            players = current.players,
+            currentPlayer = player,
+            meterRect = meterRect,
+            animatedEat = null,
+            animatedConsumption = animation,
+        ).firstOrNull { (candidate, _) -> candidate.id == player.id }?.second ?: return
+        drawHungerMarker(g, player, animatedMarkerRect, isCurrent = true)
+
+        val finalMarkerRect = hungerMarkerLayout(
+            players = current.players,
+            currentPlayer = player,
+            meterRect = meterRect,
+            animatedEat = null,
+            animatedConsumption = null,
+        ).firstOrNull { (candidate, _) -> candidate.id == player.id }?.second ?: return
+        val destination = Point(finalMarkerRect.centerX.roundToInt(), finalMarkerRect.centerY.roundToInt())
+        val labelFontSize = (meterRect.height * 0.15).toFloat().coerceIn(20f, 42f)
+        drawTurnConsumptionLabel(
+            graphics = g,
+            text = turnConsumptionLabel(animation.event),
+            anchor = recoveryLabelAnchor(
+                destination = destination,
+                boardRect = imageRect(),
+                fontSize = labelFontSize,
+                avoidanceDistance = (finalMarkerRect.width * 0.95).roundToInt(),
+            ),
+            boardRect = imageRect(),
+            fontSize = labelFontSize,
+            alpha = frame.labelAlpha,
+            scale = frame.labelScale,
+            lift = frame.labelLift,
+        )
+    }
+
     private fun drawFood(
         g: Graphics2D,
         food: FoodCard,
@@ -1398,7 +1758,7 @@ class BoardPanel(
     }
 
     private fun drawHoveredFoodPreview(g: Graphics2D) {
-        if (isCaptureAnimating) return
+        if (isAnimating) return
         val current = controller.engine ?: return
         val position = hoveredFoodPosition ?: return
         val food = current.foodAt(position) ?: return
@@ -1512,7 +1872,7 @@ class BoardPanel(
     }
 
     private fun updateHoveredFoodPosition(point: Point?) {
-        if (isCaptureAnimating) return
+        if (isAnimating) return
         val current = controller.engine
         val next = if (current == null || point == null) {
             null
@@ -1541,8 +1901,8 @@ class BoardPanel(
         if (point.x < GRID_LEFT || point.x > GRID_RIGHT || point.y < GRID_TOP || point.y > GRID_BOTTOM) {
             return null
         }
-        val col = floor((point.x - GRID_LEFT).toDouble() / CELL_WIDTH).toInt()
-        val row = floor((point.y - GRID_TOP).toDouble() / CELL_HEIGHT).toInt()
+        val col = floor((point.x - GRID_LEFT) / CELL_WIDTH).toInt()
+        val row = floor((point.y - GRID_TOP) / CELL_HEIGHT).toInt()
         val position = Position(col, row)
         val cell = controller.engine?.board?.getCell(position) ?: return null
         return if (cell.type == CellType.INVALID) null else position
