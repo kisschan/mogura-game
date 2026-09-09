@@ -1,5 +1,6 @@
 package com.moguru.game.android
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -7,6 +8,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,6 +27,9 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -65,6 +70,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
@@ -72,6 +78,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -80,11 +88,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Direction
@@ -145,6 +157,9 @@ internal const val COMPACT_ACTION_CONTROL_MAX_ROWS = 1
 internal const val ACTIVE_GAMEPLAY_USES_VERTICAL_SCROLL = false
 internal const val EVENT_STRIP_MAX_LINES = 1
 internal const val LOG_HISTORY_COLLAPSED_BY_DEFAULT = true
+internal const val NEXT_ACTION_TOGGLE_TEST_TAG = "next-action-toggle"
+internal const val LOG_HISTORY_LIST_TEST_TAG = "log-history-list"
+internal const val LOG_HISTORY_ENTRY_TEST_TAG_PREFIX = "log-history-entry-"
 internal const val AUDIO_SETTINGS_BUTTON_TEST_TAG = "audio-settings-button"
 internal const val GAME_MENU_BUTTON_TEST_TAG = "game-menu-button"
 internal const val GAME_MENU_RULES_ITEM_TEST_TAG = "game-menu-rules-item"
@@ -160,6 +175,8 @@ internal val GAME_MENU_BUTTON_SIZE = 44.dp
 internal val BOARD_PIECE_VISIBILITY_TOGGLE_SIZE = 44.dp
 internal val HUD_SCORE_MIN_WIDTH = 40.dp
 internal const val BOARD_PIECE_TRANSPARENT_ALPHA = 0.22f
+private const val EVENT_DETAIL_CROSSFADE_MILLIS = 120
+internal val LOG_HISTORY_POPUP_GAP = 4.dp
 
 internal enum class AndroidHighlightPattern {
     DASHED,
@@ -1085,6 +1102,7 @@ private fun PlayScreen(
                 boardActions = boardActionsForBar,
                 selectedBoardActionIndex = selectedBoardActionIndex,
                 onBoardActionSelected = { selectedBoardActionIndex = it },
+                boardViewportHeight = layout.boardViewportHeight,
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("action-bar")
@@ -1263,12 +1281,19 @@ private fun GameplayActionBar(
     boardActions: List<MobilePrimaryBoardAction>,
     selectedBoardActionIndex: Int,
     onBoardActionSelected: (Int) -> Unit,
+    boardViewportHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
     val activePhase = state.playState.actionAvailability.activePhase
     val selectedBoardAction = selectedPrimaryBoardAction(boardActions, selectedBoardActionIndex)
+    val instruction = actionBarInstruction(state)
+    val latestEvent = latestEventText(state)
+    val captureOutcome = state.playState.captureOutcome
     var showLogHistory by remember { mutableStateOf(!LOG_HISTORY_COLLAPSED_BY_DEFAULT) }
-    Box(modifier = modifier) {
+    var instructionExpanded by remember(instruction, latestEvent, captureOutcome) { mutableStateOf(false) }
+    BoxWithConstraints(modifier = modifier) {
+        val historyPopupWidth = minOf(maxWidth, 360.dp)
+        val historyPopupMaxHeight = logHistoryPopupHeightLimit(boardViewportHeight)
         Surface(
             modifier = Modifier.fillMaxSize(),
             shape = RoundedCornerShape(8.dp),
@@ -1280,11 +1305,19 @@ private fun GameplayActionBar(
                 verticalArrangement = Arrangement.spacedBy(ACTION_BAR_CONTENT_GAP),
             ) {
                 EventStrip(
-                    instruction = actionBarInstruction(state),
-                    text = latestEventText(state),
-                    captureOutcome = state.playState.captureOutcome,
+                    instruction = instruction,
+                    text = latestEvent,
+                    captureOutcome = captureOutcome,
                     hasHistory = state.logs.isNotEmpty(),
-                    onHistoryClick = { showLogHistory = true },
+                    instructionExpanded = instructionExpanded,
+                    onInstructionToggle = {
+                        showLogHistory = false
+                        instructionExpanded = !instructionExpanded
+                    },
+                    onHistoryClick = {
+                        instructionExpanded = false
+                        showLogHistory = true
+                    },
                 )
                 when {
                     state.showDigControls -> CompactDigPlacementControls(
@@ -1333,6 +1366,8 @@ private fun GameplayActionBar(
         if (showLogHistory && state.logs.isNotEmpty()) {
             LogHistoryPopup(
                 logs = state.logs,
+                width = historyPopupWidth,
+                maxHeight = historyPopupMaxHeight,
                 onDismiss = { showLogHistory = false },
             )
         }
@@ -1345,15 +1380,23 @@ private fun EventStrip(
     text: String?,
     captureOutcome: CaptureOutcomeDisplay?,
     hasHistory: Boolean,
+    instructionExpanded: Boolean,
+    onInstructionToggle: () -> Unit,
     onHistoryClick: () -> Unit,
 ) {
     val fontScale = LocalDensity.current.fontScale
+    val expandedInstructionScrollState = rememberScrollState()
     val presentation = eventStripPresentation(
         outcome = captureOutcome,
         fontScale = fontScale,
     )
     val containerColor = presentation.containerArgb?.let(::Color) ?: Color.Transparent
     val border = presentation.borderArgb?.let { BorderStroke(1.dp, Color(it)) }
+
+    LaunchedEffect(instruction, instructionExpanded) {
+        if (instructionExpanded) expandedInstructionScrollState.scrollTo(0)
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1361,53 +1404,123 @@ private fun EventStrip(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(NEXT_ACTION_EVENT_GAP),
-        ) {
-            Text(
-                text = instruction,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(NEXT_ACTION_LINE_HEIGHT_SP.dp * NEXT_ACTION_MAX_LINES.toFloat() * fontScale)
-                    .testTag("next-action-instruction"),
-                color = Color(0xFF2E2115),
-                fontSize = 13.sp,
-                lineHeight = NEXT_ACTION_LINE_HEIGHT_SP.sp,
-                fontWeight = FontWeight.Black,
-                maxLines = NEXT_ACTION_MAX_LINES,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(if (captureOutcome == null) normalEventTextHeight(fontScale) else presentation.stripHeight),
-                shape = RoundedCornerShape(6.dp),
-                color = containerColor,
-                border = border,
-            ) {
-                Text(
-                    text = text.orEmpty(),
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag("latest-event")
-                        .padding(
-                            horizontal = if (captureOutcome == null) 0.dp else 6.dp,
-                            vertical = RESULT_EVENT_STRIP_VERTICAL_PADDING,
-                        ),
-                    color = Color(presentation.contentArgb),
-                    fontSize = if (captureOutcome == null) 11.sp else 10.sp,
-                    lineHeight = if (captureOutcome == null) NORMAL_EVENT_LINE_HEIGHT_SP.sp else RESULT_BANNER_LINE_HEIGHT_SP.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = presentation.maxLines,
-                    overflow = TextOverflow.Ellipsis,
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxSize()
+                .clip(RoundedCornerShape(6.dp))
+                .clickable(
+                    role = Role.Button,
+                    onClickLabel = if (instructionExpanded) {
+                        "操作案内を折りたたむ"
+                    } else {
+                        "操作案内を全文表示"
+                    },
+                    onClick = soundEffectClick(onClick = onInstructionToggle),
                 )
+                .testTag(NEXT_ACTION_TOGGLE_TEST_TAG)
+                .semantics {
+                    stateDescription = if (instructionExpanded) "全文表示中" else "省略表示"
+                },
+        ) {
+            Crossfade(
+                targetState = instructionExpanded,
+                modifier = Modifier.fillMaxSize(),
+                animationSpec = tween(EVENT_DETAIL_CROSSFADE_MILLIS),
+                label = "next-action-detail",
+            ) { expanded ->
+                if (expanded) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(expandedInstructionScrollState)
+                            .padding(end = 16.dp),
+                    ) {
+                        Text(
+                            text = instruction,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("next-action-instruction"),
+                            color = Color(0xFF2E2115),
+                            fontSize = 13.sp,
+                            lineHeight = NEXT_ACTION_LINE_HEIGHT_SP.sp,
+                            fontWeight = FontWeight.Black,
+                        )
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(NEXT_ACTION_EVENT_GAP),
+                    ) {
+                        Text(
+                            text = instruction,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(NEXT_ACTION_LINE_HEIGHT_SP.dp * NEXT_ACTION_MAX_LINES.toFloat() * fontScale)
+                                .padding(end = 16.dp)
+                                .testTag("next-action-instruction"),
+                            color = Color(0xFF2E2115),
+                            fontSize = 13.sp,
+                            lineHeight = NEXT_ACTION_LINE_HEIGHT_SP.sp,
+                            fontWeight = FontWeight.Black,
+                            maxLines = NEXT_ACTION_MAX_LINES,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(
+                                    if (captureOutcome == null) {
+                                        normalEventTextHeight(fontScale)
+                                    } else {
+                                        presentation.stripHeight
+                                    },
+                                ),
+                            shape = RoundedCornerShape(6.dp),
+                            color = containerColor,
+                            border = border,
+                        ) {
+                            Text(
+                                text = text.orEmpty(),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .testTag("latest-event")
+                                    .padding(
+                                        horizontal = if (captureOutcome == null) 0.dp else 6.dp,
+                                        vertical = RESULT_EVENT_STRIP_VERTICAL_PADDING,
+                                    ),
+                                color = Color(presentation.contentArgb),
+                                fontSize = if (captureOutcome == null) 11.sp else 10.sp,
+                                lineHeight = if (captureOutcome == null) {
+                                    NORMAL_EVENT_LINE_HEIGHT_SP.sp
+                                } else {
+                                    RESULT_BANNER_LINE_HEIGHT_SP.sp
+                                },
+                                fontWeight = FontWeight.Bold,
+                                maxLines = presentation.maxLines,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
             }
+            Text(
+                text = if (instructionExpanded) "▲" else "▼",
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 1.dp, end = 2.dp)
+                    .clearAndSetSemantics { },
+                color = Color(0xFF6A543C),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Black,
+            )
         }
-        if (hasHistory) {
+        if (!instructionExpanded && hasHistory) {
             TextButton(
                 onClick = soundEffectClick(onClick = onHistoryClick),
-                modifier = Modifier.height(EVENT_STRIP_HEIGHT),
+                modifier = Modifier
+                    .widthIn(min = 40.dp)
+                    .height(EVENT_STRIP_HEIGHT),
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
             ) {
                 Text("履歴", fontSize = 10.sp, fontWeight = FontWeight.Black, maxLines = 1)
@@ -1416,52 +1529,132 @@ private fun EventStrip(
     }
 }
 
+internal fun logHistoryPopupHeightLimit(boardViewportHeight: Dp): Dp = minOf(
+    LOG_HISTORY_POPUP_MAX_HEIGHT,
+    (boardViewportHeight - LOG_HISTORY_POPUP_GAP).coerceAtLeast(1.dp),
+)
+
+internal class AboveAnchorPopupPositionProvider(
+    private val safeLeftInsetPx: Int,
+    private val safeTopInsetPx: Int,
+    private val safeRightInsetPx: Int,
+    private val verticalGapPx: Int,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val maximumX = (windowSize.width - safeRightInsetPx - popupContentSize.width)
+            .coerceAtLeast(0)
+        val minimumX = safeLeftInsetPx.coerceAtMost(maximumX)
+        val centeredX = anchorBounds.left + (anchorBounds.width - popupContentSize.width) / 2
+        val maximumY = (windowSize.height - popupContentSize.height).coerceAtLeast(0)
+        val minimumY = safeTopInsetPx.coerceAtMost(maximumY)
+        val desiredY = anchorBounds.top - popupContentSize.height - verticalGapPx
+        return IntOffset(
+            x = centeredX.coerceIn(minimumX, maximumX),
+            y = desiredY.coerceIn(minimumY, maximumY),
+        )
+    }
+}
+
 @Composable
 private fun LogHistoryPopup(
     logs: List<String>,
+    width: Dp,
+    maxHeight: Dp,
     onDismiss: () -> Unit,
 ) {
+    val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
+    val safeDrawingInsets = WindowInsets.safeDrawing
+    val safeLeftInsetPx = safeDrawingInsets.getLeft(density, layoutDirection)
+    val safeTopInsetPx = safeDrawingInsets.getTop(density)
+    val safeRightInsetPx = safeDrawingInsets.getRight(density, layoutDirection)
+    val verticalGapPx = with(density) { LOG_HISTORY_POPUP_GAP.roundToPx() }
+    val positionProvider = remember(
+        safeLeftInsetPx,
+        safeTopInsetPx,
+        safeRightInsetPx,
+        verticalGapPx,
+    ) {
+        AboveAnchorPopupPositionProvider(
+            safeLeftInsetPx = safeLeftInsetPx,
+            safeTopInsetPx = safeTopInsetPx,
+            safeRightInsetPx = safeRightInsetPx,
+            verticalGapPx = verticalGapPx,
+        )
+    }
+
     Popup(
-        alignment = Alignment.BottomCenter,
+        popupPositionProvider = positionProvider,
         onDismissRequest = onDismiss,
+        properties = PopupProperties(
+            focusable = true,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+            clippingEnabled = true,
+        ),
     ) {
         Surface(
             modifier = Modifier
-                .padding(8.dp)
-                .widthIn(max = 360.dp)
-                .heightIn(max = LOG_HISTORY_POPUP_MAX_HEIGHT)
-                .testTag("log-history-drawer"),
+                .width(width)
+                .heightIn(max = maxHeight)
+                .testTag("log-history-drawer")
+                .semantics { paneTitle = "ログ履歴" },
             shape = RoundedCornerShape(8.dp),
             color = Color(0xFFFFFBF0),
             border = BorderStroke(2.dp, Color(0xFFD0AD78)),
+            shadowElevation = 6.dp,
         ) {
             Column(
                 modifier = Modifier.padding(10.dp),
                 verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-                Text(
-                    text = "履歴",
-                    color = Color(0xFF2E2115),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Black,
-                )
-                logs.asReversed().forEach { log ->
-                    Text(
-                        text = log,
-                        color = Color(0xFF4B3826),
-                        fontSize = 11.sp,
-                        lineHeight = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                TextButton(
-                    onClick = soundEffectClick(onClick = onDismiss),
-                    modifier = Modifier.align(Alignment.End),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("閉じる", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        text = "履歴",
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics { heading() },
+                        color = Color(0xFF2E2115),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Black,
+                    )
+                    TextButton(
+                        onClick = soundEffectClick(onClick = onDismiss),
+                        modifier = Modifier
+                            .widthIn(min = 40.dp)
+                            .heightIn(min = 40.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                    ) {
+                        Text("閉じる", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    }
+                }
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .testTag(LOG_HISTORY_LIST_TEST_TAG),
+                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    itemsIndexed(logs.asReversed()) { index, log ->
+                        Text(
+                            text = log,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("$LOG_HISTORY_ENTRY_TEST_TAG_PREFIX$index"),
+                            color = Color(0xFF4B3826),
+                            fontSize = 11.sp,
+                            lineHeight = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
             }
         }
