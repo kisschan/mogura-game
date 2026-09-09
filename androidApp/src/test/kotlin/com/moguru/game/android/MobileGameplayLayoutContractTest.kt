@@ -1,5 +1,8 @@
 package com.moguru.game.android
 
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -174,6 +177,35 @@ class MobileGameplayLayoutContractTest {
     @Test
     fun `log drawer has a bounded overlay height`() {
         assertTrue(LOG_HISTORY_POPUP_MAX_HEIGHT <= 220.dp)
+        assertEquals(220.dp, logHistoryPopupHeightLimit(300.dp))
+        assertEquals(196.dp, logHistoryPopupHeightLimit(200.dp))
+    }
+
+    @Test
+    fun `log drawer position stays above the action bar and inside safe drawing bounds`() {
+        val safeLeft = 12
+        val safeTop = 24
+        val safeRight = 16
+        val gap = 4
+        val windowSize = IntSize(width = 360, height = 740)
+        val actionBarBounds = IntRect(left = 16, top = 500, right = 344, bottom = 700)
+        val popupSize = IntSize(width = 328, height = 220)
+        val position = AboveAnchorPopupPositionProvider(
+            safeLeftInsetPx = safeLeft,
+            safeTopInsetPx = safeTop,
+            safeRightInsetPx = safeRight,
+            verticalGapPx = gap,
+        ).calculatePosition(
+            anchorBounds = actionBarBounds,
+            windowSize = windowSize,
+            layoutDirection = LayoutDirection.Ltr,
+            popupContentSize = popupSize,
+        )
+
+        assertTrue(position.x >= safeLeft)
+        assertTrue(position.x + popupSize.width <= windowSize.width - safeRight)
+        assertTrue(position.y >= safeTop)
+        assertTrue(position.y + popupSize.height + gap <= actionBarBounds.top)
     }
 
     @Test
