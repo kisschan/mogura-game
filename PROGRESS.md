@@ -1,8 +1,13 @@
 # PROGRESS.md
 
-最終更新: 2026-09-07
+最終更新: 2026-09-09
 
 ## 現在の状況
+- [x] Android `versionCode` / `versionName` を `17` から `18` に更新
+- [x] Androidの選択中の移動先を、緑の静的内枠から白下地＋赤（`#D32F2F`）の四隅ターゲット枠へ変更。固定枠を常時残し、赤い補助ハローだけを1.6秒周期でゆっくり脈動させる
+- [x] 遊び方に「白赤の四隅＝選択中の移動先」の静的凡例を追加し、アニメーション無効・軽減時にも不透明な静止枠を残す表示規約を `AGENT.md` に記録
+- 検証: 署名・証明書設定を展開しないmain基準の隔離作業ツリーで `:androidApp:testDebugUnitTest :androidApp:compileDebugAndroidTestKotlin --no-daemon --max-workers=2` が `BUILD SUCCESSFUL`。Android単体テスト151件と、追加したCompose計測テストを含むテストソースのコンパイルが成功
+- 未実施: 接続端末・エミュレーターがないため、Compose計測テストの実行と実画面での脈動・アニメーション無効時の確認
 - [x] PR #64レビュー対応: 食事音の再生済みイベントをViewModelで保持し、Activity/Effect再生成時の二重再生を防止。次ゲームの食事音と古いイベントの再抑止も確認する
 - [x] Android `versionCode` / `versionName` を `15` から `16` に更新。UI改善と強奪後レンコウの修正をmain向け通常PRへまとめる
 - [x] PR用ブランチ `codex/android-ui-v16` を最新main `42e4644` から作成し、食事・消耗演出とUI改善を統合。mainのActivity再生成時の失敗音重複防止を保持する
