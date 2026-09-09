@@ -1,9 +1,14 @@
 package com.moguru.game.android
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -58,11 +63,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.inset
 import androidx.compose.ui.graphics.graphicsLayer
@@ -190,6 +198,45 @@ internal data class AndroidBoardHighlightStyle(
     val strokeWidth: Dp,
     val pattern: AndroidHighlightPattern,
 )
+
+internal data class SelectedMoveTargetIndicatorStyle(
+    val cellScale: Float,
+    val underStrokeArgb: Int,
+    val topStrokeArgb: Int,
+    val underStrokeWidth: Dp,
+    val topStrokeWidth: Dp,
+    val armLength: Dp,
+    val haloStrokeWidth: Dp,
+    val haloMinAlpha: Float,
+    val haloMaxAlpha: Float,
+    val haloMinScale: Float,
+    val haloMaxScale: Float,
+    val pulseDurationMillis: Int,
+)
+
+private val SelectedMoveTargetIndicatorDefaults = SelectedMoveTargetIndicatorStyle(
+    cellScale = 0.90f,
+    underStrokeArgb = 0xFFFFFFFF.toInt(),
+    topStrokeArgb = 0xFFD32F2F.toInt(),
+    underStrokeWidth = 7.dp,
+    topStrokeWidth = 4.dp,
+    armLength = 12.dp,
+    haloStrokeWidth = 4.dp,
+    haloMinAlpha = 0.55f,
+    haloMaxAlpha = 1f,
+    haloMinScale = 0.94f,
+    haloMaxScale = 1f,
+    pulseDurationMillis = 800,
+)
+
+internal fun selectedMoveTargetIndicatorStyle(): SelectedMoveTargetIndicatorStyle =
+    SelectedMoveTargetIndicatorDefaults
+
+internal fun selectedMoveTargetIndicatorTestTag(position: Position): String =
+    "selected-move-target-${position.col}-${position.row}"
+
+internal fun selectedMoveTargetHaloTestTag(position: Position): String =
+    "selected-move-target-halo-${position.col}-${position.row}"
 
 internal enum class ActionBarContentMode {
     STANDARD,
@@ -2067,6 +2114,112 @@ private fun CompactBoardActionRow(
 }
 
 @Composable
+internal fun SelectedMoveTargetIndicator(
+    position: Position,
+    modifier: Modifier = Modifier,
+) {
+    val style = selectedMoveTargetIndicatorStyle()
+    val haloTransition = rememberInfiniteTransition(label = "selected-move-target-halo")
+    val haloAlpha by haloTransition.animateFloat(
+        initialValue = style.haloMinAlpha,
+        targetValue = style.haloMaxAlpha,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = style.pulseDurationMillis),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "selected-move-target-halo-alpha",
+    )
+    val haloScale by haloTransition.animateFloat(
+        initialValue = style.haloMinScale,
+        targetValue = style.haloMaxScale,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = style.pulseDurationMillis),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "selected-move-target-halo-scale",
+    )
+
+    Box(
+        modifier = modifier.testTag(selectedMoveTargetIndicatorTestTag(position)),
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag(selectedMoveTargetHaloTestTag(position))
+                .graphicsLayer {
+                    alpha = haloAlpha
+                    scaleX = haloScale
+                    scaleY = haloScale
+                },
+        ) {
+            drawSelectedMoveCornerReticle(
+                color = Color(style.topStrokeArgb),
+                strokeWidth = style.haloStrokeWidth,
+                armLength = style.armLength,
+            )
+        }
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = style.cellScale
+                    scaleY = style.cellScale
+                },
+        ) {
+            drawSelectedMoveCornerReticle(
+                color = Color(style.underStrokeArgb),
+                strokeWidth = style.underStrokeWidth,
+                armLength = style.armLength,
+                edgeInset = style.underStrokeWidth / 2f,
+            )
+            drawSelectedMoveCornerReticle(
+                color = Color(style.topStrokeArgb),
+                strokeWidth = style.topStrokeWidth,
+                armLength = style.armLength,
+                edgeInset = style.underStrokeWidth / 2f,
+            )
+        }
+    }
+}
+
+private fun DrawScope.drawSelectedMoveCornerReticle(
+    color: Color,
+    strokeWidth: Dp,
+    armLength: Dp,
+    edgeInset: Dp = strokeWidth / 2f,
+) {
+    val strokeWidthPx = strokeWidth.toPx()
+    val edgeInsetPx = edgeInset.toPx()
+    val left = edgeInsetPx
+    val top = edgeInsetPx
+    val right = size.width - edgeInsetPx
+    val bottom = size.height - edgeInsetPx
+    val armLengthPx = minOf(
+        armLength.toPx(),
+        ((size.minDimension - strokeWidthPx) / 2f).coerceAtLeast(0f),
+    )
+
+    fun segment(start: Offset, end: Offset) {
+        drawLine(
+            color = color,
+            start = start,
+            end = end,
+            strokeWidth = strokeWidthPx,
+            cap = StrokeCap.Round,
+        )
+    }
+
+    segment(Offset(left, top + armLengthPx), Offset(left, top))
+    segment(Offset(left, top), Offset(left + armLengthPx, top))
+    segment(Offset(right - armLengthPx, top), Offset(right, top))
+    segment(Offset(right, top), Offset(right, top + armLengthPx))
+    segment(Offset(left, bottom - armLengthPx), Offset(left, bottom))
+    segment(Offset(left, bottom), Offset(left + armLengthPx, bottom))
+    segment(Offset(right - armLengthPx, bottom), Offset(right, bottom))
+    segment(Offset(right, bottom - armLengthPx), Offset(right, bottom))
+}
+
+@Composable
 private fun BoardView(
     state: AndroidGameUiState,
     boardWidth: Dp,
@@ -2188,11 +2341,11 @@ private fun BoardView(
             }
 
         selectedMoveTargetPosition?.let { position ->
-            Box(
+            SelectedMoveTargetIndicator(
+                position = position,
                 modifier = Modifier
-                    .boardRect(maxWidth, maxHeight, cellRect(position, scale = 0.86f))
-                    .zIndex(BOARD_SELECTED_MOVE_RING_Z)
-                    .border(3.dp, Color(0xFF158A45), RoundedCornerShape(6.dp)),
+                    .boardRect(maxWidth, maxHeight, cellRect(position, scale = 1f))
+                    .zIndex(BOARD_SELECTED_MOVE_RING_Z),
             )
         }
 

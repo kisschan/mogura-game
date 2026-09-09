@@ -2,6 +2,7 @@ package com.moguru.game.android
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -32,8 +33,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -61,6 +64,12 @@ private val RulesGreenDark = Color(0xFF176A37)
 private val RulesGold = Color(0xFFF2C94C)
 private val RulesBlue = Color(0xFF56A3E8)
 private val RulesRed = Color(0xFFE8665A)
+private val RulesSelectedMoveRed = Color(0xFFD32F2F)
+
+private enum class RulesLegendMarkerStyle {
+    COLOR_DOT,
+    SELECTED_MOVE_TARGET,
+}
 
 private data class RuleStep(
     val number: String,
@@ -473,6 +482,12 @@ private fun RulesBoardLegend() {
             )
             RulesLegendRow(color = RulesGold, label = "黄の破線", description = "掘れるマス")
             RulesLegendRow(color = RulesBlue, label = "青の実線", description = "移動できるマス")
+            RulesLegendRow(
+                color = RulesSelectedMoveRed,
+                label = "白赤の四隅",
+                description = "選択中の移動先",
+                marker = RulesLegendMarkerStyle.SELECTED_MOVE_TARGET,
+            )
             RulesLegendRow(color = RulesRed, label = "赤の二重線", description = "捕獲できるエサ")
             Text(
                 text = "迷ったら、光っているマスか画面下のボタンを選べば進められます。",
@@ -489,18 +504,14 @@ private fun RulesLegendRow(
     color: Color,
     label: String,
     description: String,
+    marker: RulesLegendMarkerStyle = RulesLegendMarkerStyle.COLOR_DOT,
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(9.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .size(12.dp)
-                .clip(CircleShape)
-                .background(color),
-        )
+        RulesLegendMarker(color = color, marker = marker)
         Text(
             text = label,
             modifier = Modifier.width(72.dp),
@@ -513,6 +524,54 @@ private fun RulesLegendRow(
             color = RulesMutedInk,
             fontSize = 13.sp,
         )
+    }
+}
+
+@Composable
+private fun RulesLegendMarker(
+    color: Color,
+    marker: RulesLegendMarkerStyle,
+) {
+    when (marker) {
+        RulesLegendMarkerStyle.COLOR_DOT -> Box(
+            modifier = Modifier
+                .size(12.dp)
+                .clip(CircleShape)
+                .background(color),
+        )
+        RulesLegendMarkerStyle.SELECTED_MOVE_TARGET -> Canvas(Modifier.size(16.dp)) {
+            val inset = 2.dp.toPx()
+            val arm = 4.dp.toPx()
+            val far = size.width - inset
+            val segments = listOf(
+                Offset(inset, inset) to Offset(inset + arm, inset),
+                Offset(inset, inset) to Offset(inset, inset + arm),
+                Offset(far - arm, inset) to Offset(far, inset),
+                Offset(far, inset) to Offset(far, inset + arm),
+                Offset(inset, far) to Offset(inset + arm, far),
+                Offset(inset, far - arm) to Offset(inset, far),
+                Offset(far - arm, far) to Offset(far, far),
+                Offset(far, far - arm) to Offset(far, far),
+            )
+            segments.forEach { (start, end) ->
+                drawLine(
+                    color = Color.White,
+                    start = start,
+                    end = end,
+                    strokeWidth = 4.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+            }
+            segments.forEach { (start, end) ->
+                drawLine(
+                    color = color,
+                    start = start,
+                    end = end,
+                    strokeWidth = 2.dp.toPx(),
+                    cap = StrokeCap.Round,
+                )
+            }
+        }
     }
 }
 

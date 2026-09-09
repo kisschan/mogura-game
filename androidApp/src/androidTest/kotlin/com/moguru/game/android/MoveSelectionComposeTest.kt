@@ -1,16 +1,23 @@
 package com.moguru.game.android
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PixelMap
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -101,6 +108,7 @@ class MoveSelectionComposeTest {
             )
             assertFalse(fixture.viewModel.uiState.value.playState.diceRouletteActive)
         }
+        assertNoSelectedDestinationMarker()
         composeRule.onNodeWithText("次の移動先", substring = true).assertDoesNotExist()
         boardCell(RIGHT).performClick()
         composeRule.runOnIdle {
@@ -171,6 +179,7 @@ class MoveSelectionComposeTest {
             fixture.publishPreparedState()
             assertTrue(fixture.controller.moveTargets().isEmpty())
         }
+        assertNoSelectedDestinationMarker()
         composeRule.onNodeWithText("このマスへ移動", substring = true).assertDoesNotExist()
         composeRule.onNodeWithText("次の移動先", substring = true).assertDoesNotExist()
     }
@@ -184,6 +193,7 @@ class MoveSelectionComposeTest {
         val fixture = Fixture(controller, viewModel)
         val before = fixture.snapshot()
         show(fixture)
+        assertNoSelectedDestinationMarker()
 
         boardCell(target).performClick()
 
@@ -215,6 +225,39 @@ class MoveSelectionComposeTest {
     @Test
     fun moveControlsAndSelectedCoordinatesFitIn390By844Viewport() {
         assertMoveLayoutFitsViewport(width = 390, height = 844)
+    }
+
+    @Test
+    fun selectedDestinationHaloBreathesWithoutHidingTheStaticReticle() {
+        val position = LEFT
+        val style = selectedMoveTargetIndicatorStyle()
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            Box(
+                modifier = Modifier
+                    .requiredSize(64.dp)
+                    .background(Color(0xFF1F6FB2)),
+            ) {
+                SelectedMoveTargetIndicator(
+                    position = position,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+        composeRule.mainClock.advanceTimeByFrame()
+
+        val contracted = selectedMoveTargetIndicator(position).captureToImage().toPixelMap()
+        composeRule.mainClock.advanceTimeBy(style.pulseDurationMillis.toLong())
+        val expanded = selectedMoveTargetIndicator(position).captureToImage().toPixelMap()
+
+        listOf(contracted, expanded).forEach { image ->
+            assertTrue("The static reticle must keep its white under-stroke", image.containsRgb(Color.White))
+            assertTrue(
+                "The static reticle must keep its red top stroke",
+                image.containsRgb(Color(style.topStrokeArgb)),
+            )
+        }
+        assertTrue("The decorative halo must visibly breathe", contracted.differsFrom(expanded))
     }
 
     private fun assertMoveLayoutFitsViewport(width: Int, height: Int) {
@@ -263,9 +306,75 @@ class MoveSelectionComposeTest {
         boardCell(position).assert(
             SemanticsMatcher.expectValue(SemanticsProperties.Selected, true),
         )
+        selectedMoveTargetIndicator(position).assertIsDisplayed()
+        selectedMoveTargetHalo(position).assertIsDisplayed()
+        selectedMoveTargetIndicators().assertCountEquals(1)
+        selectedMoveTargetHalos().assertCountEquals(1)
         composeRule.onNodeWithText(
             "このマスへ移動\n${position.col + 1}列${position.row + 1}行",
         ).assertIsDisplayed()
+    }
+
+    private fun assertNoSelectedDestinationMarker() {
+        selectedMoveTargetIndicators().assertCountEquals(0)
+        selectedMoveTargetHalos().assertCountEquals(0)
+    }
+
+    private fun selectedMoveTargetIndicator(position: Position) = composeRule.onNodeWithTag(
+        selectedMoveTargetIndicatorTestTag(position),
+        useUnmergedTree = true,
+    )
+
+    private fun selectedMoveTargetHalo(position: Position) = composeRule.onNodeWithTag(
+        selectedMoveTargetHaloTestTag(position),
+        useUnmergedTree = true,
+    )
+
+    private fun selectedMoveTargetIndicators() = composeRule.onAllNodes(
+        SemanticsMatcher("選択中の移動先マーカー") { node ->
+            SemanticsProperties.TestTag in node.config &&
+                SELECTED_MOVE_TARGET_TAG.matches(node.config[SemanticsProperties.TestTag])
+        },
+        useUnmergedTree = true,
+    )
+
+    private fun selectedMoveTargetHalos() = composeRule.onAllNodes(
+        SemanticsMatcher("選択中の移動先ハロー") { node ->
+            SemanticsProperties.TestTag in node.config &&
+                SELECTED_MOVE_TARGET_HALO_TAG.matches(node.config[SemanticsProperties.TestTag])
+        },
+        useUnmergedTree = true,
+    )
+
+    private fun PixelMap.containsRgb(target: Color, tolerance: Float = 0.02f): Boolean {
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val actual = this[x, y]
+                if (
+                    kotlin.math.abs(actual.red - target.red) <= tolerance &&
+                    kotlin.math.abs(actual.green - target.green) <= tolerance &&
+                    kotlin.math.abs(actual.blue - target.blue) <= tolerance
+                ) return true
+            }
+        }
+        return false
+    }
+
+    private fun PixelMap.differsFrom(other: PixelMap, tolerance: Float = 0.01f): Boolean {
+        if (width != other.width || height != other.height) return true
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val before = this[x, y]
+                val after = other[x, y]
+                if (
+                    kotlin.math.abs(before.red - after.red) > tolerance ||
+                    kotlin.math.abs(before.green - after.green) > tolerance ||
+                    kotlin.math.abs(before.blue - after.blue) > tolerance ||
+                    kotlin.math.abs(before.alpha - after.alpha) > tolerance
+                ) return true
+            }
+        }
+        return false
     }
 
     private fun boardCell(position: Position) = composeRule.onNodeWithContentDescription(
@@ -326,6 +435,8 @@ class MoveSelectionComposeTest {
     )
 
     private companion object {
+        val SELECTED_MOVE_TARGET_TAG = Regex("selected-move-target-\\d+-\\d+")
+        val SELECTED_MOVE_TARGET_HALO_TAG = Regex("selected-move-target-halo-\\d+-\\d+")
         val SOURCE = Position(2, 2)
         val LEFT = Position(1, 2)
         val RIGHT = Position(3, 2)
