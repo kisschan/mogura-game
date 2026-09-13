@@ -38,6 +38,27 @@ class MoguraGameControllerTest {
     }
 
     @Test
+    fun `history retains the beginning of a game beyond eighty events and resets for a new game`() {
+        val controller = testController()
+        controller.startNewGame(4)
+        val openingHistory = controller.logs
+        repeat(30) {
+            controller.engine!!.advancePhase()
+            assertTrue(controller.finishTurn().success)
+        }
+
+        val history = controller.logs
+        assertTrue(history.size > 80)
+        assertEquals(openingHistory, history.take(openingHistory.size))
+        assertEquals(GameState.PLAYING, controller.engine!!.gameState)
+
+        controller.startNewGame(4)
+
+        assertEquals(openingHistory, controller.logs)
+        assertTrue(history.size > 80, "Previously published history must remain an immutable snapshot")
+    }
+
+    @Test
     fun `new game accepts custom mole nest and start player selections`() {
         val controller = testController()
         val configs = listOf(

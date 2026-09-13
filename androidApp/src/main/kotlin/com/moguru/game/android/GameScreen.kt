@@ -1,6 +1,5 @@
 package com.moguru.game.android
 
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -21,6 +20,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -77,6 +77,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
@@ -92,9 +93,11 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
@@ -137,35 +140,17 @@ internal const val BOARD_CURRENT_PLAYER_OUTLINE_Z = 75f
 internal const val BOARD_CLICK_TARGET_Z = 80f
 
 internal val MOBILE_PLAY_HUD_HEIGHT = 56.dp
-internal val MOBILE_PLAY_ACTION_BAR_HEIGHT = 120.dp
-internal val MOBILE_PLAY_DIG_ACTION_BAR_HEIGHT = 110.dp
 internal val MOBILE_PLAY_HORIZONTAL_PADDING = 8.dp
 internal val MOBILE_PLAY_VERTICAL_PADDING = 4.dp
 internal val MOBILE_PLAY_GAP = 4.dp
 internal val MOBILE_PLAY_MAX_BOARD_WIDTH = 420.dp
 internal val ACTION_BAR_VERTICAL_PADDING = 5.dp
 internal val ACTION_BAR_CONTENT_GAP = 4.dp
-internal val EVENT_STRIP_HEIGHT = 40.dp
 internal val COMPACT_ACTION_BUTTON_HEIGHT = 44.dp
-internal val COMPACT_DIG_BUTTON_HEIGHT = 44.dp
-internal val RESULT_EVENT_STRIP_HEIGHT = 52.dp
-internal const val NEXT_ACTION_LINE_HEIGHT_SP = 16
-internal const val NEXT_ACTION_MAX_LINES = 2
-private const val NORMAL_EVENT_LINE_HEIGHT_SP = 12
-private val NEXT_ACTION_EVENT_GAP = 2.dp
-internal val MOBILE_PLAY_RESULT_ACTION_BAR_HEIGHT =
-    ACTION_BAR_VERTICAL_PADDING * 2f +
-        NEXT_ACTION_LINE_HEIGHT_SP.dp * NEXT_ACTION_MAX_LINES.toFloat() +
-        NEXT_ACTION_EVENT_GAP +
-        RESULT_EVENT_STRIP_HEIGHT +
-        ACTION_BAR_CONTENT_GAP +
-        COMPACT_ACTION_BUTTON_HEIGHT
-internal val LOG_HISTORY_POPUP_MAX_HEIGHT = 220.dp
+internal val LOG_HISTORY_POPUP_MAX_HEIGHT = 420.dp
 internal const val COMPACT_ACTION_CONTROL_MAX_ROWS = 1
 internal const val ACTIVE_GAMEPLAY_USES_VERTICAL_SCROLL = false
-internal const val EVENT_STRIP_MAX_LINES = 1
 internal const val LOG_HISTORY_COLLAPSED_BY_DEFAULT = true
-internal const val NEXT_ACTION_TOGGLE_TEST_TAG = "next-action-toggle"
 internal const val LOG_HISTORY_LIST_TEST_TAG = "log-history-list"
 internal const val LOG_HISTORY_ENTRY_TEST_TAG_PREFIX = "log-history-entry-"
 internal const val AUDIO_SETTINGS_BUTTON_TEST_TAG = "audio-settings-button"
@@ -183,7 +168,6 @@ internal val GAME_MENU_BUTTON_SIZE = 44.dp
 internal val BOARD_PIECE_VISIBILITY_TOGGLE_SIZE = 44.dp
 internal val HUD_SCORE_MIN_WIDTH = 40.dp
 internal const val BOARD_PIECE_TRANSPARENT_ALPHA = 0.22f
-private const val EVENT_DETAIL_CROSSFADE_MILLIS = 120
 internal val LOG_HISTORY_POPUP_GAP = 4.dp
 
 internal enum class AndroidHighlightPattern {
@@ -237,21 +221,6 @@ internal fun selectedMoveTargetIndicatorTestTag(position: Position): String =
 
 internal fun selectedMoveTargetHaloTestTag(position: Position): String =
     "selected-move-target-halo-${position.col}-${position.row}"
-
-internal enum class ActionBarContentMode {
-    STANDARD,
-    DIG_PLACEMENT,
-}
-
-internal data class MobileGameplayLayoutSpec(
-    val hudHeight: Dp,
-    val actionBarHeight: Dp,
-    val boardViewportHeight: Dp,
-    val boardWidth: Dp,
-    val boardHeight: Dp,
-    val usedHeight: Dp,
-    val fitsWithoutScroll: Boolean,
-)
 
 private val LocalAndroidSoundEffectPlayer = staticCompositionLocalOf<AndroidSoundEffectPlayer> {
     NoOpAndroidSoundEffectPlayer
@@ -1064,6 +1033,42 @@ private fun PlayerCountButton(
 }
 
 @Composable
+private fun stableActionAreaHeight(availableWidth: Dp): Dp {
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    val baseStyle = LocalTextStyle.current
+    val contentWidth = (availableWidth - 14.dp).coerceAtLeast(1.dp)
+    val historyLabel = textMeasurer.measure(
+        text = "履歴",
+        style = baseStyle.copy(fontSize = 12.sp, fontWeight = FontWeight.Bold),
+    )
+    val historyWidth = maxOf(48.dp, with(density) { historyLabel.size.width.toDp() } + 12.dp)
+    val historyHeight = maxOf(48.dp, with(density) { historyLabel.size.height.toDp() } + 8.dp)
+
+    // Reserve full-width glyphs beyond the longest built-in guidance and event (20 / 57 chars).
+    // These are sizing samples, never displayed or used as limits on the real text.
+    // Only viewport/font metrics affect this reserve; current messages and phases do not.
+    val instruction = textMeasurer.measure(
+        text = "あ".repeat(26),
+        style = baseStyle.copy(fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.Bold),
+        constraints = Constraints(maxWidth = with(density) {
+            (contentWidth - historyWidth - 8.dp).roundToPx().coerceAtLeast(1)
+        }),
+    )
+    val event = textMeasurer.measure(
+        text = "あ".repeat(64),
+        style = baseStyle.copy(fontSize = 12.sp, lineHeight = 18.sp, fontWeight = FontWeight.Normal),
+        constraints = Constraints(maxWidth = with(density) {
+            (contentWidth - 12.dp).roundToPx().coerceAtLeast(1)
+        }),
+    )
+    val instructionHeight = maxOf(historyHeight, with(density) { instruction.size.height.toDp() })
+    val eventHeight = maxOf(44.dp, with(density) { event.size.height.toDp() } + 12.dp)
+    return ACTION_BAR_VERTICAL_PADDING * 2 + instructionHeight + 4.dp + eventHeight +
+        ACTION_BAR_CONTENT_GAP + compactActionButtonHeight(hasEndTurnHint = true, density.fontScale) + 4.dp
+}
+
+@Composable
 private fun PlayScreen(
     state: AndroidGameUiState,
     viewModel: AndroidGameViewModel,
@@ -1072,6 +1077,8 @@ private fun PlayScreen(
     onRulesClick: () -> Unit,
 ) {
     var boardPiecesTransparent by rememberSaveable { mutableStateOf(false) }
+    var boardViewportHeight by remember { mutableStateOf(0.dp) }
+    val density = LocalDensity.current
     val activePhase = state.playState.actionAvailability.activePhase
     val boardActionsForBar = primaryBoardActionsForBar(
         actions = primaryBoardActions(state.boardState.cells, activePhase),
@@ -1092,12 +1099,14 @@ private fun PlayScreen(
             .fillMaxSize()
             .safeDrawingPadding(),
     ) {
-        val fontScale = LocalDensity.current.fontScale
-        val layout = mobileGameplayLayoutSpec(
-            viewportWidth = maxWidth,
-            viewportHeight = maxHeight,
-            actionBarHeight = actionBarHeightForState(state, fontScale),
+        val availableWidth = (maxWidth - MOBILE_PLAY_HORIZONTAL_PADDING * 2).coerceAtLeast(0.dp)
+        val reservedActionHeight = stableActionAreaHeight(availableWidth)
+        val boardWidth = fittedBoardWidth(
+            availableWidth = availableWidth,
+            availableHeight = maxHeight - MOBILE_PLAY_VERTICAL_PADDING * 2 -
+                MOBILE_PLAY_HUD_HEIGHT - MOBILE_PLAY_GAP - reservedActionHeight,
         )
+        val fixedBoardHeight = boardWidth / (BOARD_SOURCE_WIDTH / BOARD_SOURCE_HEIGHT)
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1107,7 +1116,6 @@ private fun PlayScreen(
                     vertical = MOBILE_PLAY_VERTICAL_PADDING,
                 ),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(MOBILE_PLAY_GAP),
         ) {
             CompactPlayHud(
                 state = state,
@@ -1120,40 +1128,47 @@ private fun PlayScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("top-hud")
-                    .height(layout.hudHeight),
+                    .height(MOBILE_PLAY_HUD_HEIGHT),
             )
-            BoardViewport(
-                state = state,
-                boardWidth = layout.boardWidth,
-                onCellClicked = { position ->
-                    if (activePhase == TurnPhase.MOVE) {
-                        val targetIndex = boardActionsForBar.indexOfFirst { it.position == position }
-                        if (targetIndex >= 0) selectedBoardActionIndex = targetIndex
-                    } else {
-                        viewModel.onCellClicked(position)
-                    }
-                },
-                boardPiecesTransparent = boardPiecesTransparent,
-                selectedMoveTargetPosition = selectedMoveTargetPosition,
-                onCaptureAnimationFinished = viewModel::finishCaptureAnimation,
-                onEatAnimationFinished = viewModel::finishEatAnimation,
-                onTurnConsumptionAnimationFinished = viewModel::finishTurnConsumptionAnimation,
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .weight(1f)
                     .testTag("board-viewport")
-                    .weight(1f),
-            )
+                    .onSizeChanged { size ->
+                        boardViewportHeight = with(density) { size.height.toDp() }
+                    },
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                BoardViewport(
+                    state = state,
+                    onCellClicked = { position ->
+                        if (activePhase == TurnPhase.MOVE) {
+                            val targetIndex = boardActionsForBar.indexOfFirst { it.position == position }
+                            if (targetIndex >= 0) selectedBoardActionIndex = targetIndex
+                        } else {
+                            viewModel.onCellClicked(position)
+                        }
+                    },
+                    boardPiecesTransparent = boardPiecesTransparent,
+                    selectedMoveTargetPosition = selectedMoveTargetPosition,
+                    onCaptureAnimationFinished = viewModel::finishCaptureAnimation,
+                    onEatAnimationFinished = viewModel::finishEatAnimation,
+                    onTurnConsumptionAnimationFinished = viewModel::finishTurnConsumptionAnimation,
+                    modifier = Modifier.fillMaxWidth().height(fixedBoardHeight),
+                )
+            }
+            Spacer(Modifier.height(MOBILE_PLAY_GAP))
             GameplayActionBar(
                 state = state,
                 viewModel = viewModel,
                 boardActions = boardActionsForBar,
                 selectedBoardActionIndex = selectedBoardActionIndex,
                 onBoardActionSelected = { selectedBoardActionIndex = it },
-                boardViewportHeight = layout.boardViewportHeight,
+                boardViewportHeight = boardViewportHeight,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("action-bar")
-                    .height(layout.actionBarHeight),
+                    .testTag("action-bar"),
             )
         }
     }
@@ -1295,7 +1310,6 @@ private fun HudChip(
 @Composable
 private fun BoardViewport(
     state: AndroidGameUiState,
-    boardWidth: Dp,
     onCellClicked: (Position) -> Unit,
     boardPiecesTransparent: Boolean,
     selectedMoveTargetPosition: Position?,
@@ -1304,10 +1318,11 @@ private fun BoardViewport(
     onTurnConsumptionAnimationFinished: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Box(
+    BoxWithConstraints(
         modifier = modifier,
-        contentAlignment = Alignment.Center,
+        contentAlignment = Alignment.TopCenter,
     ) {
+        val boardWidth = fittedBoardWidth(maxWidth, maxHeight)
         BoardView(
             state = state,
             boardWidth = boardWidth,
@@ -1337,12 +1352,11 @@ private fun GameplayActionBar(
     val latestEvent = latestEventText(state)
     val captureOutcome = state.playState.captureOutcome
     var showLogHistory by remember { mutableStateOf(!LOG_HISTORY_COLLAPSED_BY_DEFAULT) }
-    var instructionExpanded by remember(instruction, latestEvent, captureOutcome) { mutableStateOf(false) }
     BoxWithConstraints(modifier = modifier) {
         val historyPopupWidth = minOf(maxWidth, 360.dp)
         val historyPopupMaxHeight = logHistoryPopupHeightLimit(boardViewportHeight)
         Surface(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(8.dp),
             color = Color(0xFFFFF8E8),
             border = BorderStroke(2.dp, Color(0xFFD0AD78)),
@@ -1356,15 +1370,7 @@ private fun GameplayActionBar(
                     text = latestEvent,
                     captureOutcome = captureOutcome,
                     hasHistory = state.logs.isNotEmpty(),
-                    instructionExpanded = instructionExpanded,
-                    onInstructionToggle = {
-                        showLogHistory = false
-                        instructionExpanded = !instructionExpanded
-                    },
-                    onHistoryClick = {
-                        instructionExpanded = false
-                        showLogHistory = true
-                    },
+                    onHistoryClick = { showLogHistory = true },
                 )
                 when {
                     state.showDigControls -> CompactDigPlacementControls(
@@ -1427,150 +1433,67 @@ private fun EventStrip(
     text: String?,
     captureOutcome: CaptureOutcomeDisplay?,
     hasHistory: Boolean,
-    instructionExpanded: Boolean,
-    onInstructionToggle: () -> Unit,
     onHistoryClick: () -> Unit,
 ) {
-    val fontScale = LocalDensity.current.fontScale
-    val expandedInstructionScrollState = rememberScrollState()
-    val presentation = eventStripPresentation(
-        outcome = captureOutcome,
-        fontScale = fontScale,
-    )
-    val containerColor = presentation.containerArgb?.let(::Color) ?: Color.Transparent
+    val presentation = eventStripPresentation(outcome = captureOutcome)
+    val containerColor = presentation.containerArgb?.let(::Color) ?: Color(0xFFFFFBF0)
     val border = presentation.borderArgb?.let { BorderStroke(1.dp, Color(it)) }
 
-    LaunchedEffect(instruction, instructionExpanded) {
-        if (instructionExpanded) expandedInstructionScrollState.scrollTo(0)
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(actionGuidanceStripHeight(captureOutcome != null, fontScale)),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    // Text determines the bar height; only the empty space below the fixed board absorbs changes.
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxSize()
-                .clip(RoundedCornerShape(6.dp))
-                .clickable(
-                    role = Role.Button,
-                    onClickLabel = if (instructionExpanded) {
-                        "操作案内を折りたたむ"
-                    } else {
-                        "操作案内を全文表示"
-                    },
-                    onClick = soundEffectClick(onClick = onInstructionToggle),
-                )
-                .testTag(NEXT_ACTION_TOGGLE_TEST_TAG)
-                .semantics {
-                    stateDescription = if (instructionExpanded) "全文表示中" else "省略表示"
-                },
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Crossfade(
-                targetState = instructionExpanded,
-                modifier = Modifier.fillMaxSize(),
-                animationSpec = tween(EVENT_DETAIL_CROSSFADE_MILLIS),
-                label = "next-action-detail",
-            ) { expanded ->
-                if (expanded) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(expandedInstructionScrollState)
-                            .padding(end = 16.dp),
-                    ) {
-                        Text(
-                            text = instruction,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("next-action-instruction"),
-                            color = Color(0xFF2E2115),
-                            fontSize = 13.sp,
-                            lineHeight = NEXT_ACTION_LINE_HEIGHT_SP.sp,
-                            fontWeight = FontWeight.Black,
-                        )
-                    }
-                } else {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(NEXT_ACTION_EVENT_GAP),
-                    ) {
-                        Text(
-                            text = instruction,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(NEXT_ACTION_LINE_HEIGHT_SP.dp * NEXT_ACTION_MAX_LINES.toFloat() * fontScale)
-                                .padding(end = 16.dp)
-                                .testTag("next-action-instruction"),
-                            color = Color(0xFF2E2115),
-                            fontSize = 13.sp,
-                            lineHeight = NEXT_ACTION_LINE_HEIGHT_SP.sp,
-                            fontWeight = FontWeight.Black,
-                            maxLines = NEXT_ACTION_MAX_LINES,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Surface(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(
-                                    if (captureOutcome == null) {
-                                        normalEventTextHeight(fontScale)
-                                    } else {
-                                        presentation.stripHeight
-                                    },
-                                ),
-                            shape = RoundedCornerShape(6.dp),
-                            color = containerColor,
-                            border = border,
-                        ) {
-                            Text(
-                                text = text.orEmpty(),
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .testTag("latest-event")
-                                    .padding(
-                                        horizontal = if (captureOutcome == null) 0.dp else 6.dp,
-                                        vertical = RESULT_EVENT_STRIP_VERTICAL_PADDING,
-                                    ),
-                                color = Color(presentation.contentArgb),
-                                fontSize = if (captureOutcome == null) 11.sp else 10.sp,
-                                lineHeight = if (captureOutcome == null) {
-                                    NORMAL_EVENT_LINE_HEIGHT_SP.sp
-                                } else {
-                                    RESULT_BANNER_LINE_HEIGHT_SP.sp
-                                },
-                                fontWeight = FontWeight.Bold,
-                                maxLines = presentation.maxLines,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
+            Text(
+                text = instruction,
+                modifier = Modifier.weight(1f).testTag("next-action-instruction"),
+                color = Color(0xFF2E2115),
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            if (hasHistory) {
+                TextButton(
+                    onClick = soundEffectClick(onClick = onHistoryClick),
+                    modifier = Modifier.heightIn(min = 44.dp).widthIn(min = 48.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                ) {
+                    Text("履歴", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            Text(
-                text = if (instructionExpanded) "▲" else "▼",
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 1.dp, end = 2.dp)
-                    .clearAndSetSemantics { },
-                color = Color(0xFF6A543C),
-                fontSize = 9.sp,
-                fontWeight = FontWeight.Black,
-            )
         }
-        if (!instructionExpanded && hasHistory) {
-            TextButton(
-                onClick = soundEffectClick(onClick = onHistoryClick),
+        if (!text.isNullOrBlank()) {
+            Surface(
                 modifier = Modifier
-                    .widthIn(min = 40.dp)
-                    .height(EVENT_STRIP_HEIGHT),
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(
+                        enabled = hasHistory,
+                        role = Role.Button,
+                        onClickLabel = "ログ履歴を開く",
+                        onClick = soundEffectClick(onClick = onHistoryClick),
+                    ),
+                shape = RoundedCornerShape(6.dp),
+                color = containerColor,
+                border = border,
             ) {
-                Text("履歴", fontSize = 10.sp, fontWeight = FontWeight.Black, maxLines = 1)
+                Text(
+                    text = text,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 44.dp)
+                        .padding(horizontal = 6.dp, vertical = 6.dp)
+                        .testTag("latest-event"),
+                    color = Color(presentation.contentArgb),
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                    fontWeight = FontWeight.Normal,
+                )
             }
         }
     }
@@ -1665,9 +1588,10 @@ private fun LogHistoryPopup(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = "履歴",
+                        text = "履歴（${logs.size}件）",
                         modifier = Modifier
                             .weight(1f)
+                            .testTag("log-history-count")
                             .semantics { heading() },
                         color = Color(0xFF2E2115),
                         fontSize = 13.sp,
@@ -1676,19 +1600,20 @@ private fun LogHistoryPopup(
                     TextButton(
                         onClick = soundEffectClick(onClick = onDismiss),
                         modifier = Modifier
-                            .widthIn(min = 40.dp)
-                            .heightIn(min = 40.dp),
+                            .widthIn(min = 44.dp)
+                            .heightIn(min = 44.dp),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
                     ) {
-                        Text("閉じる", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                        Text("閉じる", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
+                Text("新しい順・スクロールで過去のログを表示", fontSize = 11.sp, color = Color(0xFF6A543C))
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f, fill = false)
                         .testTag(LOG_HISTORY_LIST_TEST_TAG),
-                    verticalArrangement = Arrangement.spacedBy(5.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     itemsIndexed(logs.asReversed()) { index, log ->
                         Text(
@@ -1697,9 +1622,9 @@ private fun LogHistoryPopup(
                                 .fillMaxWidth()
                                 .testTag("$LOG_HISTORY_ENTRY_TEST_TAG_PREFIX$index"),
                             color = Color(0xFF4B3826),
-                            fontSize = 11.sp,
-                            lineHeight = 13.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp,
+                            fontWeight = FontWeight.Normal,
                         )
                     }
                 }
@@ -1848,7 +1773,11 @@ private fun CompactDigPlacementControls(
                     onClick = soundEffectClick { onChoice(candidate.choice) },
                     modifier = Modifier
                         .weight(0.72f)
-                        .height(buttonHeight),
+                        .height(buttonHeight)
+                        .semantics {
+                            contentDescription = digCandidateSemanticLabel(candidate)
+                            selected = candidate.selected
+                        },
                     contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp),
                     shape = RoundedCornerShape(8.dp),
                     border = BorderStroke(
@@ -1860,24 +1789,23 @@ private fun CompactDigPlacementControls(
                         contentColor = Color(0xFF2E2115),
                     ),
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         digCandidateTileRes(candidate)?.let { res ->
                             Image(
                                 painter = painterResource(res),
                                 contentDescription = null,
-                                modifier = Modifier.size(22.dp),
+                                modifier = Modifier.size(20.dp),
                                 contentScale = ContentScale.Fit,
                             )
                         }
                         Text(
                             digCandidateShortLabel(candidate.choice),
                             fontSize = 11.sp,
+                            lineHeight = 14.sp,
                             fontWeight = FontWeight.Black,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -2694,94 +2622,18 @@ internal fun playBoardMaxWidthForHeight(availableHeight: Dp): Dp =
         else -> 420.dp
     }
 
-internal fun mobileGameplayLayoutSpec(
-    viewportWidth: Dp,
-    viewportHeight: Dp,
-    actionBarHeight: Dp = MOBILE_PLAY_ACTION_BAR_HEIGHT,
-): MobileGameplayLayoutSpec {
-    val boardViewportHeight = (
-        viewportHeight -
-            MOBILE_PLAY_VERTICAL_PADDING * 2 -
-            MOBILE_PLAY_GAP * 2 -
-            MOBILE_PLAY_HUD_HEIGHT -
-            actionBarHeight
-        ).coerceAtLeast(0.dp)
-    val availableWidth = (viewportWidth - MOBILE_PLAY_HORIZONTAL_PADDING * 2).coerceAtLeast(0.dp)
-    val maxWidthByHeight = boardViewportHeight * (BOARD_SOURCE_WIDTH / BOARD_SOURCE_HEIGHT)
-    val boardWidth = minOf(availableWidth, maxWidthByHeight, MOBILE_PLAY_MAX_BOARD_WIDTH)
-    val boardHeight = boardWidth / (BOARD_SOURCE_WIDTH / BOARD_SOURCE_HEIGHT)
-    val usedHeight = MOBILE_PLAY_VERTICAL_PADDING * 2 +
-        MOBILE_PLAY_GAP * 2 +
-        MOBILE_PLAY_HUD_HEIGHT +
-        actionBarHeight +
-        boardHeight
-    return MobileGameplayLayoutSpec(
-        hudHeight = MOBILE_PLAY_HUD_HEIGHT,
-        actionBarHeight = actionBarHeight,
-        boardViewportHeight = boardViewportHeight,
-        boardWidth = boardWidth,
-        boardHeight = boardHeight,
-        usedHeight = usedHeight,
-        fitsWithoutScroll = usedHeight <= viewportHeight && boardHeight <= boardViewportHeight,
-    )
-}
-
-private fun actionBarHeightForState(state: AndroidGameUiState, fontScale: Float): Dp {
-    val mode = if (state.showDigControls) {
-        ActionBarContentMode.DIG_PLACEMENT
-    } else {
-        ActionBarContentMode.STANDARD
-    }
-    val eventStripHeight = actionGuidanceStripHeight(state.playState.captureOutcome != null, fontScale)
-    val buttonHeight = compactActionButtonHeight(
-        hasEarlyEndTurnAction(state.playState.actionAvailability.activePhase, state.visibleActions), fontScale,
-    )
-    return compactActionBarHeight(mode, eventStripHeight, buttonHeight)
-}
+/** Fit the complete board into the stable space reserved for this viewport and font setting. */
+internal fun fittedBoardWidth(availableWidth: Dp, availableHeight: Dp): Dp = minOf(
+    availableWidth.coerceAtLeast(0.dp),
+    availableHeight.coerceAtLeast(0.dp) * (BOARD_SOURCE_WIDTH / BOARD_SOURCE_HEIGHT),
+    MOBILE_PLAY_MAX_BOARD_WIDTH,
+)
 
 private fun hasEarlyEndTurnAction(phase: TurnPhase?, actions: List<AndroidVisibleAction>): Boolean =
     phase in listOf(TurnPhase.MOVE, TurnPhase.CAPTURE) && AndroidVisibleAction.END_TURN in actions
 
 internal fun compactActionButtonHeight(hasEndTurnHint: Boolean, fontScale: Float = 1f): Dp =
     maxOf(COMPACT_ACTION_BUTTON_HEIGHT, (if (hasEndTurnHint) 54.dp else COMPACT_ACTION_BUTTON_HEIGHT) * fontScale)
-
-private fun normalEventTextHeight(fontScale: Float): Dp =
-    NORMAL_EVENT_LINE_HEIGHT_SP.dp * fontScale + RESULT_EVENT_STRIP_VERTICAL_PADDING * 2f
-
-/** Reserve two instruction lines independently of the latest event or capture result. */
-internal fun actionGuidanceStripHeight(hasCaptureOutcome: Boolean, fontScale: Float = 1f): Dp {
-    val eventHeight = if (hasCaptureOutcome) resultEventStripHeight(fontScale) else normalEventTextHeight(fontScale)
-    return maxOf(
-        52.dp,
-        NEXT_ACTION_LINE_HEIGHT_SP.dp * NEXT_ACTION_MAX_LINES.toFloat() * fontScale +
-            NEXT_ACTION_EVENT_GAP + eventHeight,
-    )
-}
-
-internal fun compactActionBarContentHeight(
-    mode: ActionBarContentMode,
-    eventStripHeight: Dp = actionGuidanceStripHeight(hasCaptureOutcome = false),
-    buttonHeight: Dp = COMPACT_ACTION_BUTTON_HEIGHT,
-): Dp =
-    ACTION_BAR_VERTICAL_PADDING * 2 +
-        eventStripHeight +
-        ACTION_BAR_CONTENT_GAP +
-        when (mode) {
-            ActionBarContentMode.STANDARD -> buttonHeight
-            ActionBarContentMode.DIG_PLACEMENT -> maxOf(COMPACT_DIG_BUTTON_HEIGHT, buttonHeight)
-        }
-
-internal fun compactActionBarHeight(
-    mode: ActionBarContentMode,
-    eventStripHeight: Dp = actionGuidanceStripHeight(hasCaptureOutcome = false),
-    buttonHeight: Dp = COMPACT_ACTION_BUTTON_HEIGHT,
-): Dp {
-    val baseHeight = when (mode) {
-        ActionBarContentMode.STANDARD -> MOBILE_PLAY_ACTION_BAR_HEIGHT
-        ActionBarContentMode.DIG_PLACEMENT -> MOBILE_PLAY_DIG_ACTION_BAR_HEIGHT
-    }
-    return maxOf(baseHeight, compactActionBarContentHeight(mode, eventStripHeight, buttonHeight))
-}
 
 internal fun compactTargetActionSlotCount(targetCount: Int): Int =
     if (targetCount > 1) 2 else 1
@@ -3354,39 +3206,20 @@ internal data class EventStripPresentation(
     val containerArgb: Int?,
     val borderArgb: Int?,
     val contentArgb: Int,
-    val maxLines: Int,
-    val stripHeight: Dp,
 )
 
-internal const val RESULT_BANNER_MAX_LINES = 4
-private const val RESULT_BANNER_LINE_HEIGHT_SP = 10
-private val RESULT_EVENT_STRIP_VERTICAL_PADDING = 2.dp
-
-internal fun resultEventStripHeight(fontScale: Float = 1f): Dp {
-    val textHeight = RESULT_BANNER_LINE_HEIGHT_SP.dp * RESULT_BANNER_MAX_LINES.toFloat() * fontScale
-    val paddedHeight = textHeight + RESULT_EVENT_STRIP_VERTICAL_PADDING * 2f
-    return maxOf(RESULT_EVENT_STRIP_HEIGHT, paddedHeight)
-}
-
-internal fun eventStripPresentation(
-    outcome: CaptureOutcomeDisplay?,
-    fontScale: Float = 1f,
-): EventStripPresentation =
+internal fun eventStripPresentation(outcome: CaptureOutcomeDisplay?): EventStripPresentation =
     outcome?.let {
         val colors = resultBannerColors(it.kind)
         EventStripPresentation(
             containerArgb = colors.containerArgb,
             borderArgb = colors.borderArgb,
             contentArgb = colors.contentArgb,
-            maxLines = RESULT_BANNER_MAX_LINES,
-            stripHeight = resultEventStripHeight(fontScale),
         )
     } ?: EventStripPresentation(
         containerArgb = null,
         borderArgb = null,
         contentArgb = 0xFF4B3826.toInt(),
-        maxLines = EVENT_STRIP_MAX_LINES,
-        stripHeight = EVENT_STRIP_HEIGHT,
     )
 
 internal fun resultBannerColors(kind: CaptureOutcomeKind): ResultBannerColors =

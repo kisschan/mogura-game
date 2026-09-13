@@ -495,7 +495,7 @@ class AndroidGameViewModel(
             visibleActions = if (isGameStarted && !animationInProgress()) visibleActions(playState) else emptyList(),
             showDigControls = isGameStarted && !animationInProgress() && playState.digCandidates.any { it.enabled },
             logs = frozenDisplay?.logs
-                ?: if (isGameStarted) controller.logs.takeLast(5) else emptyList(),
+                ?: if (isGameStarted) controller.logs else emptyList(),
             lastMessage = if (frozenDisplay != null) frozenDisplay.lastMessage else lastMessage,
             gameResult = gameResult,
             showGameResultOverlay = gameResult != null &&
@@ -542,7 +542,7 @@ class AndroidGameViewModel(
                 cells = if (isGameStarted) buildBoardCells() else emptyList(),
             ),
             hungerMarkers = if (isGameStarted) buildHungerMarkers() else emptyList(),
-            logs = if (isGameStarted) controller.logs.takeLast(5) else emptyList(),
+            logs = if (isGameStarted) controller.logs else emptyList(),
             lastMessage = lastMessage,
         )
     }

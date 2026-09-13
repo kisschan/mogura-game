@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test
 
 class MobileGameplayLayoutContractTest {
     @Test
-    fun `active gameplay fits compact mobile viewports without scroll`() {
+    fun `board fits a stable space reservation on compact mobile viewports`() {
         listOf(
             360.dp to 740.dp,
             375.dp to 812.dp,
@@ -19,33 +19,29 @@ class MobileGameplayLayoutContractTest {
             412.dp to 915.dp,
             430.dp to 932.dp,
         ).forEach { (width, height) ->
-            val spec = mobileGameplayLayoutSpec(width, height)
+            // Reservations cover different font metrics, never the current event's measured height.
+            listOf(120.dp, 220.dp, 340.dp).forEach { reservedActionHeight ->
+                val availableHeight = height - MOBILE_PLAY_VERTICAL_PADDING * 2 -
+                    MOBILE_PLAY_HUD_HEIGHT - MOBILE_PLAY_GAP - reservedActionHeight
+                val boardWidth = fittedBoardWidth(width, availableHeight)
+                val boardHeight = boardWidth / BOARD_ASPECT_RATIO
 
-            assertTrue(spec.fitsWithoutScroll, "gameplay should fit $width x $height")
-            assertTrue(spec.usedHeight <= height, "used height ${spec.usedHeight} should fit $height")
-            assertTrue(spec.boardHeight <= spec.boardViewportHeight)
-            assertTrue(spec.hudHeight <= MOBILE_PLAY_HUD_HEIGHT)
-            assertTrue(spec.actionBarHeight <= MOBILE_PLAY_ACTION_BAR_HEIGHT)
+                assertTrue(boardWidth > 0.dp, "the board must remain visible at $width x $height")
+                assertTrue(boardWidth <= width, "the board must fit horizontally")
+                assertTrue(boardHeight <= availableHeight, "the board must fit below the HUD and above the full controls")
+                assertTrue(boardWidth <= 420.dp, "the board must stay within its maximum width")
+            }
         }
     }
 
     @Test
-    fun `dig placement still fits the smallest supported viewport`() {
-        listOf(1f, 1.5f).forEach { fontScale ->
-            val stripHeight = actionGuidanceStripHeight(hasCaptureOutcome = false, fontScale)
-            val buttonHeight = compactActionButtonHeight(hasEndTurnHint = false, fontScale)
-            val actionBarHeight = compactActionBarHeight(ActionBarContentMode.DIG_PLACEMENT, stripHeight, buttonHeight)
-            val spec = mobileGameplayLayoutSpec(
-                viewportWidth = 360.dp,
-                viewportHeight = 740.dp,
-                actionBarHeight = actionBarHeight,
-            )
+    fun `board adapts to shorter viewports while keeping its aspect ratio`() {
+        val tallViewportBoardWidth = fittedBoardWidth(360.dp, availableHeight = 520.dp)
+        val shortViewportBoardWidth = fittedBoardWidth(360.dp, availableHeight = 320.dp)
 
-            assertTrue(spec.fitsWithoutScroll)
-            assertTrue(spec.usedHeight <= 740.dp)
-            assertTrue(spec.actionBarHeight >= ACTION_BAR_VERTICAL_PADDING * 2 + stripHeight + ACTION_BAR_CONTENT_GAP + buttonHeight)
-            if (fontScale == 1f) assertEquals(MOBILE_PLAY_DIG_ACTION_BAR_HEIGHT, spec.actionBarHeight)
-        }
+        assertEquals(360.dp, tallViewportBoardWidth)
+        assertEquals(240.dp, shortViewportBoardWidth)
+        assertTrue(shortViewportBoardWidth < tallViewportBoardWidth)
     }
 
     @Test
@@ -54,70 +50,27 @@ class MobileGameplayLayoutContractTest {
     }
 
     @Test
-    fun `action bar content fits its fixed mobile height`() {
-        assertTrue(
-            compactActionBarContentHeight(ActionBarContentMode.STANDARD) <= MOBILE_PLAY_ACTION_BAR_HEIGHT,
-            "standard actions must not overflow the fixed action bar",
-        )
-        assertTrue(
-            compactActionBarContentHeight(ActionBarContentMode.DIG_PLACEMENT) <= MOBILE_PLAY_DIG_ACTION_BAR_HEIGHT,
-            "dig placement controls must not overflow the fixed action bar",
-        )
+    fun `board fitting handles empty space without creating negative bounds`() {
+        assertEquals(0.dp, fittedBoardWidth(360.dp, availableHeight = 0.dp))
+        assertEquals(0.dp, fittedBoardWidth(360.dp, availableHeight = (-20).dp))
+        assertEquals(0.dp, fittedBoardWidth((-10).dp, availableHeight = 500.dp))
     }
 
     @Test
-    fun `result banners get enough strip and action bar height for four lines`() {
-        assertTrue(RESULT_EVENT_STRIP_HEIGHT > EVENT_STRIP_HEIGHT)
-        assertTrue(RESULT_EVENT_STRIP_HEIGHT >= 44.dp)
-        assertTrue(
-            compactActionBarContentHeight(ActionBarContentMode.STANDARD, actionGuidanceStripHeight(true)) <=
-                MOBILE_PLAY_RESULT_ACTION_BAR_HEIGHT,
-            "result banners must not overflow the expanded action bar",
-        )
+    fun `board fitting respects both aspect ratio and maximum width`() {
+        assertEquals(300.dp, fittedBoardWidth(390.dp, availableHeight = 400.dp))
+        assertEquals(390.dp, fittedBoardWidth(390.dp, availableHeight = 600.dp))
+        assertEquals(420.dp, fittedBoardWidth(800.dp, availableHeight = 1000.dp))
     }
 
     @Test
-    fun `result banner heights scale with accessibility font size`() {
-        val scaledStripHeight = resultEventStripHeight(fontScale = 1.5f)
-        val scaledActionBarHeight = compactActionBarHeight(
-            mode = ActionBarContentMode.STANDARD,
-            eventStripHeight = actionGuidanceStripHeight(true, fontScale = 1.5f),
-        )
-
-        assertTrue(scaledStripHeight > RESULT_EVENT_STRIP_HEIGHT)
-        assertTrue(scaledActionBarHeight > MOBILE_PLAY_RESULT_ACTION_BAR_HEIGHT)
-        assertTrue(
-            compactActionBarContentHeight(ActionBarContentMode.STANDARD, actionGuidanceStripHeight(true, 1.5f)) <=
-                scaledActionBarHeight,
-        )
-    }
-
-    @Test
-    fun `result banner action bar still fits the smallest supported viewport`() {
-        val spec = mobileGameplayLayoutSpec(
-            viewportWidth = 360.dp,
-            viewportHeight = 740.dp,
-            actionBarHeight = MOBILE_PLAY_RESULT_ACTION_BAR_HEIGHT,
-        )
-
-        assertTrue(spec.fitsWithoutScroll)
-        assertTrue(spec.usedHeight <= 740.dp)
-    }
-
-    @Test
-    fun `independent instruction and event fit together including larger fonts`() {
+    fun `action buttons preserve readable height when accessibility font size increases`() {
         listOf(1f, 1.2f, 1.5f).forEach { fontScale ->
-            val resultHeight = resultEventStripHeight(fontScale)
-            val stripHeight = actionGuidanceStripHeight(hasCaptureOutcome = true, fontScale = fontScale)
-            assertTrue(stripHeight >= 32.dp * fontScale + 2.dp + resultHeight)
-            val buttonHeight = compactActionButtonHeight(hasEndTurnHint = true, fontScale = fontScale)
-            assertTrue(buttonHeight >= (15.dp * 2 + 12.dp * 2) * fontScale)
-            val actionBarHeight = compactActionBarHeight(ActionBarContentMode.STANDARD, stripHeight, buttonHeight)
-            listOf(360.dp to 740.dp, 390.dp to 844.dp).forEach { (width, height) ->
-                val spec = mobileGameplayLayoutSpec(width, height, actionBarHeight)
-                assertTrue(spec.fitsWithoutScroll)
-                assertTrue(spec.boardHeight > 0.dp)
-            }
+            val ordinaryButtonHeight = compactActionButtonHeight(hasEndTurnHint = false, fontScale)
+            val hintedButtonHeight = compactActionButtonHeight(hasEndTurnHint = true, fontScale)
+            assertTrue(ordinaryButtonHeight >= 44.dp * fontScale)
+            assertTrue(hintedButtonHeight >= (15.dp * 2 + 12.dp * 2) * fontScale)
+            assertTrue(hintedButtonHeight >= ordinaryButtonHeight)
         }
     }
 
@@ -137,11 +90,6 @@ class MobileGameplayLayoutContractTest {
     @Test
     fun `log history is collapsed by default`() {
         assertTrue(LOG_HISTORY_COLLAPSED_BY_DEFAULT)
-    }
-
-    @Test
-    fun `event strip keeps a usable history tap target`() {
-        assertTrue(EVENT_STRIP_HEIGHT >= 40.dp)
     }
 
     @Test
@@ -176,8 +124,9 @@ class MobileGameplayLayoutContractTest {
 
     @Test
     fun `log drawer has a bounded overlay height`() {
-        assertTrue(LOG_HISTORY_POPUP_MAX_HEIGHT <= 220.dp)
-        assertEquals(220.dp, logHistoryPopupHeightLimit(300.dp))
+        assertEquals(420.dp, LOG_HISTORY_POPUP_MAX_HEIGHT)
+        assertEquals(420.dp, logHistoryPopupHeightLimit(600.dp))
+        assertEquals(296.dp, logHistoryPopupHeightLimit(300.dp))
         assertEquals(196.dp, logHistoryPopupHeightLimit(200.dp))
     }
 
@@ -211,5 +160,9 @@ class MobileGameplayLayoutContractTest {
     @Test
     fun `dice roulette overlay blocks input to the back layer`() {
         assertTrue(DICE_ROULETTE_OVERLAY_CONSUMES_BACK_LAYER_INPUT)
+    }
+
+    private companion object {
+        const val BOARD_ASPECT_RATIO = 3f / 4f
     }
 }

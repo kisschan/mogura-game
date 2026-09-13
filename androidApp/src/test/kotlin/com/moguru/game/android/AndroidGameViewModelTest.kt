@@ -59,6 +59,59 @@ class AndroidGameViewModelTest {
     }
 
     @Test
+    fun `history keeps every controller event beyond the latest five`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+        viewModel.startNewGame(2)
+        val openingHistory = controller.logs
+        repeat(2) {
+            controller.engine!!.advancePhase()
+            assertTrue(controller.finishTurn().success)
+        }
+
+        // An invalid target refreshes the display without adding another event.
+        viewModel.onCellClicked(Position(0, 0))
+
+        val history = viewModel.uiState.value.logs
+        assertTrue(history.size > 5)
+        assertEquals(controller.logs, history)
+        assertEquals(openingHistory, history.take(openingHistory.size))
+
+        viewModel.startNewGame(2)
+
+        assertEquals(openingHistory, viewModel.uiState.value.logs)
+    }
+
+    @Test
+    fun `automatic turn consumption preserves all preceding history until completion`() {
+        val controller = testController()
+        val viewModel = AndroidGameViewModel(controller)
+        viewModel.startNewGame(2)
+        repeat(2) {
+            controller.engine!!.advancePhase()
+            assertTrue(controller.finishTurn().success)
+        }
+        viewModel.onCellClicked(Position(0, 0))
+        val precedingHistory = controller.logs
+        assertTrue(precedingHistory.size > 5)
+        repeat(2) { controller.engine!!.advancePhase() }
+
+        viewModel.skip()
+
+        val animatingState = viewModel.uiState.value
+        val consumption = requireNotNull(animatingState.turnConsumptionAnimation)
+        assertEquals(precedingHistory, animatingState.logs.take(precedingHistory.size))
+        assertEquals(precedingHistory.size + 1, animatingState.logs.size)
+        assertTrue(animatingState.logs.last().contains("捕獲"))
+        assertTrue(controller.logs.size > animatingState.logs.size)
+
+        viewModel.finishTurnConsumptionAnimation(consumption.id)
+
+        assertEquals(controller.logs, viewModel.uiState.value.logs)
+        assertEquals(precedingHistory, viewModel.uiState.value.logs.take(precedingHistory.size))
+    }
+
+    @Test
     fun `setup selections choose moles nests and start player`() {
         val controller = testController()
         val viewModel = AndroidGameViewModel(controller)
