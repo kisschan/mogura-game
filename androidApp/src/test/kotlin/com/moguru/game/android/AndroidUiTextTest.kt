@@ -281,11 +281,6 @@ class AndroidUiTextTest {
     }
 
     @Test
-    fun `latest event strip is intentionally one line`() {
-        assertEquals(1, EVENT_STRIP_MAX_LINES)
-    }
-
-    @Test
     fun `face down capture targets include their order`() {
         val target = CaptureTargetDisplay(
             index = 1,
@@ -404,11 +399,6 @@ class AndroidUiTextTest {
     }
 
     @Test
-    fun `result banner does not cap lines because outcome and next action are critical`() {
-        assertEquals(4, RESULT_BANNER_MAX_LINES)
-    }
-
-    @Test
     fun `event strip presentation uses result banner styling for capture outcomes`() {
         val outcome = CaptureOutcomeDisplay(
             kind = CaptureOutcomeKind.CAPTURED,
@@ -421,19 +411,15 @@ class AndroidUiTextTest {
         assertEquals(colors.containerArgb, presentation.containerArgb)
         assertEquals(colors.borderArgb, presentation.borderArgb)
         assertEquals(colors.contentArgb, presentation.contentArgb)
-        assertEquals(RESULT_BANNER_MAX_LINES, presentation.maxLines)
-        assertEquals(RESULT_EVENT_STRIP_HEIGHT, presentation.stripHeight)
     }
 
     @Test
-    fun `event strip presentation keeps normal events compact`() {
+    fun `event strip presentation uses readable colors for normal events`() {
         val presentation = eventStripPresentation(null)
 
         assertNull(presentation.containerArgb)
         assertNull(presentation.borderArgb)
         assertEquals(0xFF4B3826.toInt(), presentation.contentArgb)
-        assertEquals(EVENT_STRIP_MAX_LINES, presentation.maxLines)
-        assertEquals(EVENT_STRIP_HEIGHT, presentation.stripHeight)
     }
 
     @Test

@@ -1085,9 +1085,6 @@ class MoguraGameController(
 
     private fun addLog(message: String) {
         messages.addLast(message)
-        while (messages.size > MAX_LOG_LINES) {
-            messages.removeFirst()
-        }
     }
 
     private fun replenishFoodIfNeeded() {
@@ -1207,8 +1204,6 @@ class MoguraGameController(
     }
 
     companion object {
-        private const val MAX_LOG_LINES = 80
-
         val moleOptions = listOf(
             MoleOption(0, "モグオ"),
             MoleOption(1, "モグタ"),
