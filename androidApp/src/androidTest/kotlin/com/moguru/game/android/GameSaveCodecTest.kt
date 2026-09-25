@@ -6,6 +6,7 @@ import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.util.FixedDiceRoller
 import com.moguru.game.util.FixedShuffler
 import org.json.JSONObject
+import org.json.JSONArray
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -63,7 +64,17 @@ class GameSaveCodecTest {
         val invalidPhase = JSONObject(GameSaveCodec.encode(saved())).apply {
             getJSONObject("game").getJSONObject("engine").put("currentPhase", "UNKNOWN")
         }.toString()
-        for (text in listOf("{", missing, invalidPlayer, invalidPhase)) {
+        val invalidEscapes = listOf(
+            JSONArray(),
+            JSONArray().put(JSONObject().put("roll", 1).put("direction", "LEFT"))
+                .put(JSONObject().put("roll", 2).put("direction", "BOTTOM")),
+        ).map { escapeMap ->
+            JSONObject(GameSaveCodec.encode(saved())).apply {
+                getJSONObject("game").getJSONObject("engine").getJSONArray("foodStock").getJSONObject(0)
+                    .put("type", "EARTHWORM").put("escapeMap", escapeMap)
+            }.toString()
+        }
+        for (text in listOf("{", missing, invalidPlayer, invalidPhase) + invalidEscapes) {
             try { GameSaveCodec.decode(text); fail("accepted corrupt save") }
             catch (e: InvalidGameSaveException) { assertEquals(GameSaveLoadIssue.CORRUPT, e.issue) }
         }

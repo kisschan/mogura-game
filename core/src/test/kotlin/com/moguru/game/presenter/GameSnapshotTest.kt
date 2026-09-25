@@ -3,6 +3,7 @@ package com.moguru.game.presenter
 import com.moguru.game.model.Rotation
 import com.moguru.game.model.FoodCard
 import com.moguru.game.model.FoodType
+import com.moguru.game.model.EscapeDirection
 import com.moguru.game.model.Position
 import com.moguru.game.engine.GameState
 import com.moguru.game.engine.TurnPhase
@@ -51,6 +52,22 @@ class GameSnapshotTest {
         assertNotEquals(before, original.exportSnapshot())
         assertThrows(IllegalArgumentException::class.java) {
             MoguraGameController.fromSnapshot(before.copy(engine = before.engine.copy(currentPlayerIndex = 99)))
+        }
+    }
+
+    @Test
+    fun `restoration rejects changed escape rules for every food type`() {
+        val snapshot = controller().apply { startNewGame(4) }.exportSnapshot()
+        for (type in FoodType.entries) {
+            val card = FoodCard.createDummyCards(type).first()
+            val valid = snapshot.copy(engine = snapshot.engine.copy(foodStock = listOf(card)))
+            assertDoesNotThrow { MoguraGameController.fromSnapshot(valid) }
+            val invalidMaps = listOf(emptyMap(), card.escapeMap + (1 to EscapeDirection.RIGHT))
+                .filter { it != card.escapeMap }
+            for (escapeMap in invalidMaps) {
+                val corrupt = valid.copy(engine = valid.engine.copy(foodStock = listOf(card.copy(escapeMap = escapeMap))))
+                assertThrows(IllegalArgumentException::class.java) { MoguraGameController.fromSnapshot(corrupt) }
+            }
         }
     }
 

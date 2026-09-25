@@ -48,7 +48,7 @@ fun GameSnapshot.validate() {
     fun validPosition(position: Position) =
         board.getCell(position)?.type?.let { it != CellType.INVALID } == true
     fun food(card: FoodCard) {
-        require(card.escapeMap.keys.all { it in 1..6 })
+        require(card.escapeMap == FoodCard.createDummyCards(card.type).first().escapeMap)
         require(engine.players.size == 4 || card.type != FoodType.FROG)
     }
     fun tile(value: HoleTile) {
