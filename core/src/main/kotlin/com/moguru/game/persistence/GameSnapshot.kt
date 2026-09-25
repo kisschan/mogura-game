@@ -142,4 +142,9 @@ fun GameSnapshot.validate() {
     if (engine.gameState == GameState.FINISHED) {
         require(pendingDecision == null && pendingCaptureRoll == null && pendingDigPlacement == null)
     }
+    // A pending decision owns the removed card. A pending roll only references a board card.
+    val allFood = engine.foods.values.flatten() + engine.foodStock + engine.foodDiscard +
+        players.flatMap { it.storedFoods + listOfNotNull(it.carriedFood) } + listOfNotNull(pendingDecision?.food)
+    val expectedFood = FoodCard.createDeck(includeFrog = players.size == 4)
+    require(allFood.groupingBy { it.type }.eachCount() == expectedFood.groupingBy { it.type }.eachCount())
 }

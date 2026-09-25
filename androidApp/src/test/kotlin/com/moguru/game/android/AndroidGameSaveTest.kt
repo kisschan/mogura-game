@@ -108,7 +108,8 @@ class AndroidGameSaveTest {
                 players = initial.engine.players.mapIndexed { i, p ->
                     if (i == 0) p.copy(position = position, health = 5) else p
                 },
-                foods = mapOf(position to listOf(FoodCard.createDummyCards(FoodType.EARTHWORM).first()))),
+                foods = mapOf(position to listOf(FoodCard.createDummyCards(FoodType.EARTHWORM).first())),
+                foodStock = initial.engine.foodStock.drop(1) + initial.engine.foods.values.flatten()),
             pendingDigDrawnTile = null,
         )
         val store = Store().apply { saved = SavedGame(ready, 1, 1) }
@@ -265,7 +266,8 @@ class AndroidGameSaveTest {
         val ready = source.copy(
             engine = source.engine.copy(currentPhase = TurnPhase.CAPTURE,
                 players = source.engine.players.mapIndexed { i, p -> if (i == 0) p.copy(position = position) else p },
-                foods = mapOf(position to listOf(FoodCard.createDummyCards(FoodType.EARTHWORM).first()))),
+                foods = mapOf(position to listOf(FoodCard.createDummyCards(FoodType.EARTHWORM).first())),
+                foodStock = source.engine.foodStock.drop(1) + source.engine.foods.values.flatten()),
             pendingDigDrawnTile = null,
         )
         val store = Store().apply { saved = SavedGame(ready, 1, 1) }

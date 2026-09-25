@@ -34,7 +34,8 @@ class GameSaveCodecTest {
         val ready = source.copy(
             engine = source.engine.copy(currentPhase = TurnPhase.CAPTURE,
                 players = source.engine.players.mapIndexed { i, p -> if (i == 0) p.copy(position = position) else p },
-                foods = mapOf(position to listOf(FoodCard.createDummyCards(FoodType.EARTHWORM).first()))),
+                foods = mapOf(position to listOf(FoodCard.createDummyCards(FoodType.EARTHWORM).first())),
+                foodStock = source.engine.foodStock.drop(1) + source.engine.foods.values.flatten()),
             pendingDigDrawnTile = null,
         )
         for (roll in listOf(1, 6)) {
@@ -74,7 +75,11 @@ class GameSaveCodecTest {
                     .put("type", "EARTHWORM").put("escapeMap", escapeMap)
             }.toString()
         }
-        for (text in listOf("{", missing, invalidPlayer, invalidPhase) + invalidEscapes) {
+        val extraFood = JSONObject(GameSaveCodec.encode(saved())).apply {
+            val stock = getJSONObject("game").getJSONObject("engine").getJSONArray("foodStock")
+            stock.put(stock.getJSONObject(0))
+        }.toString()
+        for (text in listOf("{", missing, invalidPlayer, invalidPhase, extraFood) + invalidEscapes) {
             try { GameSaveCodec.decode(text); fail("accepted corrupt save") }
             catch (e: InvalidGameSaveException) { assertEquals(GameSaveLoadIssue.CORRUPT, e.issue) }
         }

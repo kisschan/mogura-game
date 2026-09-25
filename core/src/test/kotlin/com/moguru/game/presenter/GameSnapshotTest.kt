@@ -60,12 +60,27 @@ class GameSnapshotTest {
         val snapshot = controller().apply { startNewGame(4) }.exportSnapshot()
         for (type in FoodType.entries) {
             val card = FoodCard.createDummyCards(type).first()
-            val valid = snapshot.copy(engine = snapshot.engine.copy(foodStock = listOf(card)))
+            val valid = snapshot.copy(engine = snapshot.engine.copy(foods = emptyMap(), foodStock = FoodCard.createDeck(true)))
             assertDoesNotThrow { MoguraGameController.fromSnapshot(valid) }
             val invalidMaps = listOf(emptyMap(), card.escapeMap + (1 to EscapeDirection.RIGHT))
                 .filter { it != card.escapeMap }
             for (escapeMap in invalidMaps) {
-                val corrupt = valid.copy(engine = valid.engine.copy(foodStock = listOf(card.copy(escapeMap = escapeMap))))
+                val corrupt = valid.copy(engine = valid.engine.copy(foodStock = valid.engine.foodStock.map {
+                    if (it.type == type) it.copy(escapeMap = escapeMap) else it
+                }))
+                assertThrows(IllegalArgumentException::class.java) { MoguraGameController.fromSnapshot(corrupt) }
+            }
+        }
+    }
+
+    @Test
+    fun `restoration rejects extra missing and substituted food cards`() {
+        for (count in 2..4) {
+            val snapshot = controller().apply { startNewGame(count) }.exportSnapshot()
+            val stock = snapshot.engine.foodStock
+            val larva = FoodCard.createDummyCards(FoodType.BEETLE_LARVA).first()
+            for (corruptStock in listOf(stock + larva, stock.drop(1), stock.drop(1) + larva)) {
+                val corrupt = snapshot.copy(engine = snapshot.engine.copy(foodStock = corruptStock))
                 assertThrows(IllegalArgumentException::class.java) { MoguraGameController.fromSnapshot(corrupt) }
             }
         }
@@ -123,6 +138,7 @@ class GameSnapshotTest {
                 currentPhase = TurnPhase.CAPTURE,
                 players = initial.engine.players.mapIndexed { i, p -> if (i == 0) p.copy(position = position) else p },
                 foods = mapOf(position to listOf(FoodCard.createDummyCards(FoodType.EARTHWORM).first())),
+                foodStock = initial.engine.foodStock.drop(1) + initial.engine.foods.values.flatten(),
             ),
             pendingDigDrawnTile = null,
         )
@@ -144,6 +160,9 @@ class GameSnapshotTest {
         val once = resumed.exportSnapshot()
         resumed.settleAfterRestore()
         assertEquals(once, resumed.exportSnapshot())
+        assertTrue(resumed.carryPendingFood().success)
+        assertNotNull(resumed.currentPlayer!!.carriedFood)
+        assertEquals(resumed.exportSnapshot(), MoguraGameController.fromSnapshot(resumed.exportSnapshot()).exportSnapshot())
     }
 
     @Test
@@ -156,6 +175,7 @@ class GameSnapshotTest {
         val setup = initial.copy(
             engine = initial.engine.copy(
                 currentPhase = TurnPhase.DECIDE,
+                foodStock = initial.engine.foodStock.toMutableList().apply { removeAt(indexOfFirst { it.type == food.type }) },
                 players = initial.engine.players.mapIndexed { index, player ->
                     when (index) {
                         0 -> player.copy(position = victimNest)
@@ -179,6 +199,7 @@ class GameSnapshotTest {
 
         val own = initial.copy(
             engine = initial.engine.copy(currentPhase = TurnPhase.DECIDE,
+                foodStock = initial.engine.foodStock.toMutableList().apply { removeAt(indexOfFirst { it.type == food.type }) },
                 players = initial.engine.players.mapIndexed { index, p -> if (index == 0) p.copy(storedFoods = listOf(food)) else p }),
             pendingDigDrawnTile = null, ownNestEatEligiblePlayers = setOf(0),
         )
@@ -186,5 +207,6 @@ class GameSnapshotTest {
         assertTrue(atHome.playScreenUiState().actionAvailability.canEat)
         assertTrue(atHome.eatPendingFood().success)
         assertEquals(0, atHome.currentPlayer!!.score)
+        assertEquals(atHome.exportSnapshot(), MoguraGameController.fromSnapshot(atHome.exportSnapshot()).exportSnapshot())
     }
 }
