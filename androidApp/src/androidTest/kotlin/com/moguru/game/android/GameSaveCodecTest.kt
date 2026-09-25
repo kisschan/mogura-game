@@ -33,6 +33,7 @@ class GameSaveCodecTest {
         val position = Position(2, 2)
         val ready = source.copy(
             engine = source.engine.copy(currentPhase = TurnPhase.CAPTURE,
+                tileDiscardPile = source.engine.tileDiscardPile + listOfNotNull(source.pendingDigDrawnTile),
                 players = source.engine.players.mapIndexed { i, p -> if (i == 0) p.copy(position = position) else p },
                 foods = mapOf(position to listOf(FoodCard.createDummyCards(FoodType.EARTHWORM).first())),
                 foodStock = source.engine.foodStock.drop(1) + source.engine.foods.values.flatten()),
@@ -79,7 +80,21 @@ class GameSaveCodecTest {
             val stock = getJSONObject("game").getJSONObject("engine").getJSONArray("foodStock")
             stock.put(stock.getJSONObject(0))
         }.toString()
-        for (text in listOf("{", missing, invalidPlayer, invalidPhase, extraFood) + invalidEscapes) {
+        val missingTile = JSONObject(GameSaveCodec.encode(saved())).apply {
+            val engine = getJSONObject("game").getJSONObject("engine")
+            val tiles = engine.getJSONArray("tiles")
+            engine.put("tiles", JSONArray().apply { for (index in 0 until tiles.length() - 1) put(tiles.get(index)) })
+        }.toString()
+        val extraTile = JSONObject(GameSaveCodec.encode(saved())).apply {
+            val pile = getJSONObject("game").getJSONObject("engine").getJSONArray("tileDrawPile")
+            pile.put(pile.getJSONObject(0))
+        }.toString()
+        val nestFood = JSONObject(GameSaveCodec.encode(saved())).apply {
+            val engine = getJSONObject("game").getJSONObject("engine")
+            engine.getJSONArray("foods").getJSONObject(0)
+                .put("position", engine.getJSONArray("players").getJSONObject(0).getJSONObject("nestPosition"))
+        }.toString()
+        for (text in listOf("{", missing, invalidPlayer, invalidPhase, extraFood, missingTile, extraTile, nestFood) + invalidEscapes) {
             try { GameSaveCodec.decode(text); fail("accepted corrupt save") }
             catch (e: InvalidGameSaveException) { assertEquals(GameSaveLoadIssue.CORRUPT, e.issue) }
         }

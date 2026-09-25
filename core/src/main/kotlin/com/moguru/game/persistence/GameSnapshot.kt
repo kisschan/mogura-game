@@ -68,12 +68,15 @@ fun GameSnapshot.validate() {
         it.storedFoods.forEach(::food)
     }
     val ids = players.map { it.id }.toSet()
+    require(engine.tiles.keys == board.cells.filterValues {
+        it.type == CellType.UNDERGROUND || it.type == CellType.HOT_ZONE
+    }.keys)
     engine.tiles.forEach { (position, value) ->
         require(board.getCell(position)?.type in setOf(CellType.UNDERGROUND, CellType.HOT_ZONE))
         tile(value)
     }
     engine.foods.forEach { (position, cards) ->
-        require(validPosition(position) && cards.isNotEmpty())
+        require(validPosition(position) && board.getCell(position)?.type != CellType.NEST && cards.isNotEmpty())
         cards.forEach(::food)
     }
     (engine.tileDrawPile + engine.tileDiscardPile).forEach(::tile)
@@ -142,6 +145,13 @@ fun GameSnapshot.validate() {
     if (engine.gameState == GameState.FINISHED) {
         require(pendingDecision == null && pendingCaptureRoll == null && pendingDigPlacement == null)
     }
+    // The selected dig candidate is already on the board as a preview; count only the other one here.
+    val unselectedDigTile = pendingDigPlacement?.let {
+        if (pendingDigTileChoice == DigTileChoice.REVEALED) it.drawnTile else it.revealedTile
+    }
+    val allTiles = engine.tiles.values + engine.tileDrawPile + engine.tileDiscardPile +
+        listOfNotNull(pendingDigDrawnTile, unselectedDigTile)
+    require(allTiles.groupingBy { it.shape }.eachCount() == HoleTile.createFullSet().groupingBy { it.shape }.eachCount())
     // A pending decision owns the removed card. A pending roll only references a board card.
     val allFood = engine.foods.values.flatten() + engine.foodStock + engine.foodDiscard +
         players.flatMap { it.storedFoods + listOfNotNull(it.carriedFood) } + listOfNotNull(pendingDecision?.food)

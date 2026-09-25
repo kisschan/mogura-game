@@ -4,6 +4,8 @@ import com.moguru.game.model.Rotation
 import com.moguru.game.model.FoodCard
 import com.moguru.game.model.FoodType
 import com.moguru.game.model.EscapeDirection
+import com.moguru.game.model.HoleTile
+import com.moguru.game.model.TileShape
 import com.moguru.game.model.Position
 import com.moguru.game.engine.GameState
 import com.moguru.game.engine.TurnPhase
@@ -87,6 +89,37 @@ class GameSnapshotTest {
     }
 
     @Test
+    fun `restoration rejects missing board tiles even when moved into the deck`() {
+        val snapshot = controller().apply { startNewGame(2) }.exportSnapshot()
+        val removed = snapshot.engine.tiles.entries.first()
+        for (drawPile in listOf(snapshot.engine.tileDrawPile, snapshot.engine.tileDrawPile + removed.value)) {
+            val corrupt = snapshot.copy(engine = snapshot.engine.copy(
+                tiles = snapshot.engine.tiles - removed.key, tileDrawPile = drawPile))
+            assertThrows(IllegalArgumentException::class.java) { MoguraGameController.fromSnapshot(corrupt) }
+        }
+    }
+
+    @Test
+    fun `restoration rejects extra missing and substituted hole tiles`() {
+        val snapshot = controller().apply { startNewGame(2) }.exportSnapshot()
+        val drawPile = snapshot.engine.tileDrawPile
+        val cross = HoleTile(TileShape.CROSS)
+        for (corruptPile in listOf(drawPile + cross, drawPile.drop(1), drawPile.drop(1) + cross)) {
+            val corrupt = snapshot.copy(engine = snapshot.engine.copy(tileDrawPile = corruptPile))
+            assertThrows(IllegalArgumentException::class.java) { MoguraGameController.fromSnapshot(corrupt) }
+        }
+    }
+
+    @Test
+    fun `restoration rejects board food placed on a nest`() {
+        val snapshot = controller().apply { startNewGame(2) }.exportSnapshot()
+        val entry = snapshot.engine.foods.entries.first()
+        val corrupt = snapshot.copy(engine = snapshot.engine.copy(
+            foods = (snapshot.engine.foods - entry.key) + (snapshot.engine.players[0].nestPosition to entry.value)))
+        assertThrows(IllegalArgumentException::class.java) { MoguraGameController.fromSnapshot(corrupt) }
+    }
+
+    @Test
     fun `every checkpoint in a complete game continues identically after restoration`() {
         for (count in 2..4) {
             val original = controller()
@@ -136,6 +169,7 @@ class GameSnapshotTest {
         val ready = initial.copy(
             engine = initial.engine.copy(
                 currentPhase = TurnPhase.CAPTURE,
+                tileDiscardPile = initial.engine.tileDiscardPile + listOfNotNull(initial.pendingDigDrawnTile),
                 players = initial.engine.players.mapIndexed { i, p -> if (i == 0) p.copy(position = position) else p },
                 foods = mapOf(position to listOf(FoodCard.createDummyCards(FoodType.EARTHWORM).first())),
                 foodStock = initial.engine.foodStock.drop(1) + initial.engine.foods.values.flatten(),
@@ -175,6 +209,7 @@ class GameSnapshotTest {
         val setup = initial.copy(
             engine = initial.engine.copy(
                 currentPhase = TurnPhase.DECIDE,
+                tileDiscardPile = initial.engine.tileDiscardPile + listOfNotNull(initial.pendingDigDrawnTile),
                 foodStock = initial.engine.foodStock.toMutableList().apply { removeAt(indexOfFirst { it.type == food.type }) },
                 players = initial.engine.players.mapIndexed { index, player ->
                     when (index) {
@@ -199,6 +234,7 @@ class GameSnapshotTest {
 
         val own = initial.copy(
             engine = initial.engine.copy(currentPhase = TurnPhase.DECIDE,
+                tileDiscardPile = initial.engine.tileDiscardPile + listOfNotNull(initial.pendingDigDrawnTile),
                 foodStock = initial.engine.foodStock.toMutableList().apply { removeAt(indexOfFirst { it.type == food.type }) },
                 players = initial.engine.players.mapIndexed { index, p -> if (index == 0) p.copy(storedFoods = listOf(food)) else p }),
             pendingDigDrawnTile = null, ownNestEatEligiblePlayers = setOf(0),

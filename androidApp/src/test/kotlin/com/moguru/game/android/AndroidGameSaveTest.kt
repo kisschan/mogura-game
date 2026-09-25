@@ -105,6 +105,7 @@ class AndroidGameSaveTest {
         val position = Position(2, 2)
         val ready = initial.copy(
             engine = initial.engine.copy(currentPhase = TurnPhase.CAPTURE,
+                tileDiscardPile = initial.engine.tileDiscardPile + listOfNotNull(initial.pendingDigDrawnTile),
                 players = initial.engine.players.mapIndexed { i, p ->
                     if (i == 0) p.copy(position = position, health = 5) else p
                 },
@@ -152,7 +153,8 @@ class AndroidGameSaveTest {
         source.startNewGame(2)
         val initial = source.exportSnapshot()
         val ready = initial.copy(engine = initial.engine.copy(currentPhase = TurnPhase.MOVE,
-            tiles = initial.engine.tiles.mapValues { HoleTile(TileShape.CROSS).flip() }),
+            tileDiscardPile = initial.engine.tileDiscardPile + listOfNotNull(initial.pendingDigDrawnTile),
+            tiles = initial.engine.tiles.mapValues { it.value.rotate(Rotation.DEG_90).flip() }),
             pendingDigDrawnTile = null)
         val target = MoguraGameController.fromSnapshot(ready).moveTargets().last()
         val store = Store().apply { saved = SavedGame(ready, 1, 1) }
@@ -171,12 +173,13 @@ class AndroidGameSaveTest {
     fun `next players move phase starts at the first target instead of the previous selection`() {
         val initial = controller().apply { startNewGame(2) }.exportSnapshot()
         val ready = initial.copy(engine = initial.engine.copy(currentPhase = TurnPhase.MOVE,
-            tiles = initial.engine.tiles.mapValues { HoleTile(TileShape.CROSS).flip() }),
+            tileDiscardPile = initial.engine.tileDiscardPile + listOfNotNull(initial.pendingDigDrawnTile),
+            tiles = initial.engine.tiles.mapValues { it.value.rotate(Rotation.DEG_90).flip() }),
             pendingDigDrawnTile = null)
         val store = Store().apply { saved = SavedGame(ready, 1, 1) }
         val vm = AndroidGameViewModel(controller(), store)
         vm.resumeSavedGame()
-        val oldTarget = Position(2, 2)
+        val oldTarget = Position(2, 1)
         vm.selectMoveTarget(oldTarget)
         assertEquals(oldTarget, vm.uiState.value.selectedMovePosition)
         vm.skip()
@@ -265,6 +268,7 @@ class AndroidGameSaveTest {
         val position = Position(2, 2)
         val ready = source.copy(
             engine = source.engine.copy(currentPhase = TurnPhase.CAPTURE,
+                tileDiscardPile = source.engine.tileDiscardPile + listOfNotNull(source.pendingDigDrawnTile),
                 players = source.engine.players.mapIndexed { i, p -> if (i == 0) p.copy(position = position) else p },
                 foods = mapOf(position to listOf(FoodCard.createDummyCards(FoodType.EARTHWORM).first())),
                 foodStock = source.engine.foodStock.drop(1) + source.engine.foods.values.flatten()),
@@ -294,6 +298,7 @@ class AndroidGameSaveTest {
         val source = controller().apply { startNewGame(2) }.exportSnapshot()
         val finished = source.copy(
             engine = source.engine.copy(gameState = GameState.FINISHED, currentPhase = TurnPhase.END,
+                tileDiscardPile = source.engine.tileDiscardPile + listOfNotNull(source.pendingDigDrawnTile),
                 players = source.engine.players.mapIndexed { i, p -> if (i == 1) p.copy(health = 0) else p }),
             pendingDigDrawnTile = null,
         )
