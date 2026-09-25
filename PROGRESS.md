@@ -1,8 +1,18 @@
 # PROGRESS.md
 
-最終更新: 2026-09-13
+最終更新: 2026-09-25
 
 ## 現在の状況
+- [x] 2026-09-25: ユーザー依頼によりAndroid `versionCode` / `versionName` を19から20へ更新。最新main `61a2282` を基点とする `codex/android-resume-v20` から、自動保存・途中再開の実装をmain向け通常PRにまとめる。隔離環境もv20に揃えて下記4タスクを再確認し `BUILD SUCCESSFUL`（変更のないテスト結果はGradleのUP-TO-DATE判定で再利用）
+- [x] 2026-09-25: Androidの自動保存・途中再開を実装。直近1ゲームを操作ごとに保存し、起動時に「続きから」または「新しく始める」を表示する。終了済みゲームは「前回の結果を見る」で確認でき、新規ゲームの保存成功まで前回データを保持する
+- [x] coreに独立したスナップショットと整合性検査を追加。盤面・山札とエサの順序・プレイヤー・掘る候補別の回転・確定済みダイス・捕獲後の選択・強奪/帰巣後の食事権利・全履歴を復元する。復元時にセットアップや抽選を再実行しない。演出中の保存からは未処理の進行だけを完了し、確定済みの食事・消耗・演出・効果音を重複適用しない
+- [x] Androidはバージョン1のUTF-8 JSONを内部ストレージ `filesDir/game-save/current.json` へ `AtomicFile` で保存する。プロセス共通の直列I/Oで保存と読み込みの順序を保証し、保存完了後に結果を表示する。失敗時は入力を止め、保持した同一データだけを再保存する。破損・未対応バージョンは画面で通知し、自動上書きしない。移動先の仮選択と駒の透過設定も保持する
+- 実装ファイル: coreの新規 `persistence/GameSnapshot.kt`、`Player.kt`、`GameEngine.kt`、`MoguraGameController.kt`。Androidの新規 `GameSaveRepository.kt`、`GameSaveCodec.kt`、`GameResumeScreen.kt` と、`AndroidGameViewModel.kt`、`GameScreen.kt`、`MainActivity.kt`。要件14章・`AGENT.md`・`CLAUDE.md`にも保存仕様を反映
+- 追加テスト: coreの `GameSnapshotTest` 5件（2〜4人の完走中の各操作前後、捕獲、強奪など）、Android JVMの `AndroidGameSaveTest` 9件（保存前の表示抑止、失敗と同一出目の再試行、上書き取消、演出中断、終了結果など）。端末用に `GameSaveCodecTest` 4件、`GameSaveStorageTest` 1件、`GameResumeComposeTest` 2件を追加。既存MainActivity計測テストは専用メモリ保存へ切り替え、実際の保存データを使わない
+- 最終検証（2026-09-25）: 秘密情報を参照しない隔離環境で `:core:test :desktop:test :androidApp:testDebugUnitTest :androidApp:compileDebugAndroidTestKotlin` が `BUILD SUCCESSFUL`。core 253件成功、desktop 51件成功・3件スキップ、Android JVM 158件成功。さらにAndroid由来の公開JSON実装を検証環境だけに導入し、Codec計測テスト4件をJVMで実行して全成功（合計469件中466件成功、3件スキップ、失敗・エラー0）。ソース/リソース131ファイルが本体と検証コピーで一致。最終実行で変更のないcore/desktop結果は同じ作業内の直前の成功結果を再利用。本番設定を参照する設定検査は除外し、製品側の依存関係・署名・ビルド設定は変更していない
+- 未実施/TODO: 接続Android端末がないため、追加7件を含む計測テストはコンパイルまで。Android実装のAtomicFile、Compose画面、バックグラウンドでの `adb shell am kill com.moguru.game.android`、アプリ強制停止後の起動、端末再起動後の復元は実機未確認。次作業は端末上で計測テストを実行し、回転選択待ち・出目確定後・捕獲/食事/消耗演出中からの復元を確認する。署名・APK生成・端末への配布は未実施
+
+## 以前の作業
 - [x] 2026-09-13: ユーザーが実機でログ表示・盤面固定を確認し、問題なしと報告。新ブランチ `codex/android-v19-fixed-board` からmain向け通常PRを作成するため、Androidの `versionCode` / `versionName` を18から19へ更新
 - 最終検証（2026-09-13）: 最新mainの効果音重複再生防止を維持した差分で、隔離環境の `:core:test :desktop:test :androidApp:testDebugUnitTest :androidApp:compileDebugAndroidTestKotlin` が `BUILD SUCCESSFUL`。core 248件成功、desktop 51件成功・3件スキップ、Android 149件成功（計451件中448件成功、失敗・エラー0）。coreとdesktopは変更がないため前回結果を再利用。計測テストはコンパイル成功で、端末上の自動実行は未実施。対象ソース124ファイルの一致を確認済み。本番設定を参照する設定検査は除外し、秘密情報の読み込み・署名・APK生成は行っていない
 - [x] 2026-09-11: ユーザー承認済みの全文ログ表示を維持し、盤面をHUD直下に隙間なく固定。長文の案内・ログと最大操作列に必要な領域を画面幅と文字設定から予約し、現在のログ・フェーズ・手番によって盤面位置やサイズを再計算しない構造に変更。増減する余白は盤面の下側へ集約

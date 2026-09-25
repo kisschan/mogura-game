@@ -1,5 +1,8 @@
 package com.moguru.game.model
 
+import com.moguru.game.persistence.PlayerSnapshot
+import com.moguru.game.persistence.detached
+
 /**
  * プレイヤー。体力・得点・連行中エサ・巣の位置を管理する。
  */
@@ -10,7 +13,20 @@ class Player(
 ) {
     companion object {
         const val MAX_HEALTH = 13
+
+        internal fun fromSnapshot(state: PlayerSnapshot): Player =
+            Player(state.id, state.name, state.nestPosition).apply {
+                position = state.position
+                health = state.health
+                carriedFood = state.carriedFood?.detached()
+                _storedFoods.addAll(state.storedFoods.map { it.detached() })
+            }
     }
+
+    internal fun exportSnapshot(): PlayerSnapshot = PlayerSnapshot(
+        id, name, nestPosition, position, health, carriedFood?.detached(),
+        storedFoods.map { it.detached() },
+    )
 
     /** 現在位置。 */
     var position: Position = nestPosition

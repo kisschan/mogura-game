@@ -19,6 +19,7 @@ import com.moguru.game.util.DiceRoller
 import com.moguru.game.util.RandomDiceRoller
 import com.moguru.game.util.RandomShuffler
 import com.moguru.game.util.Shuffler
+import com.moguru.game.persistence.*
 
 data class GameActionResult(
     val success: Boolean,
@@ -218,6 +219,34 @@ class MoguraGameController(
 
     private val messages = ArrayDeque<String>()
     val logs: List<String> get() = messages.toList()
+
+    /** Export live rules state; animation frames belong to the platform UI. */
+    fun exportSnapshot(): GameSnapshot = GameSnapshot(
+        requireNotNull(engine).exportSnapshot(), lastCaptureResult, lastDiceRoll,
+        captureOutcome?.copy(animation = null),
+        captureAnimationId, eatAnimationId, turnConsumptionAnimationId,
+        pendingDecision?.let { FoodDecisionSnapshot(it.food.detached(), it.source, (it as? PendingFoodDecision.Stolen)?.victimPlayerId) },
+        pendingCaptureRoll?.let { it.copy(food = it.food.detached()) },
+        pendingDigPlacement?.let { it.copy(revealedTile = it.revealedTile?.detached(), drawnTile = it.drawnTile?.detached()) },
+        pendingDigDrawnTile?.detached(), pendingDigRotation, pendingDigTileChoice, pendingDigRotations.toMap(),
+        selectedCaptureFoodIndex, selectedRobberyFoodIndex,
+        robberyVisits.mapValues { (_, visit) -> RobberyVisitSnapshot(visit.nestPosition, visit.eligible) },
+        ownNestEatEligiblePlayers.toSet(), logs,
+    )
+
+    /** Complete only deferred presentation callbacks, keeping unresolved choices intact. */
+    fun settleAfterRestore() {
+        if (pendingCaptureRoll?.roll != null) check(resolveCaptureRoll().success)
+        while (engine?.gameState == GameState.PLAYING) {
+            val before = exportSnapshot()
+            val result = autoAdvanceWhileNoChoice() ?: break
+            check(result.success && before != exportSnapshot()) { "Resume did not make progress" }
+        }
+        captureOutcome = captureOutcome?.copy(animation = null)
+    }
+
+    /** Preserve injected randomness when replacing this controller after loading a save. */
+    fun restored(snapshot: GameSnapshot): MoguraGameController = fromSnapshot(snapshot, diceRoller, shuffler)
 
     val currentPlayer: Player?
         get() {
@@ -1001,7 +1030,6 @@ class MoguraGameController(
     }
 
     private fun robberyCandidateForCurrentPlayer(): RobberyCandidate? {
-        clearStaleRobberyVisits()
         val current = engine ?: return null
         val player = currentPlayer ?: return null
         if (player.isCarrying) return null
@@ -1204,6 +1232,42 @@ class MoguraGameController(
     }
 
     companion object {
+        fun fromSnapshot(
+            snapshot: GameSnapshot,
+            diceRoller: DiceRoller = RandomDiceRoller(),
+            shuffler: Shuffler = RandomShuffler(),
+        ): MoguraGameController {
+            snapshot.validate()
+            return MoguraGameController(diceRoller, shuffler).apply {
+                engine = GameEngine.fromSnapshot(snapshot.engine, diceRoller, shuffler)
+                lastCaptureResult = snapshot.lastCaptureResult
+                lastDiceRoll = snapshot.lastDiceRoll
+                captureOutcome = snapshot.captureOutcome?.copy(animation = null)
+                captureAnimationId = snapshot.captureAnimationId
+                eatAnimationId = snapshot.eatAnimationId
+                turnConsumptionAnimationId = snapshot.turnConsumptionAnimationId
+                pendingDecision = snapshot.pendingDecision?.let {
+                    when (it.source) {
+                        FoodDecisionSource.CAPTURE -> PendingFoodDecision.Captured(it.food.detached())
+                        FoodDecisionSource.ROBBERY -> PendingFoodDecision.Stolen(it.food.detached(), requireNotNull(it.victimPlayerId))
+                    }
+                }
+                pendingCaptureRoll = snapshot.pendingCaptureRoll?.let { it.copy(food = it.food.detached()) }
+                pendingDigPlacement = snapshot.pendingDigPlacement?.let {
+                    it.copy(revealedTile = it.revealedTile?.detached(), drawnTile = it.drawnTile?.detached())
+                }
+                pendingDigDrawnTile = snapshot.pendingDigDrawnTile?.detached()
+                pendingDigRotation = snapshot.pendingDigRotation
+                pendingDigTileChoice = snapshot.pendingDigTileChoice
+                pendingDigRotations.putAll(snapshot.pendingDigRotations)
+                selectedCaptureFoodIndex = snapshot.selectedCaptureFoodIndex
+                selectedRobberyFoodIndex = snapshot.selectedRobberyFoodIndex
+                robberyVisits.putAll(snapshot.robberyVisits.mapValues { (_, it) -> RobberyVisit(it.nestPosition, it.eligible) })
+                ownNestEatEligiblePlayers.addAll(snapshot.ownNestEatEligiblePlayers)
+                messages.addAll(snapshot.logs)
+            }
+        }
+
         val moleOptions = listOf(
             MoleOption(0, "モグオ"),
             MoleOption(1, "モグタ"),

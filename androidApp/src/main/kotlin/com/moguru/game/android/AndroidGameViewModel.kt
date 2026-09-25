@@ -20,6 +20,7 @@ import com.moguru.game.presenter.GameActionResult
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.presenter.PlayScreenUiState
 import com.moguru.game.presenter.TurnConsumptionAnimationEvent
+import com.moguru.game.persistence.validate
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,6 +43,10 @@ data class AndroidGameUiState(
     val captureAnimation: AndroidCaptureAnimationUiState? = null,
     val eatAnimation: EatAnimationEvent? = null,
     val turnConsumptionAnimation: TurnConsumptionAnimationEvent? = null,
+    val persistence: GamePersistenceUiState = GamePersistenceUiState(),
+    val selectedMovePosition: Position? = null,
+    val boardPiecesTransparent: Boolean = false,
+    val playbackGeneration: Long = 0,
 )
 
 /** Keeps the original stack visible until the resolved capture has finished moving. */
@@ -152,8 +157,21 @@ enum class AndroidVisibleAction {
 }
 
 class AndroidGameViewModel(
-    private val controller: MoguraGameController = MoguraGameController(),
+    private var controller: MoguraGameController = MoguraGameController(),
+    private val saveRepository: GameSaveRepository = MemoryGameSaveRepository(),
+    private val saveIo: GameSaveIo = ImmediateGameSaveIo,
 ) : ViewModel() {
+    private var savedGame: SavedGame? = null
+    private var persistenceBusy = false
+    private var saveFailed = false
+    private var loadIssue: GameSaveLoadIssue? = null
+    private var showResumeEntry = false
+    private var confirmOverwrite = false
+    private var pendingSave: Pair<SavedGame, AndroidGameUiState>? = null
+    private var selectedMovePosition: Position? = null
+    private var boardPiecesTransparent = false
+    private var playbackGeneration = 0L
+    private var alive = true
     private var selectedPlayerCount = 2
     private var setupPlayerIds = defaultSetupPlayerIds(selectedPlayerCount)
     private var setupNestPositions = defaultSetupNestPositions(selectedPlayerCount)
@@ -175,7 +193,170 @@ class AndroidGameViewModel(
     )
     val uiState: StateFlow<AndroidGameUiState> = _uiState.asStateFlow()
 
+    init { reloadSavedGame() }
+
+    fun reloadSavedGame() {
+        if (operationBlocked()) return
+        persistenceBusy = true
+        publishPersistence()
+        val generation = playbackGeneration
+        saveIo.execute({ saveRepository.load()?.also { it.game.validate() } }) { result ->
+            if (!alive || generation != playbackGeneration) return@execute
+            persistenceBusy = false
+            result.fold(
+                onSuccess = { savedGame = it; loadIssue = null; showResumeEntry = it != null },
+                onFailure = {
+                    loadIssue = when (it) {
+                        is InvalidGameSaveException -> it.issue
+                        is IllegalArgumentException -> GameSaveLoadIssue.CORRUPT
+                        else -> GameSaveLoadIssue.IO
+                    }
+                    showResumeEntry = true
+                },
+            )
+            publishPersistence()
+        }
+    }
+
+    fun chooseNewGame() {
+        if (operationBlocked()) return
+        showResumeEntry = false
+        confirmOverwrite = false
+        _uiState.value = snapshot(false, null)
+    }
+
+    fun cancelOverwrite() {
+        confirmOverwrite = false
+        publishPersistence()
+    }
+
+    fun confirmNewGame() {
+        if (operationBlocked() || !confirmOverwrite) return
+        confirmOverwrite = false
+        beginSelectedGame()
+    }
+
+    fun resumeSavedGame() {
+        if (operationBlocked() || loadIssue != null) return
+        val saved = savedGame ?: return
+        val restored = runCatching { controller.restored(saved.game).apply { settleAfterRestore() } }
+        if (restored.isFailure) {
+            loadIssue = GameSaveLoadIssue.CORRUPT
+            showResumeEntry = true
+            publishPersistence()
+            return
+        }
+        controller = restored.getOrThrow()
+        playbackGeneration++
+        clearPresentation()
+        selectedPlayerCount = saved.game.engine.players.size
+        setupPlayerIds = saved.game.engine.players.map { it.id }
+        setupNestPositions = saved.game.engine.players.map { it.nestPosition }
+        selectedStartPlayerIndex = saved.game.engine.currentPlayerIndex
+        selectedMovePosition = saved.selectedMovePosition
+        boardPiecesTransparent = saved.boardPiecesTransparent
+        showResumeEntry = false
+        val changed = controller.exportSnapshot() != saved.game
+        commitState(snapshot(true, if (changed) null else saved.lastMessage))
+    }
+
+    fun retrySave() {
+        if (!alive || persistenceBusy || pendingSave == null) return
+        executePendingSave()
+    }
+
+    fun selectMoveTarget(position: Position) {
+        if (operationBlocked() || animationInProgress() || position !in controller.moveTargets()) return
+        selectedMovePosition = position
+        refresh(_uiState.value.lastMessage)
+    }
+
+    fun setBoardPiecesTransparent(transparent: Boolean) {
+        if (operationBlocked() || animationInProgress()) return
+        boardPiecesTransparent = transparent
+        refresh(_uiState.value.lastMessage)
+    }
+
+    private fun operationBlocked() = !alive || persistenceBusy || pendingSave != null
+
+    private fun persistenceState(): GamePersistenceUiState {
+        val engine = savedGame?.game?.engine
+        return GamePersistenceUiState(
+            busy = persistenceBusy, saveFailed = saveFailed, loadIssue = loadIssue,
+            hasSavedGame = savedGame != null, showEntry = showResumeEntry, confirmOverwrite = confirmOverwrite,
+            finished = engine?.gameState == GameState.FINISHED,
+            playerCount = engine?.players?.size ?: 0,
+            currentPlayerName = engine?.players?.getOrNull(engine.currentPlayerIndex)?.name.orEmpty(),
+        )
+    }
+
+    private fun publishPersistence() {
+        _uiState.value = _uiState.value.copy(persistence = persistenceState())
+    }
+
+    private fun commitState(next: AndroidGameUiState) {
+        if (!next.isGameStarted) {
+            _uiState.value = next.copy(persistence = persistenceState())
+            return
+        }
+        check(pendingSave == null)
+        val game = controller.exportSnapshot()
+        val previous = savedGame
+        if (previous != null && game == previous.game &&
+            next.selectedMovePosition == previous.selectedMovePosition &&
+            boardPiecesTransparent == previous.boardPiecesTransparent
+        ) {
+            _uiState.value = next.copy(persistence = persistenceState())
+            return
+        }
+        val saved = SavedGame(
+            game = game, revision = (savedGame?.revision ?: 0) + 1,
+            savedAtMillis = System.currentTimeMillis(),
+            selectedMovePosition = next.selectedMovePosition,
+            boardPiecesTransparent = boardPiecesTransparent,
+            lastMessage = if (turnConsumptionAnimation != null) turnConsumptionPostMessage else next.lastMessage,
+        )
+        pendingSave = saved to next
+        executePendingSave()
+    }
+
+    private fun executePendingSave() {
+        val pending = pendingSave ?: return
+        persistenceBusy = true
+        saveFailed = false
+        publishPersistence()
+        val generation = playbackGeneration
+        saveIo.execute({ saveRepository.save(pending.first) }) { result ->
+            if (!alive || generation != playbackGeneration) return@execute
+            persistenceBusy = false
+            if (result.isSuccess) {
+                savedGame = pending.first
+                loadIssue = null
+                pendingSave = null
+                _uiState.value = pending.second.copy(persistence = persistenceState())
+            } else {
+                saveFailed = true
+                publishPersistence()
+            }
+        }
+    }
+
+    private fun clearPresentation() {
+        captureAnimation = null
+        eatAnimation = null
+        clearTurnConsumptionAnimation()
+        gameResultOverlayDismissed = false
+    }
+
+    override fun onCleared() {
+        alive = false
+        playbackGeneration++
+        saveIo.close()
+        super.onCleared()
+    }
+
     fun selectPlayerCount(playerCount: Int) {
+        if (operationBlocked()) return
         require(playerCount in 2..4) { "プレイヤー人数は2〜4人にしてください。" }
         resetSetupDefaults(playerCount)
         _uiState.value = snapshot(
@@ -185,6 +366,7 @@ class AndroidGameViewModel(
     }
 
     fun selectPlayerMole(seatIndex: Int, playerId: Int) {
+        if (operationBlocked()) return
         if (seatIndex !in 0 until selectedPlayerCount) return
         if (MoguraGameController.moleOptions.none { it.playerId == playerId }) return
 
@@ -193,6 +375,7 @@ class AndroidGameViewModel(
     }
 
     fun selectPlayerNest(seatIndex: Int, nestPosition: Position) {
+        if (operationBlocked()) return
         if (seatIndex !in 0 until selectedPlayerCount) return
         if (nestPosition !in MoguraGameController.nestPositions) return
 
@@ -201,6 +384,7 @@ class AndroidGameViewModel(
     }
 
     fun selectStartPlayer(seatIndex: Int) {
+        if (operationBlocked()) return
         if (seatIndex !in 0 until selectedPlayerCount) return
 
         selectedStartPlayerIndex = seatIndex
@@ -208,31 +392,51 @@ class AndroidGameViewModel(
     }
 
     fun startSelectedGame() {
+        if (operationBlocked()) return
+        if (savedGame != null || loadIssue != null) {
+            confirmOverwrite = true
+            publishPersistence()
+            return
+        }
+        beginSelectedGame()
+    }
+
+    private fun beginSelectedGame() {
+        playbackGeneration++
+        selectedMovePosition = null
+        showResumeEntry = false
         captureAnimation = null
         eatAnimation = null
         clearTurnConsumptionAnimation()
         gameResultOverlayDismissed = false
         val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
-        _uiState.value = snapshot(
+        commitState(snapshot(
             isGameStarted = true,
             lastMessage = messageForCurrentTurn(result.message),
-        )
+        ))
     }
 
     fun startNewGame(playerCount: Int) {
+        if (operationBlocked()) return
+        playbackGeneration++
+        selectedMovePosition = null
+        showResumeEntry = false
         captureAnimation = null
         eatAnimation = null
         clearTurnConsumptionAnimation()
         gameResultOverlayDismissed = false
         resetSetupDefaults(playerCount)
         val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
-        _uiState.value = snapshot(
+        commitState(snapshot(
             isGameStarted = true,
             lastMessage = messageForCurrentTurn(result.message),
-        )
+        ))
     }
 
     fun returnToSetup() {
+        if (operationBlocked()) return
+        playbackGeneration++
+        showResumeEntry = savedGame != null || loadIssue != null
         captureAnimation = null
         eatAnimation = null
         clearTurnConsumptionAnimation()
@@ -244,12 +448,14 @@ class AndroidGameViewModel(
     }
 
     fun dismissGameResultOverlay() {
+        if (operationBlocked()) return
         if (_uiState.value.gameResult == null) return
         gameResultOverlayDismissed = true
         refresh(_uiState.value.lastMessage)
     }
 
     fun onCellClicked(position: Position) {
+        if (operationBlocked()) return
         if (animationInProgress()) return
         val engine = controller.engine ?: return refresh(null)
         val result = when (engine.currentPhase) {
@@ -304,6 +510,7 @@ class AndroidGameViewModel(
      * 連打などで既に確定済みの場合は黙って無視する。
      */
     fun stopDiceRoulette() {
+        if (operationBlocked()) return
         if (animationInProgress()) return
         val result = controller.rollCaptureDice()
         if (result.success) refresh(null)
@@ -313,7 +520,8 @@ class AndroidGameViewModel(
      * 着地演出の終了後に捕獲を解決し、オーバーレイを閉じる。
      * 再コンポーズによる重複呼び出しは黙って無視する。
      */
-    fun finishDiceRoulette() {
+    fun finishDiceRoulette(generation: Long = playbackGeneration) {
+        if (operationBlocked() || generation != playbackGeneration) return
         if (animationInProgress() || !_uiState.value.isGameStarted) return
         val boardBefore = AndroidBoardUiState(buildBoardCells())
         val result = controller.resolveCaptureRoll()
@@ -343,13 +551,15 @@ class AndroidGameViewModel(
     ): AndroidSoundEffect? = eatRecoverySoundEffectTrigger.soundEffectFor(event)
 
     /** An old completion callback must never finish a newer capture or advance twice. */
-    fun finishCaptureAnimation(eventId: Long) {
+    fun finishCaptureAnimation(eventId: Long, generation: Long = playbackGeneration) {
+        if (operationBlocked() || generation != playbackGeneration) return
         if (captureAnimation?.event?.id != eventId) return
         captureAnimation = null
         resolveAfterSuccessfulAction(_uiState.value.lastMessage)
     }
 
     fun eat() {
+        if (operationBlocked()) return
         if (animationInProgress()) return
         val result = controller.eatPendingFood()
         if (!result.success) {
@@ -369,14 +579,16 @@ class AndroidGameViewModel(
     }
 
     /** An old completion callback must never finish a newer meal or advance twice. */
-    fun finishEatAnimation(eventId: Long) {
+    fun finishEatAnimation(eventId: Long, generation: Long = playbackGeneration) {
+        if (operationBlocked() || generation != playbackGeneration) return
         if (eatAnimation?.id != eventId) return
         eatAnimation = null
         resolveAfterSuccessfulAction(_uiState.value.lastMessage)
     }
 
     /** Stale or duplicate callbacks must never advance the next turn twice. */
-    fun finishTurnConsumptionAnimation(eventId: Long) {
+    fun finishTurnConsumptionAnimation(eventId: Long, generation: Long = playbackGeneration) {
+        if (operationBlocked() || generation != playbackGeneration) return
         if (turnConsumptionAnimation?.id != eventId) return
         val postMessage = turnConsumptionPostMessage
         clearTurnConsumptionAnimation()
@@ -403,6 +615,7 @@ class AndroidGameViewModel(
     }
 
     private fun runAction(action: () -> GameActionResult) {
+        if (operationBlocked()) return
         if (animationInProgress()) return
         val displayBeforeAction = displayedTurnConsumptionSnapshot()
         val result = action()
@@ -463,10 +676,10 @@ class AndroidGameViewModel(
     }
 
     private fun refresh(lastMessage: String?) {
-        _uiState.value = snapshot(
+        commitState(snapshot(
             isGameStarted = _uiState.value.isGameStarted,
             lastMessage = lastMessage,
-        )
+        ))
     }
 
     private fun snapshot(
@@ -504,6 +717,14 @@ class AndroidGameViewModel(
             captureAnimation = captureAnimation,
             eatAnimation = eatAnimation,
             turnConsumptionAnimation = turnConsumptionAnimation,
+            persistence = persistenceState(),
+            selectedMovePosition = if (controller.engine?.currentPhase == TurnPhase.MOVE) {
+                val targets = controller.moveTargets()
+                selectedMovePosition?.takeIf { it in targets }
+                    ?: targets.sortedWith(compareBy<Position> { it.row }.thenBy { it.col }).firstOrNull()
+            } else null,
+            boardPiecesTransparent = boardPiecesTransparent,
+            playbackGeneration = playbackGeneration,
         )
     }
 

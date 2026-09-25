@@ -235,8 +235,9 @@ internal fun MoguraGameScreen(
     onAudioSettingsChanged: (AndroidAudioSettings) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
+    val playbackGeneration = state.playbackGeneration
     var showAudioSettings by remember { mutableStateOf(false) }
-    var showRules by rememberSaveable { mutableStateOf(false) }
+    var showRules by rememberSaveable(state.playbackGeneration, state.persistence.showEntry) { mutableStateOf(false) }
 
     LaunchedEffect(state.isGameStarted) {
         onGameStartedChanged(state.isGameStarted)
@@ -266,6 +267,7 @@ internal fun MoguraGameScreen(
                             .then(
                                 if (
                                     showRules ||
+                                    state.persistence.busy || state.persistence.saveFailed ||
                                     state.captureAnimation != null ||
                                     state.eatAnimation != null ||
                                     state.turnConsumptionAnimation != null
@@ -284,6 +286,14 @@ internal fun MoguraGameScreen(
                                 onAudioSettingsClick = { showAudioSettings = true },
                                 onRulesClick = { showRules = true },
                             )
+                        } else if (state.persistence.showEntry) {
+                            GameResumeScreen(
+                                state.persistence,
+                                onResume = viewModel::resumeSavedGame,
+                                onNewGame = viewModel::chooseNewGame,
+                                onRetryLoad = viewModel::reloadSavedGame,
+                                onRules = { showRules = true },
+                            )
                         } else {
                             SetupScreen(
                                 state = state,
@@ -294,13 +304,13 @@ internal fun MoguraGameScreen(
                             )
                         }
                         val rouletteFood = state.playState.diceRouletteFood
-                        if (state.playState.diceRouletteActive && rouletteFood != null) {
+                        if (state.isGameStarted && state.playState.diceRouletteActive && rouletteFood != null) {
                             DiceRouletteOverlay(
                                 foodType = rouletteFood,
                                 escapeRolls = state.playState.diceRouletteEscapeRolls,
                                 targetFace = state.playState.diceRouletteResult,
                                 onTap = soundEffectClick(onClick = viewModel::stopDiceRoulette),
-                                onFinished = viewModel::finishDiceRoulette,
+                                onFinished = { viewModel.finishDiceRoulette(playbackGeneration) },
                             )
                         }
                         val gameResult = state.gameResult
@@ -343,6 +353,8 @@ internal fun MoguraGameScreen(
                             modifier = Modifier.zIndex(1f),
                         )
                     }
+                    GameSaveDialogs(state.persistence, viewModel)
+                    if (state.persistence.busy) GameSaveInputBlocker()
                 }
             }
         }
@@ -704,6 +716,11 @@ private fun SetupScreen(
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Black,
             )
+        }
+        if (state.persistence.hasSavedGame || state.persistence.loadIssue != null) {
+            TextButton(onClick = viewModel::returnToSetup, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("前のゲームに戻る")
+            }
         }
         Text(
             text = "プレイヤー人数",
@@ -1076,7 +1093,8 @@ private fun PlayScreen(
     onAudioSettingsClick: () -> Unit,
     onRulesClick: () -> Unit,
 ) {
-    var boardPiecesTransparent by rememberSaveable { mutableStateOf(false) }
+    val boardPiecesTransparent = state.boardPiecesTransparent
+    val playbackGeneration = state.playbackGeneration
     var boardViewportHeight by remember { mutableStateOf(0.dp) }
     val density = LocalDensity.current
     val activePhase = state.playState.actionAvailability.activePhase
@@ -1084,11 +1102,14 @@ private fun PlayScreen(
         actions = primaryBoardActions(state.boardState.cells, activePhase),
         phase = activePhase,
     )
-    var selectedBoardActionIndex by remember(
+    var selectedOtherActionIndex by remember(
         activePhase,
         state.playState.currentPlayer.playerId,
         boardActionsForBar,
     ) { mutableStateOf(0) }
+    val selectedBoardActionIndex = if (activePhase == TurnPhase.MOVE) {
+        boardActionsForBar.indexOfFirst { it.position == state.selectedMovePosition }.coerceAtLeast(0)
+    } else selectedOtherActionIndex
     val selectedMoveTargetPosition = selectedMoveActionPosition(
         actions = boardActionsForBar,
         selectedIndex = selectedBoardActionIndex,
@@ -1124,7 +1145,7 @@ private fun PlayScreen(
                 onAudioSettingsClick = onAudioSettingsClick,
                 onRulesClick = onRulesClick,
                 boardPiecesTransparent = boardPiecesTransparent,
-                onBoardPiecesTransparentChange = { boardPiecesTransparent = !boardPiecesTransparent },
+                onBoardPiecesTransparentChange = { viewModel.setBoardPiecesTransparent(!boardPiecesTransparent) },
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("top-hud")
@@ -1145,16 +1166,16 @@ private fun PlayScreen(
                     onCellClicked = { position ->
                         if (activePhase == TurnPhase.MOVE) {
                             val targetIndex = boardActionsForBar.indexOfFirst { it.position == position }
-                            if (targetIndex >= 0) selectedBoardActionIndex = targetIndex
+                            if (targetIndex >= 0) viewModel.selectMoveTarget(position)
                         } else {
                             viewModel.onCellClicked(position)
                         }
                     },
                     boardPiecesTransparent = boardPiecesTransparent,
                     selectedMoveTargetPosition = selectedMoveTargetPosition,
-                    onCaptureAnimationFinished = viewModel::finishCaptureAnimation,
-                    onEatAnimationFinished = viewModel::finishEatAnimation,
-                    onTurnConsumptionAnimationFinished = viewModel::finishTurnConsumptionAnimation,
+                    onCaptureAnimationFinished = { viewModel.finishCaptureAnimation(it, playbackGeneration) },
+                    onEatAnimationFinished = { viewModel.finishEatAnimation(it, playbackGeneration) },
+                    onTurnConsumptionAnimationFinished = { viewModel.finishTurnConsumptionAnimation(it, playbackGeneration) },
                     modifier = Modifier.fillMaxWidth().height(fixedBoardHeight),
                 )
             }
@@ -1164,7 +1185,11 @@ private fun PlayScreen(
                 viewModel = viewModel,
                 boardActions = boardActionsForBar,
                 selectedBoardActionIndex = selectedBoardActionIndex,
-                onBoardActionSelected = { selectedBoardActionIndex = it },
+                onBoardActionSelected = {
+                    if (activePhase == TurnPhase.MOVE) {
+                        boardActionsForBar.getOrNull(it)?.let { action -> viewModel.selectMoveTarget(action.position) }
+                    } else selectedOtherActionIndex = it
+                },
                 boardViewportHeight = boardViewportHeight,
                 modifier = Modifier
                     .fillMaxWidth()
