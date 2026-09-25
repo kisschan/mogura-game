@@ -16,11 +16,26 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import org.junit.Rule
+import org.junit.rules.ExternalResource
+import org.junit.rules.RuleChain
 import org.junit.Test
 
 class MobileGameplayComposeTest {
-    @get:Rule
     val composeRule = createAndroidComposeRule<MainActivity>()
+
+    @get:Rule
+    val rules: RuleChain = RuleChain.outerRule(object : ExternalResource() {
+        private val previousRepository = GameSaveDependencies.repositoryFactory
+        private val previousIo = GameSaveDependencies.ioFactory
+        override fun before() {
+            GameSaveDependencies.repositoryFactory = { MemoryGameSaveRepository() }
+            GameSaveDependencies.ioFactory = { ImmediateGameSaveIo }
+        }
+        override fun after() {
+            GameSaveDependencies.repositoryFactory = previousRepository
+            GameSaveDependencies.ioFactory = previousIo
+        }
+    }).around(composeRule)
 
     @Test
     fun audioSettingsOpenFromSetupAndKeepAdjustedVolumes() {

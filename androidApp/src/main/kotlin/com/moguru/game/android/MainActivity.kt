@@ -8,6 +8,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : ComponentActivity() {
     private val audioSettingsRepository by lazy {
@@ -32,12 +35,23 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
+            val gameViewModel: AndroidGameViewModel = viewModel(factory = object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                    require(modelClass == AndroidGameViewModel::class.java)
+                    return AndroidGameViewModel(
+                        saveRepository = GameSaveDependencies.repositoryFactory(applicationContext),
+                        saveIo = GameSaveDependencies.ioFactory(),
+                    ) as T
+                }
+            })
             var audioSettings by remember { mutableStateOf(initialAudioSettings) }
             LaunchedEffect(audioSettings) {
                 backgroundMusic.onAudioSettingsChanged(audioSettings)
                 soundEffects.setVolume(audioSettings.normalizedSoundEffectVolume)
             }
             MoguraGameScreen(
+                viewModel = gameViewModel,
                 soundEffects = soundEffects,
                 onGameStartedChanged = backgroundMusic::onGameStartedChanged,
                 audioSettings = audioSettings,

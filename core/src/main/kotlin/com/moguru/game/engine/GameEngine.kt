@@ -9,6 +9,8 @@ import com.moguru.game.model.Player
 import com.moguru.game.model.Position
 import com.moguru.game.util.DiceRoller
 import com.moguru.game.util.Shuffler
+import com.moguru.game.persistence.EngineSnapshot
+import com.moguru.game.persistence.detached
 
 /**
  * ターンのフェーズ。
@@ -92,6 +94,36 @@ class GameEngine(
         get() = if (playerCount >= 4) 5 else 4
 
     private var lastCaptureSuccess = false
+
+    internal fun exportSnapshot(): EngineSnapshot = EngineSnapshot(
+        gameState, currentPhase, currentPlayerIndex, players.map { it.exportSnapshot() },
+        board.cells.keys.mapNotNull { position ->
+            boardState.getTile(position)?.let { position to it.detached() }
+        }.toMap(),
+        foodPositions.mapValues { (_, foods) -> foods.map { it.detached() } },
+        tilePlacementEngine.drawPile.map { it.detached() },
+        tilePlacementEngine.discardPile.map { it.detached() },
+        foodStock.map { it.detached() }, foodDiscard.map { it.detached() }, lastCaptureSuccess,
+    )
+
+    companion object {
+        internal fun fromSnapshot(state: EngineSnapshot, dice: DiceRoller, shuffler: Shuffler): GameEngine =
+            GameEngine(state.players.size, dice, shuffler).apply {
+                gameState = state.gameState
+                currentPhase = state.currentPhase
+                currentPlayerIndex = state.currentPlayerIndex
+                players.addAll(state.players.map(Player::fromSnapshot))
+                state.tiles.forEach { (position, tile) -> boardState.placeTile(position, tile.detached()) }
+                state.foods.forEach { (position, foods) ->
+                    _foodPositions[position] = foods.map { it.detached() }.toMutableList()
+                }
+                tilePlacementEngine.drawPile = state.tileDrawPile.map { it.detached() }.toMutableList()
+                tilePlacementEngine.discardPile = state.tileDiscardPile.map { it.detached() }.toMutableList()
+                foodStock.addAll(state.foodStock.map { it.detached() })
+                foodDiscard.addAll(state.foodDiscard.map { it.detached() })
+                lastCaptureSuccess = state.lastCaptureSuccess
+            }
+    }
 
     /** ゲームを初期化する。 */
     fun setupGame(configs: List<PlayerConfig>, startPlayerIndex: Int = 0) {
