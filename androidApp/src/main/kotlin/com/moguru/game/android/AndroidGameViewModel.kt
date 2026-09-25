@@ -404,6 +404,7 @@ class AndroidGameViewModel(
     private fun beginSelectedGame() {
         playbackGeneration++
         selectedMovePosition = null
+        boardPiecesTransparent = false
         showResumeEntry = false
         captureAnimation = null
         eatAnimation = null
@@ -420,6 +421,7 @@ class AndroidGameViewModel(
         if (operationBlocked()) return
         playbackGeneration++
         selectedMovePosition = null
+        boardPiecesTransparent = false
         showResumeEntry = false
         captureAnimation = null
         eatAnimation = null
@@ -639,6 +641,9 @@ class AndroidGameViewModel(
         directTurnConsumption: TurnConsumptionAnimationEvent? = null,
         directDisplaySnapshot: AndroidTurnConsumptionDisplaySnapshot? = null,
     ) {
+        // Rules actions advance play; a move preview belongs only to its current choice.
+        // UI-only selection and transparency changes use refresh without clearing it.
+        selectedMovePosition = null
         if (directTurnConsumption != null) {
             val postMessage = messageForCurrentTurn(message)
             holdTurnConsumptionAnimation(

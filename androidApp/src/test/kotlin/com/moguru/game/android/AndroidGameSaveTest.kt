@@ -167,6 +167,56 @@ class AndroidGameSaveTest {
     }
 
     @Test
+    fun `next players move phase starts at the first target instead of the previous selection`() {
+        val initial = controller().apply { startNewGame(2) }.exportSnapshot()
+        val ready = initial.copy(engine = initial.engine.copy(currentPhase = TurnPhase.MOVE,
+            tiles = initial.engine.tiles.mapValues { HoleTile(TileShape.CROSS).flip() }),
+            pendingDigDrawnTile = null)
+        val store = Store().apply { saved = SavedGame(ready, 1, 1) }
+        val vm = AndroidGameViewModel(controller(), store)
+        vm.resumeSavedGame()
+        val oldTarget = Position(2, 2)
+        vm.selectMoveTarget(oldTarget)
+        assertEquals(oldTarget, vm.uiState.value.selectedMovePosition)
+        vm.skip()
+        vm.finishTurnConsumptionAnimation(vm.uiState.value.turnConsumptionAnimation!!.id)
+        val nextPlayer = store.saved!!.game.engine.currentPlayerIndex
+        assertNotEquals(ready.engine.currentPlayerIndex, nextPlayer)
+        val digTarget = MoguraGameController.fromSnapshot(store.saved!!.game).digTargets().first()
+        vm.onCellClicked(digTarget)
+        vm.selectDigChoice(com.moguru.game.presenter.DigTileChoice.REVEALED)
+        vm.confirmDigPlacement()
+        assertEquals(TurnPhase.MOVE, store.saved!!.game.engine.currentPhase)
+        val targets = MoguraGameController.fromSnapshot(store.saved!!.game).moveTargets()
+            .sortedWith(compareBy<Position> { it.row }.thenBy { it.col })
+        assertTrue(oldTarget in targets)
+        assertNotEquals(oldTarget, targets.first())
+        assertEquals(targets.first(), vm.uiState.value.selectedMovePosition)
+        assertEquals(targets.first(), store.saved!!.selectedMovePosition)
+    }
+
+    @Test
+    fun `new games reset piece transparency in both UI and saved state`() {
+        for (useSetup in listOf(true, false)) {
+            val store = Store()
+            val vm = AndroidGameViewModel(controller(), store)
+            vm.startSelectedGame()
+            vm.setBoardPiecesTransparent(true)
+            assertTrue(store.saved!!.boardPiecesTransparent)
+            vm.returnToSetup()
+            if (useSetup) {
+                vm.chooseNewGame()
+                vm.startSelectedGame()
+                vm.confirmNewGame()
+            } else {
+                vm.startNewGame(2)
+            }
+            assertFalse(vm.uiState.value.boardPiecesTransparent)
+            assertFalse(store.saved!!.boardPiecesTransparent)
+        }
+    }
+
+    @Test
     fun `failed replacement retains old save and retries the same new game`() {
         val store = Store()
         val vm = AndroidGameViewModel(controller(), store)
