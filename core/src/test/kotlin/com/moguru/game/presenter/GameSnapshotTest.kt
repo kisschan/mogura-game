@@ -120,6 +120,23 @@ class GameSnapshotTest {
     }
 
     @Test
+    fun `dig phase requires a prepared tile only when digging is possible`() {
+        val snapshot = controller().apply { startNewGame(2) }.exportSnapshot()
+        val missing = snapshot.copy(
+            engine = snapshot.engine.copy(tileDiscardPile = snapshot.engine.tileDiscardPile + snapshot.pendingDigDrawnTile!!),
+            pendingDigDrawnTile = null,
+        )
+        assertThrows(IllegalArgumentException::class.java) { MoguraGameController.fromSnapshot(missing) }
+        val noTargets = missing.copy(engine = missing.engine.copy(players = missing.engine.players.mapIndexed { i, p ->
+            if (i == 0) p.copy(position = Position(0, 0)) else p
+        }))
+        val restored = MoguraGameController.fromSnapshot(noTargets)
+        assertTrue(restored.digTargets().isEmpty())
+        restored.settleAfterRestore()
+        assertEquals(TurnPhase.MOVE, restored.engine!!.currentPhase)
+    }
+
+    @Test
     fun `every checkpoint in a complete game continues identically after restoration`() {
         for (count in 2..4) {
             val original = controller()

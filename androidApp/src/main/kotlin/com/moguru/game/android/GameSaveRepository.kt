@@ -6,7 +6,7 @@ import android.os.Looper
 import android.util.AtomicFile
 import com.moguru.game.model.Position
 import com.moguru.game.persistence.GameSnapshot
-import com.moguru.game.persistence.validate
+import com.moguru.game.presenter.MoguraGameController
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
@@ -88,7 +88,7 @@ internal class AtomicGameSaveRepository(file: File) : GameSaveRepository {
     }
 
     override fun save(game: SavedGame): Unit = synchronized(lock) {
-        game.game.validate()
+        MoguraGameController.fromSnapshot(game.game)
         val bytes = GameSaveCodec.encode(game).toByteArray(Charsets.UTF_8)
         val stream = atomic.startWrite()
         try {

@@ -23,11 +23,11 @@ internal object GameSaveCodec {
             val root = JSONObject(text)
             if (root.int("formatVersion") != VERSION) throw InvalidGameSaveException(GameSaveLoadIssue.UNSUPPORTED)
             val snapshot = readGame(root.getJSONObject("game"))
-            snapshot.validate()
+            val restored = MoguraGameController.fromSnapshot(snapshot)
             val selectedMove = root.optionalObject("selectedMovePosition")?.let(::readPosition)
             if (selectedMove != null) {
                 require(snapshot.engine.currentPhase == TurnPhase.MOVE)
-                require(selectedMove in MoguraGameController.fromSnapshot(snapshot).moveTargets())
+                require(selectedMove in restored.moveTargets())
             }
             return SavedGame(
                 snapshot, root.long("revision").also { require(it in 0 until Long.MAX_VALUE) },

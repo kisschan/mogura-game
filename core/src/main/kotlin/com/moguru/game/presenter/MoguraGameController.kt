@@ -1265,6 +1265,12 @@ class MoguraGameController(
                 robberyVisits.putAll(snapshot.robberyVisits.mapValues { (_, it) -> RobberyVisit(it.nestPosition, it.eligible) })
                 ownNestEatEligiblePlayers.addAll(snapshot.ownNestEatEligiblePlayers)
                 messages.addAll(snapshot.logs)
+                // Reuse the live dig rules so valid turns without any dig target remain resumable.
+                if (snapshot.engine.gameState == GameState.PLAYING && snapshot.engine.currentPhase == TurnPhase.DIG) {
+                    require(pendingDigPlacement != null || pendingDigDrawnTile != null || digTargets().isEmpty()) {
+                        "A dig choice requires a prepared tile"
+                    }
+                }
             }
         }
 

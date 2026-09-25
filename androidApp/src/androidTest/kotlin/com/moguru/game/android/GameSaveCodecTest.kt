@@ -94,7 +94,13 @@ class GameSaveCodecTest {
             engine.getJSONArray("foods").getJSONObject(0)
                 .put("position", engine.getJSONArray("players").getJSONObject(0).getJSONObject("nestPosition"))
         }.toString()
-        for (text in listOf("{", missing, invalidPlayer, invalidPhase, extraFood, missingTile, extraTile, nestFood) + invalidEscapes) {
+        val opening = MoguraGameController(FixedDiceRoller(listOf(6)), FixedShuffler()).apply { startNewGame(2) }
+        val unpreparedDig = JSONObject(GameSaveCodec.encode(SavedGame(opening.exportSnapshot(), 1, 1))).apply {
+            val game = getJSONObject("game")
+            game.getJSONObject("engine").getJSONArray("tileDiscardPile").put(game.getJSONObject("pendingDigDrawnTile"))
+            game.put("pendingDigDrawnTile", JSONObject.NULL)
+        }.toString()
+        for (text in listOf("{", missing, invalidPlayer, invalidPhase, extraFood, missingTile, extraTile, nestFood, unpreparedDig) + invalidEscapes) {
             try { GameSaveCodec.decode(text); fail("accepted corrupt save") }
             catch (e: InvalidGameSaveException) { assertEquals(GameSaveLoadIssue.CORRUPT, e.issue) }
         }
