@@ -33,4 +33,18 @@ class AndroidAppGradleConfigTest {
             "AGP 9 built-in Kotlin rejects org.jetbrains.kotlin.android; use android.enableKotlin instead.",
         )
     }
+
+    @Test
+    fun `android app uses paid application id while keeping source namespace`() {
+        val buildScript = Files.readString(Path.of("..").resolve("androidApp/build.gradle.kts"))
+
+        assertTrue(
+            buildScript.contains("""applicationId = "com.moguru.game.paid""""),
+            "androidApp must be published under the paid application id com.moguru.game.paid.",
+        )
+        assertTrue(
+            buildScript.contains("""namespace = "com.moguru.game.android""""),
+            "androidApp namespace must stay com.moguru.game.android to match the Kotlin source package.",
+        )
+    }
 }

@@ -15,7 +15,7 @@
 - 実装ファイル: coreの新規 `persistence/GameSnapshot.kt`、`Player.kt`、`GameEngine.kt`、`MoguraGameController.kt`。Androidの新規 `GameSaveRepository.kt`、`GameSaveCodec.kt`、`GameResumeScreen.kt` と、`AndroidGameViewModel.kt`、`GameScreen.kt`、`MainActivity.kt`。要件14章・`AGENT.md`・`CLAUDE.md`にも保存仕様を反映
 - 追加テスト: coreの `GameSnapshotTest` 5件（2〜4人の完走中の各操作前後、捕獲、強奪など）、Android JVMの `AndroidGameSaveTest` 9件（保存前の表示抑止、失敗と同一出目の再試行、上書き取消、演出中断、終了結果など）。端末用に `GameSaveCodecTest` 4件、`GameSaveStorageTest` 1件、`GameResumeComposeTest` 2件を追加。既存MainActivity計測テストは専用メモリ保存へ切り替え、実際の保存データを使わない
 - 最終検証（2026-09-25）: 秘密情報を参照しない隔離環境で `:core:test :desktop:test :androidApp:testDebugUnitTest :androidApp:compileDebugAndroidTestKotlin` が `BUILD SUCCESSFUL`。core 253件成功、desktop 51件成功・3件スキップ、Android JVM 158件成功。さらにAndroid由来の公開JSON実装を検証環境だけに導入し、Codec計測テスト4件をJVMで実行して全成功（合計469件中466件成功、3件スキップ、失敗・エラー0）。ソース/リソース131ファイルが本体と検証コピーで一致。最終実行で変更のないcore/desktop結果は同じ作業内の直前の成功結果を再利用。本番設定を参照する設定検査は除外し、製品側の依存関係・署名・ビルド設定は変更していない
-- 未実施/TODO: 接続Android端末がないため、追加7件を含む計測テストはコンパイルまで。Android実装のAtomicFile、Compose画面、バックグラウンドでの `adb shell am kill com.moguru.game.android`、アプリ強制停止後の起動、端末再起動後の復元は実機未確認。次作業は端末上で計測テストを実行し、回転選択待ち・出目確定後・捕獲/食事/消耗演出中からの復元を確認する。署名・APK生成・端末への配布は未実施
+- 未実施/TODO: 接続Android端末がないため、追加7件を含む計測テストはコンパイルまで。Android実装のAtomicFile、Compose画面、バックグラウンドでの `adb shell am kill com.moguru.game.paid`、アプリ強制停止後の起動、端末再起動後の復元は実機未確認。次作業は端末上で計測テストを実行し、回転選択待ち・出目確定後・捕獲/食事/消耗演出中からの復元を確認する。署名・APK生成・端末への配布は未実施
 
 ## 以前の作業
 - [x] 2026-09-13: ユーザーが実機でログ表示・盤面固定を確認し、問題なしと報告。新ブランチ `codex/android-v19-fixed-board` からmain向け通常PRを作成するため、Androidの `versionCode` / `versionName` を18から19へ更新
