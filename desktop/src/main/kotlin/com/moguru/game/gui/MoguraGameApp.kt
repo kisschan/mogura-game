@@ -1,6 +1,6 @@
 package com.moguru.game.gui
 
-import com.moguru.game.engine.PlayerConfig
+import com.moguru.game.engine.GameState
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.Board
 import com.moguru.game.model.CellType
@@ -449,64 +449,14 @@ class MoguraGameFrame(
             ?.let { ImageIcon(it.getScaledInstance(size, size, Image.SCALE_SMOOTH)) }
 
     private fun promptNewGame() {
-        val choices = arrayOf("2", "3", "4")
-        val choice = JOptionPane.showInputDialog(
-            this,
-            "プレイヤー人数を選んでください",
-            "新しいゲーム",
-            JOptionPane.QUESTION_MESSAGE,
-            null,
-            choices,
-            choices.first(),
-        ) as? String ?: choices.first()
-        val playerCount = choice.toInt()
-        val remainingMoles = MoguraGameController.moleOptions.toMutableList()
-        val remainingNests = MoguraGameController.nestPositions.toMutableList()
-        val configs = mutableListOf<PlayerConfig>()
-
-        repeat(playerCount) { index ->
-            val moleLabels = remainingMoles.map { it.name }.toTypedArray()
-            val moleChoice = JOptionPane.showInputDialog(
-                this,
-                "P${index + 1} のモグラを選んでください",
-                "モグラ選択",
-                JOptionPane.QUESTION_MESSAGE,
-                null,
-                moleLabels,
-                moleLabels.first(),
-            ) as? String ?: return
-            val mole = remainingMoles.removeAt(moleLabels.indexOf(moleChoice).coerceAtLeast(0))
-
-            val nestLabels = remainingNests.map(::nestChoiceLabel).toTypedArray()
-            val nestChoice = JOptionPane.showInputDialog(
-                this,
-                "P${index + 1} の巣を選んでください",
-                "巣選択",
-                JOptionPane.QUESTION_MESSAGE,
-                null,
-                nestLabels,
-                nestLabels.first(),
-            ) as? String ?: return
-            val nest = remainingNests.removeAt(nestLabels.indexOf(nestChoice).coerceAtLeast(0))
-            configs.add(PlayerConfig(mole.name, nest, playerId = mole.playerId))
-        }
-
-        val startLabels = configs.mapIndexed { index, config ->
-            "P${index + 1}: ${config.name}"
-        }.toTypedArray()
-        val startChoice = JOptionPane.showInputDialog(
-            this,
-            "先手プレイヤーを選んでください",
-            "先手選択",
-            JOptionPane.QUESTION_MESSAGE,
-            null,
-            startLabels,
-            startLabels.first(),
-        ) as? String ?: startLabels.first()
-        val startPlayerIndex = startLabels.indexOf(startChoice).takeIf { it >= 0 } ?: 0
+        val setup = collectDesktopGameSetup { message, title, choices ->
+            JOptionPane.showInputDialog(
+                this, message, title, JOptionPane.QUESTION_MESSAGE, null, choices, choices.first(),
+            ) as? String
+        } ?: return
 
         boardPanel.cancelAnimations()
-        controller.startNewGame(configs, startPlayerIndex)
+        controller.startNewGame(setup.players, setup.startPlayerIndex)
         backgroundMusic.playLooping()
         refresh()
     }
@@ -514,6 +464,7 @@ class MoguraGameFrame(
     private fun handleBoardClick(position: Position) {
         if (boardPanel.isAnimating) return
         val current = controller.engine ?: return
+        if (current.gameState == GameState.FINISHED) return
         boardPanel.prepareTurnConsumptionAnimation()
         val result = when (current.currentPhase) {
             TurnPhase.DIG -> controller.digAt(position, selectedRotation())
@@ -604,27 +555,9 @@ class MoguraGameFrame(
         val uiState = controller.playScreenUiState()
         val actions = uiState.actionAvailability
         val canAdvanceFromDig = controller.canAdvanceFromDigWithoutTargets()
-        val preparedDigShape = controller.pendingDigDrawnTile?.shape
 
-        currentPlayerPanel.render(uiState.currentPlayer)
-        val statusText = uiState.captureOutcome?.let(::desktopCaptureOutcomeStatus)
-            ?: controller.pendingFoodDecision?.let { food ->
-                val prefix = if (uiState.pendingDecisionSource == FoodDecisionSource.ROBBERY) "強奪した " else ""
-                "${prefix}${food.type.displayName()} を食べるか、巣へ持ち帰るか選んでください。"
-            } ?: if (canAdvanceFromDig) {
-            "掘れる穴タイルがありません。移動へ進んでください。"
-        } else if (actions.canRob) {
-            "強奪するエサを選んでください。"
-        } else if (controller.pendingDigPlacement != null) {
-            val pending = controller.pendingDigPlacement!!
-            val selected = controller.pendingDigTileChoice?.label() ?: DigTileChoice.REVEALED.label()
-            val drawn = pending.drawnTile?.shape?.displayName() ?: "なし"
-            desktopPendingDigStatus(selected, drawn)
-        } else if (actions.activePhase == TurnPhase.DIG && preparedDigShape != null) {
-            "山札: ${preparedDigShape.displayName()}。確認してから掘る場所を選んでください。"
-        } else {
-            phaseHelp(current?.currentPhase)
-        }
+        currentPlayerPanel.render(desktopCurrentPlayerDisplay(controller))
+        val statusText = desktopGameStatusText(controller)
         showStatus(statusText)
 
         captureButton.isEnabled = actions.canCapture
@@ -648,8 +581,8 @@ class MoguraGameFrame(
         if (boardPanel.isAnimating) {
             blockInputsForAnimation()
         }
-        digGuideButton.isEnabled = !boardPanel.isAnimating
-        moveGuideButton.isEnabled = !boardPanel.isAnimating
+        digGuideButton.isEnabled = !boardPanel.isAnimating && current?.gameState != GameState.FINISHED
+        moveGuideButton.isEnabled = !boardPanel.isAnimating && current?.gameState != GameState.FINISHED
         newGameButton.isEnabled = !boardPanel.isAnimating
 
         logArea.text = controller.logs.joinToString("\n")
@@ -690,7 +623,7 @@ class MoguraGameFrame(
     }
 
     private fun refreshActionButtonStyles(actions: ActionAvailability) {
-        val phase = actions.activePhase
+        val phase = actions.activePhase.takeIf { controller.engine?.gameState != GameState.FINISHED }
         updateActionButtonStyle(digGuideButton, phase == TurnPhase.DIG)
         updateActionButtonStyle(confirmDigButton, confirmDigButton.isEnabled, Color(0x158A45))
         updateActionButtonStyle(moveGuideButton, phase == TurnPhase.MOVE)
@@ -723,7 +656,6 @@ class MoguraGameFrame(
             .replace("<", "&lt;")
             .replace(">", "&gt;")
 
-    private fun phaseHelp(phase: TurnPhase?): String = desktopPhaseHelp(phase)
 }
 
 internal fun desktopCaptureOutcomeStatus(outcome: CaptureOutcomeDisplay): String {
@@ -2195,7 +2127,7 @@ private fun playerColor(id: Int): Color = when (id) {
 private const val PLAYER_NAME_BADGE_HEIGHT_RATIO = 0.24
 private const val PLAYER_NAME_BADGE_APPROX_CHAR_WIDTH = 14
 
-private fun nestChoiceLabel(position: Position): String = when (position) {
+internal fun nestChoiceLabel(position: Position): String = when (position) {
     Position(0, 1) -> "巣A (1,2)"
     Position(5, 1) -> "巣B (6,2)"
     Position(0, 4) -> "巣C (1,5)"

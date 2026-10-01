@@ -2,8 +2,6 @@ package com.moguru.game.android
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
@@ -59,18 +57,11 @@ internal fun CaptureAnimationOverlay(
     val boardHeightPx = with(LocalDensity.current) { maxHeight.toPx() }
 
     LaunchedEffect(event.id) {
-        // Animatable also respects the system animation duration scale, including zero.
-        progress.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(
-                durationMillis = if (event.kind == CaptureOutcomeKind.CAPTURED) {
-                    CAPTURE_SUCCESS_DURATION_MILLIS
-                } else {
-                    CAPTURE_ESCAPE_DURATION_MILLIS
-                },
-                easing = LinearEasing,
-            ),
-        )
+        playGameAnimation(progress, if (event.kind == CaptureOutcomeKind.CAPTURED) {
+            CAPTURE_SUCCESS_DURATION_MILLIS
+        } else {
+            CAPTURE_ESCAPE_DURATION_MILLIS
+        })
         finish(event.id)
     }
 

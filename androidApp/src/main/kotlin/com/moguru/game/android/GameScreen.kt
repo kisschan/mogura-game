@@ -2072,25 +2072,31 @@ internal fun SelectedMoveTargetIndicator(
     modifier: Modifier = Modifier,
 ) {
     val style = selectedMoveTargetIndicatorStyle()
-    val haloTransition = rememberInfiniteTransition(label = "selected-move-target-halo")
-    val haloAlpha by haloTransition.animateFloat(
-        initialValue = style.haloMinAlpha,
-        targetValue = style.haloMaxAlpha,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = style.pulseDurationMillis),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "selected-move-target-halo-alpha",
-    )
-    val haloScale by haloTransition.animateFloat(
-        initialValue = style.haloMinScale,
-        targetValue = style.haloMaxScale,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = style.pulseDurationMillis),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "selected-move-target-halo-scale",
-    )
+    var haloAlpha = style.haloMaxAlpha
+    var haloScale = style.haloMaxScale
+    if (gameMotionEnabled()) {
+        val haloTransition = rememberInfiniteTransition(label = "selected-move-target-halo")
+        val animatedAlpha by haloTransition.animateFloat(
+            initialValue = style.haloMinAlpha,
+            targetValue = style.haloMaxAlpha,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = style.pulseDurationMillis),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "selected-move-target-halo-alpha",
+        )
+        val animatedScale by haloTransition.animateFloat(
+            initialValue = style.haloMinScale,
+            targetValue = style.haloMaxScale,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = style.pulseDurationMillis),
+                repeatMode = RepeatMode.Reverse,
+            ),
+            label = "selected-move-target-halo-scale",
+        )
+        haloAlpha = animatedAlpha
+        haloScale = animatedScale
+    }
 
     Box(
         modifier = modifier.testTag(selectedMoveTargetIndicatorTestTag(position)),
@@ -2224,6 +2230,12 @@ private fun BoardView(
 
         state.boardState.cells.forEach { cell ->
             cell.tile?.let { tile ->
+                // Only the preview image interpolates; ports and rules use the committed angle.
+                val previewRotation = if (!tile.isFaceDown && state.digPreviewPosition == cell.position) {
+                    rememberDigPreviewRotation(cell.position, tile.shape,
+                        state.playState.digCandidates.firstOrNull { it.selected }?.choice,
+                        state.playbackGeneration, digPreviewRotationFor(state, cell))
+                } else null
                 Image(
                     painter = painterResource(if (tile.isFaceDown) R.drawable.tile_back else tileRes(tile.shape)),
                     contentDescription = null,
@@ -2231,7 +2243,7 @@ private fun BoardView(
                         .boardRect(maxWidth, maxHeight, cellRect(cell.position, scale = 0.84f))
                         .zIndex(BOARD_TILE_Z)
                         .graphicsLayer {
-                            if (!tile.isFaceDown) rotationZ = tile.rotation.steps * 90f
+                            if (!tile.isFaceDown) rotationZ = previewRotation?.value ?: (tile.rotation.steps * 90f)
                         },
                     contentScale = ContentScale.Fit,
                 )
