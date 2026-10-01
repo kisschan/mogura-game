@@ -41,7 +41,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.moguru.game.android"
+        applicationId = "com.moguru.game.paid"
         minSdk = 26
         targetSdk = 36
         versionCode = 20
