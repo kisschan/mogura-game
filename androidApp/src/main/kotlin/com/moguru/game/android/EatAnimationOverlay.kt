@@ -2,8 +2,6 @@ package com.moguru.game.android
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -72,13 +70,7 @@ internal fun EatAnimationOverlay(
     val boardHeightPx = with(LocalDensity.current) { maxHeight.toPx() }
 
     LaunchedEffect(event.id) {
-        progress.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(
-                durationMillis = EAT_ANIMATION_DURATION_MILLIS,
-                easing = LinearEasing,
-            ),
-        )
+        playGameAnimation(progress, EAT_ANIMATION_DURATION_MILLIS)
         finish(event.id)
     }
 

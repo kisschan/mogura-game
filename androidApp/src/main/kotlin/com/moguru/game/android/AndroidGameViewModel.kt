@@ -47,6 +47,7 @@ data class AndroidGameUiState(
     val selectedMovePosition: Position? = null,
     val boardPiecesTransparent: Boolean = false,
     val playbackGeneration: Long = 0,
+    val digPreviewPosition: Position? = null,
 )
 
 /** Keeps the original stack visible until the resolved capture has finished moving. */
@@ -730,6 +731,7 @@ class AndroidGameViewModel(
             } else null,
             boardPiecesTransparent = boardPiecesTransparent,
             playbackGeneration = playbackGeneration,
+            digPreviewPosition = if (isGameStarted) controller.pendingDigPlacement?.position else null,
         )
     }
 

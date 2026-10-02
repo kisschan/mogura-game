@@ -1,3 +1,19 @@
+## 2026-10-01 保存再開・入力状態の修正と回転フィードバック
+
+- 対象: `kisschan/mogura-game`、main `4b625073da7fdbe933862c51ae374aa23fb796de` から分離した `codex/bugfix-animation-review-20261002`。新規チェックアウトのため既存未コミット変更なし。GPT-6.1 SolでCore・Android・独立レビューを分担。
+- [x] 捕獲エサの逃走結果が確定済みの途中保存を再開した際、演出待ちENDで手番が止まる不具合を修正。未処理の確定出目だけを一度解決し、未確定出目・選択待ちを保持。
+- [x] 合法な強奪フェーズ以外の対象選択を拒否。保存された掘りプレビューが非隣接または他プレイヤー占有の場合は復元を拒否。
+- [x] Desktopの人数・先手選択キャンセルで既存ゲームを置き換える不具合を修正。終局時の案内・現在プレイヤー表示・操作アクセントを勝者/ドローの結果表示へ変更。
+- [x] Androidのダイス完了通知で最新コールバックを参照し、重複通知を抑止。システムの動き軽減/無効時には既存演出を静止表示し、未確定出目を自動確定しない。選択枠は不透明のまま残す。
+- [x] 掘りタイルの回転画像だけを140msで時計回り補間。270°→0°・連打・候補切替・直線/十字の対称形を確認。保存形式・合法判定・盤面固定・全文ログは維持。
+- 実装ファイル: Core `MoguraGameController.kt`、Android `AndroidGameViewModel.kt` / `GameScreen.kt` / `DiceRouletteOverlay.kt` / 既存捕獲・食事・体力消耗Overlay / 新規 `AndroidGameMotion.kt` / `DigPreviewMotion.kt`、Desktop `MoguraGameApp.kt` / 新規 `DesktopGameSetup.kt` / `DesktopGameStatus.kt`。
+- 追加回帰: Core6件、Android JVM9件、Desktop10件、Compose9件。修正前にはCore5/6件・Android8/9件・Desktop5/10件の失敗を観測。独立レビューの対称タイル角度指摘もRed2件から修正。
+- 最終検証: `.local/verify.ps1 test build :androidApp:compileDebugAndroidTestKotlin :androidApp:lintDebug --console=plain` が `BUILD SUCCESSFUL`。Core268件成功、Desktop64件中61件成功・既存条件付き3件スキップ、Android JVM169件成功（合計501件中498件成功、失敗/エラー0）。Android lintはエラー0・警告14・ヒント1。Compose全テストソースのコンパイル成功。Swingの開始・掘りプレビュー・終局を実コンポーネント描画で確認。
+- 検証環境: チェックアウト内のJDK17.0.20.1、Gradle9.4.1、SDK36.1/Build Tools36.1.0、隔離キャッシュ、今回生成した検証用debugキーを使用。Windows sandboxの署名ロック正規化制限を自動承認済みの実行権限調整で解消。製品のGradle設定・既存truststore・署名設定は変更なし。
+- 独立レビュー: GPT-6.1 Solで全変更を確認。対称タイルの指摘修正後、残るコード上のブロッカーなし。
+- 未実施/TODO: 接続Android端末・エミュレーターがないためComposeテストの端末実行、実タッチ・TalkBack・バックグラウンド中断/プロセス終了/端末再起動後の復元は未確認。既存の得点到達とHP0の同時発生は体力消耗を優先する挙動を維持し、優先順位の要件解釈は別途確認対象。移動経路に沿う新規演出は提案のみで未実装。
+- 次作業: この変更だけをコミット・pushし、main向け通常PRを作成。merge・公開・デプロイは実施しない。
+
 # PROGRESS.md
 
 最終更新: 2026-09-25

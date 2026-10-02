@@ -237,12 +237,13 @@ class MoguraGameController(
     /** Complete only deferred presentation callbacks, keeping unresolved choices intact. */
     fun settleAfterRestore() {
         if (pendingCaptureRoll?.roll != null) check(resolveCaptureRoll().success)
+        // A resolved roll may have just created an event. Resume skips its playback too.
+        captureOutcome = captureOutcome?.copy(animation = null)
         while (engine?.gameState == GameState.PLAYING) {
             val before = exportSnapshot()
             val result = autoAdvanceWhileNoChoice() ?: break
             check(result.success && before != exportSnapshot()) { "Resume did not make progress" }
         }
-        captureOutcome = captureOutcome?.copy(animation = null)
     }
 
     /** Preserve injected randomness when replacing this controller after loading a save. */
@@ -570,6 +571,9 @@ class MoguraGameController(
     }
 
     fun selectRobberyTarget(index: Int): GameActionResult {
+        if (!canRobbery()) {
+            return GameActionResult(false, "今は強奪対象を選べません。")
+        }
         val candidate = robberyCandidateForCurrentPlayer()
             ?: return GameActionResult(false, "強奪できるエサがありません。")
         if (index !in candidate.foods.indices) {
@@ -912,7 +916,7 @@ class MoguraGameController(
             TurnPhase.MOVE -> moveTargets().isNotEmpty()
             TurnPhase.CAPTURE -> canCapture() || pendingCaptureRoll != null
             TurnPhase.DECIDE -> pendingDecision != null || canRobbery() || canEatOwnNestStoredFood()
-            TurnPhase.END -> captureOutcome != null
+            TurnPhase.END -> captureOutcome?.animation != null
         }
     }
 
@@ -1265,6 +1269,9 @@ class MoguraGameController(
                 robberyVisits.putAll(snapshot.robberyVisits.mapValues { (_, it) -> RobberyVisit(it.nestPosition, it.eligible) })
                 ownNestEatEligiblePlayers.addAll(snapshot.ownNestEatEligiblePlayers)
                 messages.addAll(snapshot.logs)
+                pendingDigPlacement?.let { pending ->
+                    require(pending.position in digTargets()) { "A pending dig requires a legal target" }
+                }
                 // Reuse the live dig rules so valid turns without any dig target remain resumable.
                 if (snapshot.engine.gameState == GameState.PLAYING && snapshot.engine.currentPhase == TurnPhase.DIG) {
                     require(pendingDigPlacement != null || pendingDigDrawnTile != null || digTargets().isEmpty()) {

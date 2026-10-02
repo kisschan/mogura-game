@@ -21,6 +21,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -34,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import com.moguru.game.model.FoodType
 import com.moguru.game.presenter.displayName
 import kotlinx.coroutines.delay
+import kotlin.coroutines.coroutineContext
 
 /** 回転中の目の切り替え間隔。 */
 private const val SPIN_FRAME_MILLIS = 70L
@@ -66,6 +68,9 @@ fun DiceRouletteOverlay(
     var landed by remember { mutableStateOf(false) }
     // カード公開→回転開始は純演出のためローカル state で持つ。
     var spinning by remember { mutableStateOf(false) }
+    var finished by remember(targetFace) { mutableStateOf(false) }
+    val finish by rememberUpdatedState(onFinished)
+    val motionEnabled = gameMotionEnabled()
 
     // ルーレット中に戻る操作でゲーム状態と表示がずれないよう消費する。
     BackHandler {}
@@ -80,31 +85,55 @@ fun DiceRouletteOverlay(
         }
     }
 
-    LaunchedEffect(targetFace, spinning) {
-        if (targetFace == null) {
-            landed = false
-            while (spinning) {
-                delay(SPIN_FRAME_MILLIS)
-                face = face % 6 + 1
-            }
-        } else {
-            LANDING_FRAME_MILLIS.forEach { millis ->
-                delay(millis)
-                face = face % 6 + 1
-            }
-            face = targetFace
-            landed = true
-            delay(RESULT_PAUSE_MILLIS)
-            onFinished()
-        }
+    LaunchedEffect(targetFace, spinning, motionEnabled) {
+        if (finished) return@LaunchedEffect
+        if (targetFace == null) landed = false
+        playDiceRoulettePresentation(targetFace, spinning,
+            nextFrame = { face = face % 6 + 1 },
+            showResult = { face = it; landed = true },
+            onFinished = {
+                if (!finished) {
+                    finished = true
+                    finish()
+                }
+            },
+        )
     }
 
     DiceRouletteModalLayer {
         if (!spinning && targetFace == null) {
             FoodRevealContent(foodType, escapeRolls, onPrimaryAction = ::handlePrimaryAction)
         } else {
-            DiceSpinContent(foodType, escapeRolls, face, landed, targetFace, onPrimaryAction = ::handlePrimaryAction)
+            DiceSpinContent(foodType, escapeRolls, face, landed, targetFace, motionEnabled,
+                onPrimaryAction = ::handlePrimaryAction)
         }
+    }
+}
+
+internal suspend fun playDiceRoulettePresentation(
+    targetFace: Int?,
+    spinning: Boolean,
+    nextFrame: () -> Unit,
+    showResult: (Int) -> Unit,
+    onFinished: () -> Unit,
+) {
+    val motionEnabled = gameMotionEnabled(coroutineContext)
+    if (targetFace == null) {
+        if (!motionEnabled) return
+        while (spinning) {
+            delay(SPIN_FRAME_MILLIS)
+            nextFrame()
+        }
+    } else {
+        if (motionEnabled) {
+            LANDING_FRAME_MILLIS.forEach { millis ->
+                delay(millis)
+                nextFrame()
+            }
+        }
+        showResult(targetFace)
+        delay(RESULT_PAUSE_MILLIS)
+        onFinished()
     }
 }
 
@@ -196,6 +225,7 @@ private fun DiceSpinContent(
     face: Int,
     landed: Boolean,
     targetFace: Int?,
+    motionEnabled: Boolean,
     onPrimaryAction: () -> Unit,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -221,7 +251,7 @@ private fun DiceSpinContent(
                 .size(180.dp),
         )
         Text(
-            text = if (landed) "$targetFace が出た！" else "ダイス回転中",
+            text = if (landed) "$targetFace が出た！" else if (motionEnabled) "ダイス回転中" else "出目未確定",
             modifier = Modifier.padding(top = 20.dp),
             color = Color.White,
             fontSize = 22.sp,

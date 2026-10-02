@@ -4,6 +4,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
@@ -21,6 +24,25 @@ import org.junit.Test
 class DiceRouletteOverlayComposeTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun landingUsesTheLatestCompletionCallbackAfterRecomposition() {
+        val completions = mutableListOf<String>()
+        var destination by mutableStateOf("old")
+        composeRule.mainClock.autoAdvance = false
+        composeRule.setContent {
+            val currentDestination = destination
+            MaterialTheme {
+                DiceRouletteOverlay(FoodType.EARTHWORM, listOf(1, 2), 6, {}, {
+                    completions.add(currentDestination)
+                })
+            }
+        }
+        composeRule.mainClock.advanceTimeBy(100)
+        composeRule.runOnIdle { destination = "new" }
+        composeRule.mainClock.advanceTimeBy(2200)
+        composeRule.runOnIdle { assertEquals(listOf("new"), completions) }
+    }
 
     @Test
     fun rollButtonAcceptsTapContainingSmallPointerMove() {

@@ -2,8 +2,6 @@ package com.moguru.game.android
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -64,13 +62,7 @@ internal fun TurnConsumptionAnimationOverlay(
     val boardHeightPx = with(LocalDensity.current) { maxHeight.toPx() }
 
     LaunchedEffect(event.id) {
-        progress.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(
-                durationMillis = TURN_CONSUMPTION_ANIMATION_DURATION_MILLIS,
-                easing = LinearEasing,
-            ),
-        )
+        playGameAnimation(progress, TURN_CONSUMPTION_ANIMATION_DURATION_MILLIS)
         finish(event.id)
     }
 
