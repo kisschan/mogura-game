@@ -43,7 +43,11 @@ jobs:
         shell: bash
         run: |
           mkdir -p gradle/certs
-          keytool -importkeystore \
+          # gradle.properties はパスワードを持たないため、パスワードなしで読める形式で作り直す
+          rm -f gradle/certs/gradle-truststore.p12
+          keytool -J-Dkeystore.pkcs12.certProtectionAlgorithm=NONE \
+            -J-Dkeystore.pkcs12.macAlgorithm=NONE \
+            -importkeystore \
             -srckeystore "$JAVA_HOME/lib/security/cacerts" \
             -srcstorepass changeit \
             -destkeystore gradle/certs/gradle-truststore.p12 \
