@@ -2,6 +2,7 @@ package com.moguru.game.config
 
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.KeyStore
 import java.util.Properties
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -27,5 +28,14 @@ class GradlePropertiesTest {
         assertFalse(jvmArgs.contains("javax.net.ssl.trustStorePassword"))
         assertTrue(jvmArgs.contains("-Djava.net.useSystemProxies=true"))
         assertTrue(jvmArgs.contains("-Dfile.encoding=UTF-8"))
+    }
+
+    @Test
+    fun `checked in truststore can be loaded without password`() {
+        val keyStore = KeyStore.getInstance("PKCS12").apply {
+            Files.newInputStream(Path.of("..").resolve("gradle/certs/gradle-truststore.p12")).use { load(it, null) }
+        }
+
+        assertTrue(keyStore.aliases().toList().any(keyStore::isCertificateEntry))
     }
 }
