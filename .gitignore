@@ -1,6 +1,7 @@
 .claude/
 .codex/
 .codex-remote-attachments/
+.codex-analysis/
 .gradle/
 build/
 bin/
