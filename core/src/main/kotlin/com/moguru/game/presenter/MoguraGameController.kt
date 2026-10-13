@@ -1014,7 +1014,7 @@ class MoguraGameController(
         return false
     }
 
-    private fun hasRobberyOpportunityForCurrentPlayer(): Boolean =
+    internal fun hasRobberyOpportunityForCurrentPlayer(): Boolean =
         pendingDecision == null &&
             pendingCaptureRoll == null &&
             robberyCandidateForCurrentPlayer() != null
@@ -1024,7 +1024,7 @@ class MoguraGameController(
         return current.currentPhase == TurnPhase.DECIDE && hasOwnNestStoredFoodOpportunityForCurrentPlayer()
     }
 
-    private fun hasOwnNestStoredFoodOpportunityForCurrentPlayer(): Boolean {
+    internal fun hasOwnNestStoredFoodOpportunityForCurrentPlayer(): Boolean {
         val player = currentPlayer ?: return false
         return pendingDecision == null &&
             pendingCaptureRoll == null &&

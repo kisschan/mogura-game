@@ -18,7 +18,13 @@ data class SavedGame(
     val selectedMovePosition: Position? = null,
     val boardPiecesTransparent: Boolean = false,
     val lastMessage: String? = null,
+    /** CPU operators by player ID. Saves from before CPU play have none. */
+    val cpuPlayerIds: Set<Int> = emptySet(),
 )
+
+/** Every CPU operator must take part in the saved game; anything else is a damaged save. */
+internal fun SavedGame.requireCpuParticipants() =
+    require(game.engine.players.map { it.id }.containsAll(cpuPlayerIds))
 
 interface GameSaveRepository {
     fun load(): SavedGame?
@@ -89,6 +95,7 @@ internal class AtomicGameSaveRepository(file: File) : GameSaveRepository {
 
     override fun save(game: SavedGame): Unit = synchronized(lock) {
         MoguraGameController.fromSnapshot(game.game)
+        game.requireCpuParticipants()
         val bytes = GameSaveCodec.encode(game).toByteArray(Charsets.UTF_8)
         val stream = atomic.startWrite()
         try {

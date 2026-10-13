@@ -52,9 +52,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -163,6 +165,9 @@ internal const val HUNGER_MARKER_TEST_TAG_PREFIX = "hunger-marker-"
 internal const val HUD_SCORE_TEST_TAG = "hud-score"
 internal const val BGM_VOLUME_SLIDER_TEST_TAG = "bgm-volume-slider"
 internal const val SOUND_EFFECT_VOLUME_SLIDER_TEST_TAG = "sound-effect-volume-slider"
+internal const val HUD_CPU_BADGE_TEST_TAG = "hud-cpu-badge"
+internal const val CPU_FAULT_RETRY_TEST_TAG = "cpu-fault-retry"
+internal const val CPU_FAULT_SETUP_TEST_TAG = "cpu-fault-return-to-setup"
 internal val AUDIO_SETTINGS_BUTTON_SIZE = 44.dp
 internal val GAME_MENU_BUTTON_SIZE = 44.dp
 internal val BOARD_PIECE_VISIBILITY_TOGGLE_SIZE = 44.dp
@@ -226,6 +231,22 @@ private val LocalAndroidSoundEffectPlayer = staticCompositionLocalOf<AndroidSoun
     NoOpAndroidSoundEffectPlayer
 }
 
+/** Counts the menu, dialog and history layers that hold CPU turns while they cover the board. */
+private class CpuPauseLayers {
+    var open by mutableIntStateOf(0)
+}
+
+private val LocalCpuPauseLayers = staticCompositionLocalOf<CpuPauseLayers?> { null }
+
+@Composable
+private fun PauseCpuWhileShown() {
+    val layers = LocalCpuPauseLayers.current ?: return
+    DisposableEffect(layers) {
+        layers.open++
+        onDispose { layers.open-- }
+    }
+}
+
 @Composable
 internal fun MoguraGameScreen(
     viewModel: AndroidGameViewModel = viewModel(),
@@ -236,11 +257,19 @@ internal fun MoguraGameScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val playbackGeneration = state.playbackGeneration
+    val diceRouletteEventId = state.diceRouletteEventId
     var showAudioSettings by remember { mutableStateOf(false) }
     var showRules by rememberSaveable(state.playbackGeneration, state.persistence.showEntry) { mutableStateOf(false) }
+    val cpuPauseLayers = remember { CpuPauseLayers() }
+    val cpuPlayScreenClear = state.isGameStarted && !showRules && !showAudioSettings &&
+        cpuPauseLayers.open == 0
 
     LaunchedEffect(state.isGameStarted) {
         onGameStartedChanged(state.isGameStarted)
+    }
+    DisposableEffect(viewModel, cpuPlayScreenClear) {
+        viewModel.setCpuPlayScreenClear(cpuPlayScreenClear)
+        onDispose { viewModel.setCpuPlayScreenClear(false) }
     }
 
     CaptureFailureSoundEffect(
@@ -255,7 +284,10 @@ internal fun MoguraGameScreen(
     )
 
     MaterialTheme {
-        CompositionLocalProvider(LocalAndroidSoundEffectPlayer provides soundEffects) {
+        CompositionLocalProvider(
+            LocalAndroidSoundEffectPlayer provides soundEffects,
+            LocalCpuPauseLayers provides cpuPauseLayers,
+        ) {
             Surface(
                 modifier = Modifier.fillMaxSize(),
                 color = Color(0xFFFFF7E4),
@@ -310,7 +342,11 @@ internal fun MoguraGameScreen(
                                 escapeRolls = state.playState.diceRouletteEscapeRolls,
                                 targetFace = state.playState.diceRouletteResult,
                                 onTap = soundEffectClick(onClick = viewModel::stopDiceRoulette),
-                                onFinished = { viewModel.finishDiceRoulette(playbackGeneration) },
+                                onFinished = {
+                                    viewModel.finishDiceRoulette(playbackGeneration, diceRouletteEventId)
+                                },
+                                cpuControlled = state.cpuTurn,
+                                cpuSpinning = state.cpuRouletteSpinning,
                             )
                         }
                         val gameResult = state.gameResult
@@ -456,6 +492,7 @@ private fun CompactGameMenuButton(
     modifier: Modifier = Modifier,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    if (expanded) PauseCpuWhileShown()
     Box(modifier = modifier) {
         OutlinedButton(
             onClick = soundEffectClick { expanded = true },
@@ -756,6 +793,7 @@ private fun SetupScreen(
                     onMoleSelected = viewModel::selectPlayerMole,
                     onNestSelected = viewModel::selectPlayerNest,
                     onStartSelected = viewModel::selectStartPlayer,
+                    onKindSelected = viewModel::selectPlayerKind,
                 )
             }
         }
@@ -784,6 +822,7 @@ private fun SetupPlayerRow(
     onMoleSelected: (Int, Int) -> Unit,
     onNestSelected: (Int, Position) -> Unit,
     onStartSelected: (Int) -> Unit,
+    onKindSelected: (Int, Boolean) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -839,6 +878,21 @@ private fun SetupPlayerRow(
             }
         }
 
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            listOf(false, true).forEach { isCpu ->
+                SeatKindButton(
+                    seatIndex = player.seatIndex,
+                    isCpu = isCpu,
+                    selected = player.isCpu == isCpu,
+                    onClick = soundEffectClick { onKindSelected(player.seatIndex, isCpu) },
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
+
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -883,6 +937,42 @@ private fun SetupPlayerRow(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun SeatKindButton(
+    seatIndex: Int,
+    isCpu: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selectedColors = setupSelectedChoiceColors()
+    val label = seatKindLabel(isCpu)
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .testTag(setupSeatKindTestTag(seatIndex, isCpu))
+            .semantics {
+                contentDescription = "P${seatIndex + 1}の操作: $label"
+                this.selected = selected
+                stateDescription = if (selected) "選択中" else "未選択"
+            },
+        shape = RoundedCornerShape(8.dp),
+        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+        border = BorderStroke(2.dp, if (selected) Color(selectedColors.borderArgb) else Color(0xFF9A7A52)),
+        colors = if (selected) {
+            ButtonDefaults.buttonColors(
+                containerColor = Color(selectedColors.containerArgb),
+                contentColor = Color(selectedColors.contentArgb),
+            )
+        } else {
+            ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2E2115))
+        },
+    ) {
+        Text(label, fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1)
     }
 }
 
@@ -1222,20 +1312,38 @@ private fun CompactPlayHud(
         horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
         current.playerId?.let { playerId ->
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .border(2.dp, playerAccentColor(playerId), RoundedCornerShape(999.dp))
-                    .padding(2.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Image(
-                    painter = painterResource(playerRes(playerId)),
-                    contentDescription = current.titleText,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Fit,
-                )
+            Box(modifier = Modifier.size(42.dp)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(999.dp))
+                        .border(2.dp, playerAccentColor(playerId), RoundedCornerShape(999.dp))
+                        .padding(2.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        painter = painterResource(playerRes(playerId)),
+                        contentDescription = current.titleText,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit,
+                    )
+                }
+                // Sits on the existing avatar, so the HUD keeps its size.
+                if (state.cpuTurn) {
+                    Text(
+                        text = "CPU",
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .testTag(HUD_CPU_BADGE_TEST_TAG)
+                            .background(Color(0xFF2E2115), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 2.dp),
+                        color = Color.White,
+                        fontSize = 8.sp,
+                        lineHeight = 10.sp,
+                        fontWeight = FontWeight.Black,
+                        maxLines = 1,
+                    )
+                }
             }
         }
         Row(
@@ -1274,6 +1382,7 @@ private fun CompactPlayHud(
         )
     }
     if (showNewGameConfirmation) {
+        PauseCpuWhileShown()
         AlertDialog(
             onDismissRequest = { showNewGameConfirmation = false },
             title = {
@@ -1398,6 +1507,12 @@ private fun GameplayActionBar(
                     onHistoryClick = { showLogHistory = true },
                 )
                 when {
+                    state.cpuFault != null -> CpuFaultControls(
+                        onRetry = viewModel::retryCpuStep,
+                        onReturnToSetup = viewModel::returnToSetup,
+                    )
+                    // The CPU's candidates stay visible on the board, without any human control.
+                    state.cpuTurn -> Unit
                     state.showDigControls -> CompactDigPlacementControls(
                         state = state,
                         onChoice = viewModel::selectDigChoice,
@@ -1442,6 +1557,7 @@ private fun GameplayActionBar(
             }
         }
         if (showLogHistory && state.logs.isNotEmpty()) {
+            PauseCpuWhileShown()
             LogHistoryPopup(
                 logs = state.logs,
                 width = historyPopupWidth,
@@ -1905,6 +2021,50 @@ private fun CompactDigPlacementControls(
 }
 
 @Composable
+private fun CpuFaultControls(
+    onRetry: () -> Unit,
+    onReturnToSetup: () -> Unit,
+) {
+    val buttonHeight = compactActionButtonHeight(hasEndTurnHint = false, LocalDensity.current.fontScale)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Button(
+            onClick = soundEffectClick(onClick = onRetry),
+            modifier = Modifier
+                .weight(1f)
+                .height(buttonHeight)
+                .testTag(CPU_FAULT_RETRY_TEST_TAG),
+            contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF35BC67),
+                contentColor = Color(0xFF102F1B),
+            ),
+        ) {
+            Text("再試行", fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1)
+        }
+        Button(
+            onClick = soundEffectClick(onClick = onReturnToSetup),
+            modifier = Modifier
+                .weight(1f)
+                .height(buttonHeight)
+                .testTag(CPU_FAULT_SETUP_TEST_TAG),
+            contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFFFFF1CF),
+                contentColor = Color(0xFF2E2115),
+            ),
+        ) {
+            Text("設定へ戻る", fontSize = 13.sp, fontWeight = FontWeight.Black, maxLines = 1)
+        }
+    }
+}
+
+@Composable
 private fun CompactTargetActionRow(
     phase: TurnPhase?,
     labels: List<String>,
@@ -2339,6 +2499,7 @@ private fun BoardView(
                 state.captureAnimation == null &&
                     state.eatAnimation == null &&
                     state.turnConsumptionAnimation == null &&
+                    !state.cpuTurn &&
                     isBoardPrimaryActionCell(it, state.playState.actionAvailability.activePhase)
             }
             .forEach { cell ->
@@ -2721,6 +2882,8 @@ internal fun actionBarInstruction(state: AndroidGameUiState): String {
     if (state.turnConsumptionAnimation != null) return "手番の消費体力を反映中"
     if (state.eatAnimation != null) return "タベる効果で体力を回復中"
     if (state.captureAnimation != null) return "捕獲の結果を表示中"
+    if (state.cpuFault != null) return cpuFaultInstruction()
+    if (state.cpuTurn) return cpuTurnInstruction(state)
     if (state.playState.diceRouletteActive) return "捕獲判定中：中央の表示を確認"
     if (state.showDigControls) return "次：タイルと向きを選び「置く」で確定"
 
@@ -2759,6 +2922,19 @@ internal fun actionBarInstruction(state: AndroidGameUiState): String {
         null -> ""
     }
 }
+
+internal fun cpuTurnInstruction(state: AndroidGameUiState): String {
+    val name = state.playState.currentPlayer.playerId?.let { MoguraGameController.playerNameForId(it) }
+    val who = if (name != null) "CPU（$name）" else "CPU"
+    return if (state.playState.diceRouletteActive) "${who}が捕獲判定中" else "${who}が考えています"
+}
+
+internal fun cpuFaultInstruction(): String = "CPUの進行エラー。「再試行」か「設定へ戻る」"
+
+internal fun seatKindLabel(isCpu: Boolean): String = if (isCpu) "CPU" else "人間"
+
+internal fun setupSeatKindTestTag(seatIndex: Int, isCpu: Boolean): String =
+    "setup-seat-kind-$seatIndex-${if (isCpu) "cpu" else "human"}"
 
 internal fun gameResultTitle(result: AndroidGameResultUiState): String =
     result.winnerName?.let { "$it の勝利" } ?: "ゲーム終了"

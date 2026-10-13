@@ -52,9 +52,66 @@ class GameSaveCodecTest {
 
     @Test
     fun futureVersionIsDistinguishedFromCorruption() {
-        val future = JSONObject(GameSaveCodec.encode(saved())).put("formatVersion", 2).toString()
-        try { GameSaveCodec.decode(future); fail("accepted future version") }
-        catch (e: InvalidGameSaveException) { assertEquals(GameSaveLoadIssue.UNSUPPORTED, e.issue) }
+        for (version in listOf(0, 3)) {
+            val unknown = JSONObject(GameSaveCodec.encode(saved())).put("formatVersion", version).toString()
+            try { GameSaveCodec.decode(unknown); fail("accepted unknown version") }
+            catch (e: InvalidGameSaveException) { assertEquals(GameSaveLoadIssue.UNSUPPORTED, e.issue) }
+        }
+    }
+
+    @Test
+    fun cpuPlayersRoundTripInStableOrderAsVersionTwo() {
+        for (ids in listOf(emptySet(), setOf(2), setOf(3, 1, 0), setOf(0, 1, 2, 3))) {
+            val expected = saved().copy(cpuPlayerIds = ids)
+            val text = GameSaveCodec.encode(expected)
+            assertEquals(expected, GameSaveCodec.decode(text))
+            val root = JSONObject(text)
+            assertEquals(2, root.getInt("formatVersion"))
+            val array = root.getJSONArray("cpuPlayerIds")
+            assertEquals(ids.sorted(), (0 until array.length()).map { array.getInt(it) })
+        }
+    }
+
+    @Test
+    fun versionOneSavesLoadWithEveryPlayerHuman() {
+        val expected = saved()
+        val v1 = JSONObject(GameSaveCodec.encode(expected.copy(cpuPlayerIds = setOf(1)))).apply {
+            put("formatVersion", 1)
+            remove("cpuPlayerIds")
+        }.toString()
+
+        val decoded = GameSaveCodec.decode(v1)
+
+        assertTrue(decoded.cpuPlayerIds.isEmpty())
+        assertEquals(expected, decoded)
+    }
+
+    @Test
+    fun versionTwoCpuPlayerIdsAreValidatedStrictly() {
+        val twoPlayers = MoguraGameController(FixedDiceRoller(listOf(6)), FixedShuffler()).apply { startNewGame(2) }
+        val base = GameSaveCodec.encode(SavedGame(twoPlayers.exportSnapshot(), 1, 1, cpuPlayerIds = setOf(1)))
+        fun withIds(value: Any?) = JSONObject(base).apply {
+            if (value == null) remove("cpuPlayerIds") else put("cpuPlayerIds", value)
+        }.toString()
+        val invalid = listOf(
+            withIds(null),
+            withIds(JSONObject.NULL),
+            withIds(1),
+            withIds("1"),
+            withIds(JSONArray().put("1")),
+            withIds(JSONArray().put(0.5)),
+            withIds(JSONArray().put(true)),
+            withIds(JSONArray().put(JSONObject.NULL)),
+            withIds(JSONArray().put(1).put(1)),
+            withIds(JSONArray().put(2)),
+            withIds(JSONArray().put(-1)),
+            withIds(JSONArray().put(1L shl 32)),
+        )
+        for (text in invalid) {
+            try { GameSaveCodec.decode(text); fail("accepted invalid CPU players: $text".take(120)) }
+            catch (e: InvalidGameSaveException) { assertEquals(GameSaveLoadIssue.CORRUPT, e.issue) }
+        }
+        assertEquals(setOf(0, 1), GameSaveCodec.decode(withIds(JSONArray().put(1).put(0))).cpuPlayerIds)
     }
 
     @Test

@@ -7,21 +7,26 @@ import com.moguru.game.presenter.*
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Explicit v1 schema. Enum names are persisted, never ordinal positions. */
+/** Explicit v2 schema; v1 only lacks the CPU players. Enum names are persisted, never ordinal positions. */
 internal object GameSaveCodec {
-    private const val VERSION = 1
+    private const val VERSION = 2
+    private const val VERSION_BEFORE_CPU_PLAYERS = 1
 
     fun encode(save: SavedGame): String = obj(
         "formatVersion" to VERSION, "revision" to save.revision, "savedAtMillis" to save.savedAtMillis,
         "selectedMovePosition" to save.selectedMovePosition?.let(::position),
         "boardPiecesTransparent" to save.boardPiecesTransparent, "lastMessage" to save.lastMessage,
+        "cpuPlayerIds" to JSONArray(save.cpuPlayerIds.sorted()),
         "game" to game(save.game),
     ).toString()
 
     fun decode(text: String): SavedGame {
         try {
             val root = JSONObject(text)
-            if (root.int("formatVersion") != VERSION) throw InvalidGameSaveException(GameSaveLoadIssue.UNSUPPORTED)
+            val version = root.int("formatVersion")
+            if (version !in VERSION_BEFORE_CPU_PLAYERS..VERSION) {
+                throw InvalidGameSaveException(GameSaveLoadIssue.UNSUPPORTED)
+            }
             val snapshot = readGame(root.getJSONObject("game"))
             val restored = MoguraGameController.fromSnapshot(snapshot)
             val selectedMove = root.optionalObject("selectedMovePosition")?.let(::readPosition)
@@ -29,10 +34,15 @@ internal object GameSaveCodec {
                 require(snapshot.engine.currentPhase == TurnPhase.MOVE)
                 require(selectedMove in restored.moveTargets())
             }
+            // v1 was written before CPU players existed, so every participant was human.
+            val cpuPlayerIds: Set<Int> = if (version == VERSION_BEFORE_CPU_PLAYERS) emptySet() else {
+                val participants = snapshot.engine.players.map { it.id }
+                root.uniqueInts("cpuPlayerIds") { it in participants }
+            }
             return SavedGame(
                 snapshot, root.long("revision").also { require(it in 0 until Long.MAX_VALUE) },
                 root.long("savedAtMillis").also { require(it >= 0) }, selectedMove,
-                root.bool("boardPiecesTransparent"), root.optionalString("lastMessage"),
+                root.bool("boardPiecesTransparent"), root.optionalString("lastMessage"), cpuPlayerIds,
             )
         } catch (e: InvalidGameSaveException) {
             throw e
@@ -106,15 +116,7 @@ internal object GameSaveCodec {
         robberyVisits = j.objects("robberyVisits") {
             it.int("playerId") to RobberyVisitSnapshot(readPosition(it.getJSONObject("nestPosition")), it.bool("eligible"))
         }.uniqueMap(),
-        ownNestEatEligiblePlayers = j.getJSONArray("ownNestEatEligiblePlayers").let { a ->
-            (0 until a.length()).map { index ->
-                val value = a.get(index)
-                require(value is Int || value is Long)
-                (value as Number).toLong().also { require(it in 0..3) }.toInt()
-            }.also {
-                require(it.distinct().size == it.size)
-            }.toSet()
-        },
+        ownNestEatEligiblePlayers = j.uniqueInts("ownNestEatEligiblePlayers") { it in 0..3 },
         logs = j.getJSONArray("logs").let { a -> (0 until a.length()).map { a.get(it) as String } },
     )
 
@@ -182,6 +184,18 @@ internal object GameSaveCodec {
     private fun <T> JSONObject.objects(key: String, decode: (JSONObject) -> T): List<T> =
         getJSONArray(key).let { a -> (0 until a.length()).map { decode(a.getJSONObject(it)) } }
     private fun <K, V> List<Pair<K, V>>.uniqueMap(): Map<K, V> = toMap().also { require(it.size == size) }
+    /** A required ID array: JSON integers only, no duplicates, each accepted by [valid]. */
+    private fun JSONObject.uniqueInts(key: String, valid: (Int) -> Boolean): Set<Int> =
+        getJSONArray(key).let { a ->
+            (0 until a.length()).map { index ->
+                val value = a.get(index)
+                require(value is Int || value is Long)
+                (value as Number).toLong().also { require(it in Int.MIN_VALUE..Int.MAX_VALUE) }.toInt()
+                    .also { require(valid(it)) }
+            }.also {
+                require(it.distinct().size == it.size)
+            }.toSet()
+        }
     private fun JSONObject.string(key: String): String = get(key) as String
     private fun JSONObject.bool(key: String): Boolean = get(key) as Boolean
     private fun JSONObject.long(key: String): Long = (get(key) as Number).let {
