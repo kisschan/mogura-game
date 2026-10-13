@@ -1,6 +1,11 @@
 package com.moguru.game.android
 
 import androidx.lifecycle.ViewModel
+import com.moguru.game.cpu.CpuAction
+import com.moguru.game.cpu.CpuStrategy
+import com.moguru.game.cpu.StandardCpuStrategy
+import com.moguru.game.cpu.applyCpuAction
+import com.moguru.game.cpu.cpuObservation
 import com.moguru.game.engine.GameState
 import com.moguru.game.engine.PlayerConfig
 import com.moguru.game.engine.TurnPhase
@@ -18,6 +23,7 @@ import com.moguru.game.presenter.CaptureAnimationEvent
 import com.moguru.game.presenter.EatAnimationEvent
 import com.moguru.game.presenter.GameActionResult
 import com.moguru.game.presenter.MoguraGameController
+import com.moguru.game.presenter.PendingCaptureRoll
 import com.moguru.game.presenter.PlayScreenUiState
 import com.moguru.game.presenter.TurnConsumptionAnimationEvent
 import com.moguru.game.persistence.validate
@@ -48,7 +54,20 @@ data class AndroidGameUiState(
     val boardPiecesTransparent: Boolean = false,
     val playbackGeneration: Long = 0,
     val digPreviewPosition: Position? = null,
+    /** The displayed current player is CPU-operated, so no human game input is offered. */
+    val cpuTurn: Boolean = false,
+    val cpuRouletteSpinning: Boolean = false,
+    val cpuFault: AndroidCpuFault? = null,
+    /** Identifies this capture within [playbackGeneration], including the reveal and landing. */
+    val diceRouletteEventId: Long? = null,
 )
+
+/** Why CPU play stopped. It continues only after an explicit retry. */
+enum class AndroidCpuFault {
+    NO_DECISION,
+    ILLEGAL_ACTION,
+    NO_PROGRESS,
+}
 
 /** Keeps the original stack visible until the resolved capture has finished moving. */
 data class AndroidCaptureAnimationUiState(
@@ -78,6 +97,7 @@ data class AndroidSetupPlayerUiState(
     val name: String,
     val nestPosition: Position,
     val isStartPlayer: Boolean,
+    val isCpu: Boolean = false,
 )
 
 /** 腹減りメーターに表示する各プレイヤーの体力マーカー。 */
@@ -96,6 +116,14 @@ private data class AndroidTurnConsumptionDisplaySnapshot(
     val logs: List<String>,
     val lastMessage: String?,
 )
+
+/** A playback or dice landing the UI reported as finished. */
+private sealed interface PresentationCompletion {
+    data class DiceLanding(val eventId: Long, val roll: PendingCaptureRoll) : PresentationCompletion
+    data class Capture(val eventId: Long) : PresentationCompletion
+    data class Eat(val eventId: Long) : PresentationCompletion
+    data class TurnConsumption(val eventId: Long) : PresentationCompletion
+}
 
 data class AndroidBoardUiState(
     val cells: List<AndroidBoardCellUiState>,
@@ -161,6 +189,8 @@ class AndroidGameViewModel(
     private var controller: MoguraGameController = MoguraGameController(),
     private val saveRepository: GameSaveRepository = MemoryGameSaveRepository(),
     private val saveIo: GameSaveIo = ImmediateGameSaveIo,
+    private val cpuStrategy: CpuStrategy = StandardCpuStrategy(),
+    private val cpuScheduler: CpuStepScheduler = ManualCpuStepScheduler(),
 ) : ViewModel() {
     private var savedGame: SavedGame? = null
     private var persistenceBusy = false
@@ -176,6 +206,8 @@ class AndroidGameViewModel(
     private var selectedPlayerCount = 2
     private var setupPlayerIds = defaultSetupPlayerIds(selectedPlayerCount)
     private var setupNestPositions = defaultSetupNestPositions(selectedPlayerCount)
+    // The operator belongs to the seat during setup, so swapping moles does not move it.
+    private var setupCpuSeats = List(selectedPlayerCount) { false }
     private var selectedStartPlayerIndex = 0
     private var gameResultOverlayDismissed = false
     private var captureAnimation: AndroidCaptureAnimationUiState? = null
@@ -185,6 +217,16 @@ class AndroidGameViewModel(
     private var turnConsumptionAnimation: TurnConsumptionAnimationEvent? = null
     private var turnConsumptionDisplaySnapshot: AndroidTurnConsumptionDisplaySnapshot? = null
     private var turnConsumptionPostMessage: String? = null
+    // Fixed to player IDs once a game starts, and saved with it.
+    private var cpuPlayerIds: Set<Int> = emptySet()
+    private var cpuHostResumed = false
+    private var cpuPlayScreenClear = false
+    private var cpuStep: CpuStepCancellation? = null
+    private var cpuStepToken = 0L
+    private var cpuFault: AndroidCpuFault? = null
+    private var cpuMovePreview: Position? = null
+    private var cpuRouletteSpinning = false
+    private var deferredCompletion: PresentationCompletion? = null
 
     private val _uiState = MutableStateFlow(
         snapshot(
@@ -201,7 +243,12 @@ class AndroidGameViewModel(
         persistenceBusy = true
         publishPersistence()
         val generation = playbackGeneration
-        saveIo.execute({ saveRepository.load()?.also { it.game.validate() } }) { result ->
+        saveIo.execute({
+            saveRepository.load()?.also {
+                it.game.validate()
+                it.requireCpuParticipants()
+            }
+        }) { result ->
             if (!alive || generation != playbackGeneration) return@execute
             persistenceBusy = false
             result.fold(
@@ -253,6 +300,8 @@ class AndroidGameViewModel(
         selectedPlayerCount = saved.game.engine.players.size
         setupPlayerIds = saved.game.engine.players.map { it.id }
         setupNestPositions = saved.game.engine.players.map { it.nestPosition }
+        setupCpuSeats = saved.game.engine.players.map { it.id in saved.cpuPlayerIds }
+        cpuPlayerIds = saved.cpuPlayerIds
         selectedStartPlayerIndex = saved.game.engine.currentPlayerIndex
         selectedMovePosition = saved.selectedMovePosition
         boardPiecesTransparent = saved.boardPiecesTransparent
@@ -267,7 +316,7 @@ class AndroidGameViewModel(
     }
 
     fun selectMoveTarget(position: Position) {
-        if (operationBlocked() || animationInProgress() || position !in controller.moveTargets()) return
+        if (humanInputBlocked() || position !in controller.moveTargets()) return
         selectedMovePosition = position
         refresh(_uiState.value.lastMessage)
     }
@@ -305,9 +354,10 @@ class AndroidGameViewModel(
         val previous = savedGame
         if (previous != null && game == previous.game &&
             next.selectedMovePosition == previous.selectedMovePosition &&
-            boardPiecesTransparent == previous.boardPiecesTransparent
+            boardPiecesTransparent == previous.boardPiecesTransparent &&
+            cpuPlayerIds == previous.cpuPlayerIds
         ) {
-            _uiState.value = next.copy(persistence = persistenceState())
+            publishCommitted(next)
             return
         }
         val saved = SavedGame(
@@ -316,13 +366,24 @@ class AndroidGameViewModel(
             selectedMovePosition = next.selectedMovePosition,
             boardPiecesTransparent = boardPiecesTransparent,
             lastMessage = if (turnConsumptionAnimation != null) turnConsumptionPostMessage else next.lastMessage,
+            cpuPlayerIds = cpuPlayerIds,
         )
         pendingSave = saved to next
         executePendingSave()
     }
 
+    /**
+     * The single point where a started game becomes visible: after its save, or when nothing
+     * needed saving. Play continues from here, either with a held completion or the next CPU step.
+     */
+    private fun publishCommitted(next: AndroidGameUiState) {
+        _uiState.value = next.copy(persistence = persistenceState())
+        if (!deliverDeferredCompletion()) armCpuStep()
+    }
+
     private fun executePendingSave() {
         val pending = pendingSave ?: return
+        cancelCpuStep()
         persistenceBusy = true
         saveFailed = false
         publishPersistence()
@@ -334,7 +395,7 @@ class AndroidGameViewModel(
                 savedGame = pending.first
                 loadIssue = null
                 pendingSave = null
-                _uiState.value = pending.second.copy(persistence = persistenceState())
+                publishCommitted(pending.second)
             } else {
                 saveFailed = true
                 publishPersistence()
@@ -347,11 +408,22 @@ class AndroidGameViewModel(
         eatAnimation = null
         clearTurnConsumptionAnimation()
         gameResultOverlayDismissed = false
+        resetCpuAutomation()
+    }
+
+    /** Leaving or replacing a game drops its reserved step, held completion, preview and fault. */
+    private fun resetCpuAutomation() {
+        cancelCpuStep()
+        deferredCompletion = null
+        cpuFault = null
+        cpuMovePreview = null
+        cpuRouletteSpinning = false
     }
 
     override fun onCleared() {
         alive = false
         playbackGeneration++
+        resetCpuAutomation()
         saveIo.close()
         super.onCleared()
     }
@@ -384,6 +456,14 @@ class AndroidGameViewModel(
         refresh(null)
     }
 
+    fun selectPlayerKind(seatIndex: Int, isCpu: Boolean) {
+        if (operationBlocked()) return
+        if (seatIndex !in 0 until selectedPlayerCount) return
+
+        setupCpuSeats = setupCpuSeats.toMutableList().also { it[seatIndex] = isCpu }
+        refresh(null)
+    }
+
     fun selectStartPlayer(seatIndex: Int) {
         if (operationBlocked()) return
         if (seatIndex !in 0 until selectedPlayerCount) return
@@ -407,10 +487,8 @@ class AndroidGameViewModel(
         selectedMovePosition = null
         boardPiecesTransparent = false
         showResumeEntry = false
-        captureAnimation = null
-        eatAnimation = null
-        clearTurnConsumptionAnimation()
-        gameResultOverlayDismissed = false
+        clearPresentation()
+        cpuPlayerIds = configuredCpuPlayerIds()
         val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
         commitState(snapshot(
             isGameStarted = true,
@@ -424,11 +502,9 @@ class AndroidGameViewModel(
         selectedMovePosition = null
         boardPiecesTransparent = false
         showResumeEntry = false
-        captureAnimation = null
-        eatAnimation = null
-        clearTurnConsumptionAnimation()
-        gameResultOverlayDismissed = false
+        clearPresentation()
         resetSetupDefaults(playerCount)
+        cpuPlayerIds = configuredCpuPlayerIds()
         val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
         commitState(snapshot(
             isGameStarted = true,
@@ -440,10 +516,7 @@ class AndroidGameViewModel(
         if (operationBlocked()) return
         playbackGeneration++
         showResumeEntry = savedGame != null || loadIssue != null
-        captureAnimation = null
-        eatAnimation = null
-        clearTurnConsumptionAnimation()
-        gameResultOverlayDismissed = false
+        clearPresentation()
         _uiState.value = snapshot(
             isGameStarted = false,
             lastMessage = null,
@@ -458,8 +531,7 @@ class AndroidGameViewModel(
     }
 
     fun onCellClicked(position: Position) {
-        if (operationBlocked()) return
-        if (animationInProgress()) return
+        if (humanInputBlocked()) return
         val engine = controller.engine ?: return refresh(null)
         val result = when (engine.currentPhase) {
             TurnPhase.DIG -> controller.digAt(position, _uiState.value.playState.selectedRotation)
@@ -513,34 +585,52 @@ class AndroidGameViewModel(
      * 連打などで既に確定済みの場合は黙って無視する。
      */
     fun stopDiceRoulette() {
-        if (operationBlocked()) return
-        if (animationInProgress()) return
+        if (humanInputBlocked()) return
+        rollDiceRoulette()
+    }
+
+    private fun rollDiceRoulette(): Boolean {
         val result = controller.rollCaptureDice()
         if (result.success) refresh(null)
+        return result.success
     }
 
     /**
      * 着地演出の終了後に捕獲を解決し、オーバーレイを閉じる。
      * 再コンポーズによる重複呼び出しは黙って無視する。
      */
-    fun finishDiceRoulette(generation: Long = playbackGeneration) {
-        if (operationBlocked() || generation != playbackGeneration) return
-        if (animationInProgress() || !_uiState.value.isGameStarted) return
+    fun finishDiceRoulette(
+        generation: Long = playbackGeneration,
+        eventId: Long? = _uiState.value.diceRouletteEventId,
+    ) {
+        if (!alive || generation != playbackGeneration || !_uiState.value.isGameStarted) return
+        if (eventId == null || eventId != _uiState.value.diceRouletteEventId) return
+        val pending = controller.pendingCaptureRoll ?: return
+        if (pending.roll != null) {
+            onPresentationFinished(PresentationCompletion.DiceLanding(eventId, pending), generation)
+        } else if (!humanInputBlocked()) {
+            // Nothing has landed: this is the human confirming a capture that needs no dice.
+            resolveDiceRoulette()
+        }
+    }
+
+    private fun resolveDiceRoulette(): Boolean {
         val boardBefore = AndroidBoardUiState(buildBoardCells())
         val result = controller.resolveCaptureRoll()
-        if (result.success) {
-            val event = controller.playScreenUiState().captureOutcome?.animation
-            if (event != null) {
-                captureAnimation = AndroidCaptureAnimationUiState(
-                    event = event,
-                    boardBefore = boardBefore,
-                    boardAfter = AndroidBoardUiState(buildBoardCells()),
-                )
-                refresh(result.message)
-            } else {
-                resolveAfterSuccessfulAction(result.message)
-            }
+        if (!result.success) return false
+        cpuRouletteSpinning = false
+        val event = controller.playScreenUiState().captureOutcome?.animation
+        if (event != null) {
+            captureAnimation = AndroidCaptureAnimationUiState(
+                event = event,
+                boardBefore = boardBefore,
+                boardAfter = AndroidBoardUiState(buildBoardCells()),
+            )
+            refresh(result.message)
+        } else {
+            resolveAfterSuccessfulAction(result.message)
         }
+        return true
     }
 
     /** The ViewModel retains this consumption state when the Activity is recreated. */
@@ -555,53 +645,88 @@ class AndroidGameViewModel(
 
     /** An old completion callback must never finish a newer capture or advance twice. */
     fun finishCaptureAnimation(eventId: Long, generation: Long = playbackGeneration) {
-        if (operationBlocked() || generation != playbackGeneration) return
-        if (captureAnimation?.event?.id != eventId) return
-        captureAnimation = null
-        resolveAfterSuccessfulAction(_uiState.value.lastMessage)
+        onPresentationFinished(PresentationCompletion.Capture(eventId), generation)
     }
 
     fun eat() {
-        if (operationBlocked()) return
-        if (animationInProgress()) return
-        val result = controller.eatPendingFood()
-        if (!result.success) {
-            refresh(result.message)
-            return
-        }
-
-        val event = result.eatAnimation
-        if (event == null) {
-            resolveAfterSuccessfulAction(result.message)
-            return
-        }
-
-        eatAnimation = event
-        // Keep the just-finished DECIDE state visible until the one-shot playback ends.
-        refresh(result.message)
+        runAction { controller.eatPendingFood() }
     }
 
     /** An old completion callback must never finish a newer meal or advance twice. */
     fun finishEatAnimation(eventId: Long, generation: Long = playbackGeneration) {
-        if (operationBlocked() || generation != playbackGeneration) return
-        if (eatAnimation?.id != eventId) return
-        eatAnimation = null
-        resolveAfterSuccessfulAction(_uiState.value.lastMessage)
+        onPresentationFinished(PresentationCompletion.Eat(eventId), generation)
     }
 
     /** Stale or duplicate callbacks must never advance the next turn twice. */
     fun finishTurnConsumptionAnimation(eventId: Long, generation: Long = playbackGeneration) {
-        if (operationBlocked() || generation != playbackGeneration) return
-        if (turnConsumptionAnimation?.id != eventId) return
-        val postMessage = turnConsumptionPostMessage
-        clearTurnConsumptionAnimation()
-        if (controller.engine?.gameState == GameState.PLAYING) {
-            // Continue automatic phase skipping only after this playback has fully finished.
-            // A following turn consumption is captured by resolveAfterSuccessfulAction and
-            // becomes the next serialized animation instead of overlapping this one.
-            resolveAfterSuccessfulAction(postMessage)
-        } else {
-            refresh(postMessage)
+        onPresentationFinished(PresentationCompletion.TurnConsumption(eventId), generation)
+    }
+
+    /**
+     * Completion callbacks are not human input, so they stay open on CPU turns. A valid one that
+     * arrives mid-save or while a CPU game is paused is held and applied once play may continue.
+     */
+    private fun onPresentationFinished(completion: PresentationCompletion, generation: Long) {
+        if (!alive || generation != playbackGeneration || !isShownPresentation(completion)) return
+        if (completionMustWait()) {
+            deferredCompletion = completion
+            return
+        }
+        completePresentation(completion)
+    }
+
+    /** Only a playback the UI has actually been shown can finish; anything else is stale. */
+    private fun isShownPresentation(completion: PresentationCompletion): Boolean {
+        val shown = _uiState.value
+        return when (completion) {
+            is PresentationCompletion.DiceLanding -> shown.isGameStarted && !animationInProgress() &&
+                shown.diceRouletteEventId == completion.eventId &&
+                controller.pendingCaptureRoll == completion.roll &&
+                shown.playState.diceRouletteResult == completion.roll.roll
+            is PresentationCompletion.Capture -> captureAnimation?.event?.id == completion.eventId &&
+                shown.captureAnimation?.event?.id == completion.eventId
+            is PresentationCompletion.Eat -> eatAnimation?.id == completion.eventId &&
+                shown.eatAnimation?.id == completion.eventId
+            is PresentationCompletion.TurnConsumption -> turnConsumptionAnimation?.id == completion.eventId &&
+                shown.turnConsumptionAnimation?.id == completion.eventId
+        }
+    }
+
+    private fun completionMustWait(): Boolean =
+        persistenceBusy || pendingSave != null || (cpuPlayerIds.isNotEmpty() && !cpuHostActive())
+
+    private fun deliverDeferredCompletion(): Boolean {
+        val completion = deferredCompletion ?: return false
+        if (completionMustWait()) return false
+        deferredCompletion = null
+        if (!isShownPresentation(completion)) return false
+        completePresentation(completion)
+        return true
+    }
+
+    private fun completePresentation(completion: PresentationCompletion) {
+        when (completion) {
+            is PresentationCompletion.DiceLanding -> resolveDiceRoulette()
+            is PresentationCompletion.Capture -> {
+                captureAnimation = null
+                resolveAfterSuccessfulAction(_uiState.value.lastMessage)
+            }
+            is PresentationCompletion.Eat -> {
+                eatAnimation = null
+                resolveAfterSuccessfulAction(_uiState.value.lastMessage)
+            }
+            is PresentationCompletion.TurnConsumption -> {
+                val postMessage = turnConsumptionPostMessage
+                clearTurnConsumptionAnimation()
+                if (controller.engine?.gameState == GameState.PLAYING) {
+                    // Continue automatic phase skipping only after this playback has fully finished.
+                    // A following turn consumption is captured by resolveAfterSuccessfulAction and
+                    // becomes the next serialized animation instead of overlapping this one.
+                    resolveAfterSuccessfulAction(postMessage)
+                } else {
+                    refresh(postMessage)
+                }
+            }
         }
     }
 
@@ -617,20 +742,163 @@ class AndroidGameViewModel(
         runAction { controller.finishTurn() }
     }
 
+    private fun humanInputBlocked(): Boolean =
+        operationBlocked() || animationInProgress() || cpuControlsCurrentTurn()
+
+    /** Human action-bar input. CPU operations enter through [runCpuStep] instead. */
     private fun runAction(action: () -> GameActionResult) {
-        if (operationBlocked()) return
-        if (animationInProgress()) return
+        if (humanInputBlocked()) return
         val displayBeforeAction = displayedTurnConsumptionSnapshot()
         val result = action()
         if (result.success) {
-            resolveAfterSuccessfulAction(
-                message = result.message,
-                directTurnConsumption = result.turnConsumptionAnimation,
-                directDisplaySnapshot = displayBeforeAction,
-            )
+            presentSuccessfulAction(result, displayBeforeAction, result.message)
         } else {
             refresh(result.message)
         }
+    }
+
+    /** Shared by human and CPU operations so both get the same meal and consumption playback. */
+    private fun presentSuccessfulAction(
+        result: GameActionResult,
+        displayBeforeAction: AndroidTurnConsumptionDisplaySnapshot,
+        message: String?,
+    ) {
+        val event = result.eatAnimation
+        if (event != null) {
+            eatAnimation = event
+            // Keep the just-finished DECIDE state visible until the one-shot playback ends.
+            refresh(message)
+            return
+        }
+        resolveAfterSuccessfulAction(
+            message = message,
+            directTurnConsumption = result.turnConsumptionAnimation,
+            directDisplaySnapshot = displayBeforeAction,
+        )
+    }
+
+    /** Activity half of the CPU host gate, told directly because composition pauses in the background. */
+    fun setCpuHostResumed(resumed: Boolean) {
+        if (!alive || cpuHostResumed == resumed) return
+        cpuHostResumed = resumed
+        onCpuHostChanged()
+    }
+
+    /** UI half: the play screen is showing with rules, audio, history and menus closed. */
+    fun setCpuPlayScreenClear(clear: Boolean) {
+        if (!alive || cpuPlayScreenClear == clear) return
+        cpuPlayScreenClear = clear
+        onCpuHostChanged()
+    }
+
+    /** One more CPU attempt after a fault. Only the player can ask for it. */
+    fun retryCpuStep() {
+        if (operationBlocked() || cpuFault == null) return
+        cpuFault = null
+        refresh(_uiState.value.lastMessage)
+    }
+
+    private fun cpuHostActive(): Boolean = cpuHostResumed && cpuPlayScreenClear
+
+    private fun onCpuHostChanged() {
+        if (!cpuHostActive()) {
+            cancelCpuStep()
+        } else if (!deliverDeferredCompletion()) {
+            armCpuStep()
+        }
+    }
+
+    /** Read from the live controller: a frozen consumption display still shows the previous player. */
+    private fun cpuControlsCurrentTurn(): Boolean =
+        controller.engine?.gameState == GameState.PLAYING &&
+            controller.currentPlayer?.let { it.id in cpuPlayerIds } == true
+
+    private fun cpuStepReady(): Boolean =
+        _uiState.value.isGameStarted && !operationBlocked() && !animationInProgress() &&
+            cpuHostActive() && cpuFault == null && cpuControlsCurrentTurn() &&
+            // A confirmed roll belongs to the overlay until its landing callback resolves it.
+            controller.pendingCaptureRoll?.roll == null
+
+    /** Reserves the next CPU step from a publish point. Nothing acts inline, e.g. inside a save callback. */
+    private fun armCpuStep() {
+        cancelCpuStep()
+        if (!cpuStepReady()) return
+        val generation = playbackGeneration
+        val token = cpuStepToken
+        val delayMillis = if (controller.pendingCaptureRoll != null) {
+            CPU_CAPTURE_STAGE_MILLIS
+        } else {
+            CPU_STEP_DELAY_MILLIS
+        }
+        cpuStep = cpuScheduler.schedule(delayMillis) {
+            // A cancelled or superseded reservation stays inert even if its timer still fires.
+            if (alive && generation == playbackGeneration && token == cpuStepToken) {
+                cancelCpuStep()
+                runCpuStep()
+            }
+        }
+    }
+
+    private fun cancelCpuStep() {
+        cpuStepToken++
+        cpuStep?.cancel()
+        cpuStep = null
+    }
+
+    /** One CPU operation, chosen from the game as it is now rather than when the step was reserved. */
+    private fun runCpuStep() {
+        if (!cpuStepReady()) return
+        controller.pendingCaptureRoll?.let { return advanceCpuCapture(it) }
+        // A previewed move is confirmed as shown instead of being decided and saved again.
+        val previewed = cpuMovePreview?.takeIf { it in controller.moveTargets() }
+        cpuMovePreview = previewed
+        val action = if (previewed != null) {
+            CpuAction.Move(previewed)
+        } else {
+            runCatching { cpuStrategy.choose(controller.cpuObservation()) }.getOrNull()
+                ?: return stopCpu(AndroidCpuFault.NO_DECISION)
+        }
+        if (action is CpuAction.Move && previewed == null) return previewCpuMove(action.position)
+
+        val displayBeforeAction = displayedTurnConsumptionSnapshot()
+        val before = controller.exportSnapshot()
+        val result = runCatching { controller.applyCpuAction(action) }.getOrNull()
+        when {
+            result == null || !result.success -> stopCpu(AndroidCpuFault.ILLEGAL_ACTION)
+            // Re-selecting the rotation already shown, for example, would otherwise repeat forever.
+            controller.exportSnapshot() == before -> stopCpu(AndroidCpuFault.NO_PROGRESS)
+            // The log already names the mole and what it did.
+            else -> presentSuccessfulAction(result, displayBeforeAction, message = null)
+        }
+    }
+
+    /** Shows the destination for one full step; the default selection waits just as long. */
+    private fun previewCpuMove(position: Position) {
+        if (position !in controller.moveTargets()) return stopCpu(AndroidCpuFault.ILLEGAL_ACTION)
+        cpuMovePreview = position
+        selectedMovePosition = position
+        refresh(_uiState.value.lastMessage)
+    }
+
+    /** Reveal, spin, then roll. Landing and resolution stay with the overlay's callback. */
+    private fun advanceCpuCapture(pending: PendingCaptureRoll) {
+        val advanced = when {
+            pending.food.escapeMap.isEmpty() -> resolveDiceRoulette()
+            cpuRouletteSpinning -> rollDiceRoulette()
+            else -> {
+                cpuRouletteSpinning = true
+                refresh(_uiState.value.lastMessage)
+                true
+            }
+        }
+        if (!advanced) stopCpu(AndroidCpuFault.ILLEGAL_ACTION)
+    }
+
+    /** No automatic retry and no handing the turn to a human: play waits for [retryCpuStep]. */
+    private fun stopCpu(fault: AndroidCpuFault) {
+        cpuFault = fault
+        cpuMovePreview = null
+        refresh(_uiState.value.lastMessage)
     }
 
     /**
@@ -645,6 +913,7 @@ class AndroidGameViewModel(
         // Rules actions advance play; a move preview belongs only to its current choice.
         // UI-only selection and transparency changes use refresh without clearing it.
         selectedMovePosition = null
+        cpuMovePreview = null
         if (directTurnConsumption != null) {
             val postMessage = messageForCurrentTurn(message)
             holdTurnConsumptionAnimation(
@@ -697,6 +966,9 @@ class AndroidGameViewModel(
         // Winner/elimination copy must not leak through the event strip or action bar
         // before the final health marker movement has completed.
         val gameResult = if (turnConsumptionAnimation != null) null else buildGameResult(isGameStarted)
+        // Follows the displayed player, so the label stays with a frozen consumption display.
+        val cpuTurn = isGameStarted && gameResult == null &&
+            playState.currentPlayer.playerId?.let { it in cpuPlayerIds } == true
         return AndroidGameUiState(
             isGameStarted = isGameStarted,
             selectedPlayerCount = selectedPlayerCount,
@@ -711,8 +983,13 @@ class AndroidGameViewModel(
                 ),
             hungerMarkers = frozenDisplay?.hungerMarkers
                 ?: if (isGameStarted) buildHungerMarkers() else emptyList(),
-            visibleActions = if (isGameStarted && !animationInProgress()) visibleActions(playState) else emptyList(),
-            showDigControls = isGameStarted && !animationInProgress() && playState.digCandidates.any { it.enabled },
+            visibleActions = if (isGameStarted && !animationInProgress() && !cpuTurn) {
+                visibleActions(playState)
+            } else {
+                emptyList()
+            },
+            showDigControls = isGameStarted && !animationInProgress() && !cpuTurn &&
+                playState.digCandidates.any { it.enabled },
             logs = frozenDisplay?.logs
                 ?: if (isGameStarted) controller.logs else emptyList(),
             lastMessage = if (frozenDisplay != null) frozenDisplay.lastMessage else lastMessage,
@@ -732,6 +1009,13 @@ class AndroidGameViewModel(
             boardPiecesTransparent = boardPiecesTransparent,
             playbackGeneration = playbackGeneration,
             digPreviewPosition = if (isGameStarted) controller.pendingDigPlacement?.position else null,
+            cpuTurn = cpuTurn,
+            cpuRouletteSpinning = cpuTurn && cpuRouletteSpinning && playState.diceRouletteActive,
+            cpuFault = cpuFault.takeIf { cpuTurn },
+            // Every capture resolution increments this counter, even if food, position and roll repeat.
+            diceRouletteEventId = if (isGameStarted && controller.pendingCaptureRoll != null) {
+                controller.exportSnapshot().captureAnimationId + 1
+            } else null,
         )
     }
 
@@ -796,8 +1080,12 @@ class AndroidGameViewModel(
         selectedPlayerCount = playerCount
         setupPlayerIds = defaultSetupPlayerIds(playerCount)
         setupNestPositions = defaultSetupNestPositions(playerCount)
+        setupCpuSeats = List(playerCount) { false }
         selectedStartPlayerIndex = 0
     }
+
+    private fun configuredCpuPlayerIds(): Set<Int> =
+        setupPlayerIds.filterIndexed { seatIndex, _ -> setupCpuSeats[seatIndex] }.toSet()
 
     private fun setupConfigs(): List<PlayerConfig> =
         setupPlayerIds.zip(setupNestPositions).map { (playerId, nestPosition) ->
@@ -816,6 +1104,7 @@ class AndroidGameViewModel(
                 name = MoguraGameController.playerNameForId(playerId),
                 nestPosition = nestPosition,
                 isStartPlayer = index == selectedStartPlayerIndex,
+                isCpu = setupCpuSeats[index],
             )
         }
 

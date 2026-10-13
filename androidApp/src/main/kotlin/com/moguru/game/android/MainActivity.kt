@@ -10,7 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewmodel.compose.viewModel
+import com.moguru.game.cpu.StandardCpuStrategy
 
 class MainActivity : ComponentActivity() {
     private val audioSettingsRepository by lazy {
@@ -31,20 +31,25 @@ class MainActivity : ComponentActivity() {
             initialVolume = initialAudioSettings.normalizedSoundEffectVolume,
         )
     }
+    // Held by the Activity as well, so onResume/onPause can reach it without a composition.
+    private val gameViewModel by lazy {
+        ViewModelProvider(this, object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                require(modelClass == AndroidGameViewModel::class.java)
+                return AndroidGameViewModel(
+                    saveRepository = GameSaveDependencies.repositoryFactory(applicationContext),
+                    saveIo = GameSaveDependencies.ioFactory(),
+                    cpuStrategy = StandardCpuStrategy(),
+                    cpuScheduler = MainHandlerCpuStepScheduler(),
+                ) as T
+            }
+        })[AndroidGameViewModel::class.java]
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            val gameViewModel: AndroidGameViewModel = viewModel(factory = object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                    require(modelClass == AndroidGameViewModel::class.java)
-                    return AndroidGameViewModel(
-                        saveRepository = GameSaveDependencies.repositoryFactory(applicationContext),
-                        saveIo = GameSaveDependencies.ioFactory(),
-                    ) as T
-                }
-            })
             var audioSettings by remember { mutableStateOf(initialAudioSettings) }
             LaunchedEffect(audioSettings) {
                 backgroundMusic.onAudioSettingsChanged(audioSettings)
@@ -65,6 +70,17 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         backgroundMusic.onForegrounded()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        gameViewModel.setCpuHostResumed(true)
+    }
+
+    override fun onPause() {
+        // Told directly: composition may already be paused once the app leaves the foreground.
+        gameViewModel.setCpuHostResumed(false)
+        super.onPause()
     }
 
     override fun onStop() {

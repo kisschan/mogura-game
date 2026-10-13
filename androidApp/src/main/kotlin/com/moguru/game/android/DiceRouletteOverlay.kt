@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -55,6 +56,9 @@ internal const val DICE_ROULETTE_OVERLAY_CONSUMES_BACK_LAYER_INPUT = true
  * ボタンでルーレットが回り始める。回転中（[targetFace] が null）にもう一度
  * ボタンを押すと [onTap] で出目を確定させ、減速して [targetFace] に着地し、
  * 出目を見せたあと [onFinished] で捕獲の解決を依頼する。
+ *
+ * [cpuControlled] の間は操作ボタンを出さない。回転開始（[cpuSpinning]）・出目確定・
+ * ダイス不要の解決は呼び出し側が進め、ここは表示と着地後の [onFinished] だけを担当する。
  */
 @Composable
 fun DiceRouletteOverlay(
@@ -63,11 +67,14 @@ fun DiceRouletteOverlay(
     targetFace: Int?,
     onTap: () -> Unit,
     onFinished: () -> Unit,
+    cpuControlled: Boolean = false,
+    cpuSpinning: Boolean = false,
 ) {
     var face by remember { mutableIntStateOf(1) }
     var landed by remember { mutableStateOf(false) }
     // カード公開→回転開始は純演出のためローカル state で持つ。
-    var spinning by remember { mutableStateOf(false) }
+    var humanSpinning by remember { mutableStateOf(false) }
+    val spinning = if (cpuControlled) cpuSpinning else humanSpinning
     var finished by remember(targetFace) { mutableStateOf(false) }
     val finish by rememberUpdatedState(onFinished)
     val motionEnabled = gameMotionEnabled()
@@ -77,10 +84,10 @@ fun DiceRouletteOverlay(
 
     fun handlePrimaryAction() {
         when {
-            targetFace != null -> Unit
+            cpuControlled || targetFace != null -> Unit
             // 逃走ダイスの無いエサはカード公開からそのまま確定捕獲する。
             !spinning && escapeRolls.isEmpty() -> onFinished()
-            !spinning -> spinning = true
+            !spinning -> humanSpinning = true
             else -> onTap()
         }
     }
@@ -102,9 +109,9 @@ fun DiceRouletteOverlay(
 
     DiceRouletteModalLayer {
         if (!spinning && targetFace == null) {
-            FoodRevealContent(foodType, escapeRolls, onPrimaryAction = ::handlePrimaryAction)
+            FoodRevealContent(foodType, escapeRolls, cpuControlled, onPrimaryAction = ::handlePrimaryAction)
         } else {
-            DiceSpinContent(foodType, escapeRolls, face, landed, targetFace, motionEnabled,
+            DiceSpinContent(foodType, escapeRolls, face, landed, targetFace, motionEnabled, cpuControlled,
                 onPrimaryAction = ::handlePrimaryAction)
         }
     }
@@ -180,6 +187,7 @@ private fun Modifier.consumeBackLayerInput(): Modifier =
 private fun FoodRevealContent(
     foodType: FoodType,
     escapeRolls: List<Int>,
+    cpuControlled: Boolean,
     onPrimaryAction: () -> Unit,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -209,11 +217,15 @@ private fun FoodRevealContent(
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold,
         )
-        DicePrimaryButton(
-            text = roulettePrimaryActionLabel(escapeRolls),
-            enabled = true,
-            onClick = onPrimaryAction,
-        )
+        if (cpuControlled) {
+            CpuRouletteStatus()
+        } else {
+            DicePrimaryButton(
+                text = roulettePrimaryActionLabel(escapeRolls),
+                enabled = true,
+                onClick = onPrimaryAction,
+            )
+        }
     }
 }
 
@@ -226,6 +238,7 @@ private fun DiceSpinContent(
     landed: Boolean,
     targetFace: Int?,
     motionEnabled: Boolean,
+    cpuControlled: Boolean,
     onPrimaryAction: () -> Unit,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -257,15 +270,37 @@ private fun DiceSpinContent(
             fontSize = 22.sp,
             fontWeight = FontWeight.Black,
         )
-        DicePrimaryButton(
-            text = if (targetFace == null) rouletteStopActionLabel() else "結果確認中",
-            enabled = targetFace == null,
-            onClick = onPrimaryAction,
-        )
+        if (cpuControlled) {
+            CpuRouletteStatus()
+        } else {
+            DicePrimaryButton(
+                text = if (targetFace == null) rouletteStopActionLabel() else "結果確認中",
+                enabled = targetFace == null,
+                onClick = onPrimaryAction,
+            )
+        }
     }
 }
 
 internal fun rouletteStopActionLabel(): String = "ダイスを止める"
+
+internal const val DICE_ROULETTE_CPU_STATUS_TEST_TAG = "dice-roulette-cpu-status"
+
+internal fun rouletteCpuStatusLabel(): String = "CPUが自動で進めます"
+
+/** Takes the place of the button, so a CPU capture offers nothing to tap. */
+@Composable
+private fun CpuRouletteStatus() {
+    Text(
+        text = rouletteCpuStatusLabel(),
+        modifier = Modifier
+            .padding(top = 20.dp)
+            .testTag(DICE_ROULETTE_CPU_STATUS_TEST_TAG),
+        color = Color(0xFFFFD54F),
+        fontSize = 16.sp,
+        fontWeight = FontWeight.Black,
+    )
+}
 
 @Composable
 private fun DicePrimaryButton(

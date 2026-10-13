@@ -1,3 +1,20 @@
+## 2026-10-13 Android CPU対戦
+
+- ユーザー承認済み仕様: Androidのみ、2〜4席の人間/CPU混在・全CPU観戦、標準1段階、行動を追える自動進行。
+- [x] 要件15章と既存ガイドへCPU仕様を追加。既存のゲームルールとデスクトップの操作を維持する。
+- [x] Astraによる公開情報専用のCPU判断・合法操作・core回帰テスト13件を追加。2〜4人×12シードの36対局が合法手・保存則を保って完走。勝利可能な帰巣後に食事で得点を減らさない修正も反映。
+- [x] Claude Opus 5.5（max、`claude -p`）によるAndroid設定・自動進行・保存v2・UI回帰テストを統合。CLIは主要変更後に利用上限で停止し、残る修正・検証をCodexとAstraで完了。
+- [x] 各席の人間/CPU選択、全員CPU観戦、CPU表示と人間入力の抑止、450ms単位の行動、捕獲の600ms公開・600ms回転、食事/消費体力の既存演出を実装。背景・設定・ルール・音量・履歴・メニュー表示中は自動進行を停止。
+- [x] 保存成功後のみ画面反映/次行動を許可。保存失敗時は同じ結果を再保存し、停止中の演出完了通知は復帰後一度だけ処理。v2のCPU担当IDを検証し、v1は全員人間として読み込む。
+- [x] ダイスの古い完了通知が同じ対局の次の捕獲を進めることを統合テストで再現し、対局generationと捕獲IDで拒否する修正を追加。画面側もIDを不変localに保持。Astraの最終独立レビューで残る不具合の指摘なし。
+- [x] 標準CPUのAndroid統合テストは2〜4人×4シードの12対局を保存・演出完了・終局まで通過。coreの36対局と合わせて公開情報/合法手/保存則/自動進行を検証。
+- 検証結果: core278件、Android JVM196件＋JSON Codec補足7件、desktop64件中61件成功・既存条件付き3件スキップ。計545件中542件成功、失敗/エラー0。Android debug（未署名）ビルドと全instrumentationテストソースのコンパイル成功。
+- 実装ファイル: core `cpu/CpuAction.kt` / `CpuObservation.kt` / `CpuController.kt` / `StandardCpuStrategy.kt`、既存controllerの機会判定公開範囲。Android `CpuStepScheduler.kt` / `AndroidGameViewModel.kt` / `GameScreen.kt` / `DiceRouletteOverlay.kt` / `MainActivity.kt` / `GameSaveRepository.kt` / `GameSaveCodec.kt`。回帰は `StandardCpuStrategyTest.kt` 13件、`AndroidCpuGameTest.kt` 27件、`CpuGameScreenTest.kt` 4件、Codec追加3件。
+- 検証方法: 既存の `.codex-analysis/move-selection` 内の署名情報を参照しない隔離ビルドを使用。通常のゲームソース/リソースのみ同期し、製品の署名情報・ユーザーGradle設定を読み込まない。
+- 検証環境: JBR21・オフラインGradle・隔離設定/キャッシュ。実設定を読むcoreの設定検査3件は対象外。JSON Codecは公開JSON実装を隔離JVMのみに追加して実行し、製品依存関係は変更していない。
+- 未実施/TODO: 接続Android端末・エミュレーターがないため、Composeテストの端末実行、実タッチ・描画・実機バックグラウンド/プロセス終了の検証は未実施。追加の `lintDebug` はオフラインキャッシュにEspresso 3.5.0のruntime依存がなく、AndroidTest lint model生成で停止。通常のテスト・debugビルドとは分離して記録する。デスクトップCPU UIは対象外。
+- PR準備: ユーザーの依頼により、最新の `origin/main`（`d618746`）から `codex/android-cpu-opponent` を作成。このCPU対戦の実装・回帰テスト・仕様/検証記録を1コミットにまとめ、main向け通常PRとして提出する。作成後は規約どおり5分待ち、レビュー・コメント・CIを再確認する。
+
 ## 2026-10-01 保存再開・入力状態の修正と回転フィードバック
 
 - 対象: `kisschan/mogura-game`、main `4b625073da7fdbe933862c51ae374aa23fb796de` から分離した `codex/bugfix-animation-review-20261002`。新規チェックアウトのため既存未コミット変更なし。GPT-6.1 SolでCore・Android・独立レビューを分担。
@@ -16,7 +33,7 @@
 
 # PROGRESS.md
 
-最終更新: 2026-09-25
+最終更新: 2026-10-13
 
 ## 現在の状況
 - [x] 2026-09-25: PR #68追加レビューの掘る待ちの停止状態を修正。PLAYING/DIGで掘る候補がある場合は準備済みタイルまたは配置待ちを必須とし、既存の `digTargets()` を再利用して復元時に検査する。候補がない正規状態からの自動進行は維持する。保存/JSON読み込みも復元検査を通す。追加1件をRed→Greenで確認し、core 259件・Android JVM 160件＋補足Codec 4件・desktop 51件成功/3件スキップ、計477件中474件成功・失敗/エラー0。計測テストのコンパイルも成功
