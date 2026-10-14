@@ -457,7 +457,6 @@ class MoguraGameFrame(
 
         boardPanel.cancelAnimations()
         controller.startNewGame(setup.players, setup.startPlayerIndex)
-        backgroundMusic.playLooping()
         refresh()
     }
 
@@ -552,6 +551,13 @@ class MoguraGameFrame(
 
     private fun refresh() {
         val current = controller.engine
+        if (current != null && !boardPanel.isAnimating) {
+            if (current.gameState == GameState.FINISHED && current.checkWinCondition() != null) {
+                backgroundMusic.playVictoryLooping()
+            } else {
+                backgroundMusic.playLooping()
+            }
+        }
         val uiState = controller.playScreenUiState()
         val actions = uiState.actionAvailability
         val canAdvanceFromDig = controller.canAdvanceFromDigWithoutTargets()

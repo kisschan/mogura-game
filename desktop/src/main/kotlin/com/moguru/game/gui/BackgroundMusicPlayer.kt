@@ -8,14 +8,44 @@ import java.util.concurrent.atomic.AtomicBoolean
 interface BackgroundMusicPlayer : AutoCloseable {
     fun playLooping()
 
+    fun playVictoryLooping() = playLooping()
+
     override fun close() = Unit
 }
 
 fun defaultBackgroundMusicPlayer(path: String): BackgroundMusicPlayer =
-    JLayerBackgroundMusicPlayer(path)
+    SwitchingBackgroundMusicPlayer(path, "assets/audio/the_champion_s_burrow.mp3") {
+        JLayerBackgroundMusicPlayer(it)
+    }
 
-private object NoOpBackgroundMusicPlayer : BackgroundMusicPlayer {
-    override fun playLooping() = Unit
+internal class SwitchingBackgroundMusicPlayer(
+    private val gamePath: String,
+    private val victoryPath: String,
+    private val createPlayer: (String) -> BackgroundMusicPlayer,
+) : BackgroundMusicPlayer {
+    private var currentPath: String? = null
+    private var player: BackgroundMusicPlayer? = null
+    private var isClosed = false
+
+    override fun playLooping() = playTrack(gamePath)
+
+    override fun playVictoryLooping() = playTrack(victoryPath)
+
+    private fun playTrack(path: String) {
+        if (isClosed || currentPath == path) return
+
+        player?.close()
+        currentPath = path
+        player = createPlayer(path).also { it.playLooping() }
+    }
+
+    override fun close() {
+        if (isClosed) return
+
+        isClosed = true
+        player?.close()
+        player = null
+    }
 }
 
 /**
@@ -27,6 +57,7 @@ private class JLayerBackgroundMusicPlayer(
     private val classLoader: ClassLoader = Thread.currentThread().contextClassLoader,
 ) : BackgroundMusicPlayer {
     private val playing = AtomicBoolean(false)
+    private val playbackLock = Any()
 
     @Volatile
     private var currentPlayer: Player? = null
@@ -61,8 +92,19 @@ private class JLayerBackgroundMusicPlayer(
         return try {
             stream.use { input ->
                 val player = Player(input)
-                currentPlayer = player
-                player.play()
+                synchronized(playbackLock) {
+                    // A track can be switched while its stream is still opening.
+                    if (!playing.get()) {
+                        player.close()
+                        return false
+                    }
+                    currentPlayer = player
+                }
+                try {
+                    player.play()
+                } finally {
+                    player.close()
+                }
             }
             true
         } catch (exception: Exception) {
@@ -84,8 +126,10 @@ private class JLayerBackgroundMusicPlayer(
     }
 
     override fun close() {
-        playing.set(false)
-        currentPlayer?.close()
+        synchronized(playbackLock) {
+            playing.set(false)
+            currentPlayer?.close()
+        }
         playbackThread?.interrupt()
     }
 }

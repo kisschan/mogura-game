@@ -21,7 +21,7 @@ class MainActivity : ComponentActivity() {
     }
     private val backgroundMusic by lazy {
         AndroidBackgroundMusicController(
-            player = defaultAndroidBackgroundMusicPlayer(this),
+            createPlayer = { track -> defaultAndroidBackgroundMusicPlayer(this, track) },
             initialSettings = initialAudioSettings,
         )
     }
@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
             MoguraGameScreen(
                 viewModel = gameViewModel,
                 soundEffects = soundEffects,
-                onGameStartedChanged = backgroundMusic::onGameStartedChanged,
+                onBackgroundMusicStateChanged = backgroundMusic::onGameStateChanged,
                 audioSettings = audioSettings,
                 onAudioSettingsChanged = { updatedSettings ->
                     audioSettings = audioSettingsRepository.save(updatedSettings)

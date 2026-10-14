@@ -16,10 +16,18 @@ internal interface AndroidBackgroundMusicPlayer : AutoCloseable {
     override fun close()
 }
 
-internal fun defaultAndroidBackgroundMusicPlayer(context: Context): AndroidBackgroundMusicPlayer =
+internal enum class AndroidBackgroundMusicTrack(val resourceId: Int) {
+    GAME(R.raw.burrowed_logic),
+    VICTORY(R.raw.the_champion_s_burrow),
+}
+
+internal fun defaultAndroidBackgroundMusicPlayer(
+    context: Context,
+    track: AndroidBackgroundMusicTrack,
+): AndroidBackgroundMusicPlayer =
     MediaPlayerBackgroundMusicPlayer(
         context = context.applicationContext,
-        resourceId = R.raw.burrowed_logic,
+        resourceId = track.resourceId,
     )
 
 internal interface AndroidLoopingMediaPlayer : AutoCloseable {
@@ -41,22 +49,31 @@ internal interface AndroidAudioFocus {
 }
 
 internal class AndroidBackgroundMusicController(
-    private val player: AndroidBackgroundMusicPlayer,
+    private val createPlayer: (AndroidBackgroundMusicTrack) -> AndroidBackgroundMusicPlayer,
     initialSettings: AndroidAudioSettings = AndroidAudioSettings(),
 ) : AutoCloseable {
     private var isGameStarted = false
     private var isForeground = false
     private var isClosed = false
     private var audioSettings = initialSettings.normalized()
+    private var track = AndroidBackgroundMusicTrack.GAME
+    private var player = createPlayer(track)
 
     init {
         player.setVolume(audioSettings.normalizedBgmVolume)
     }
 
-    fun onGameStartedChanged(started: Boolean) {
+    fun onGameStateChanged(started: Boolean, hasWinner: Boolean = false) {
         if (isClosed) return
 
         isGameStarted = started
+        val nextTrack = if (started && hasWinner) AndroidBackgroundMusicTrack.VICTORY else AndroidBackgroundMusicTrack.GAME
+        if (track != nextTrack) {
+            // Release both playback and audio focus before starting the next track.
+            player.close()
+            track = nextTrack
+            player = createPlayer(track)
+        }
         syncPlayback()
     }
 

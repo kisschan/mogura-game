@@ -250,7 +250,7 @@ private fun PauseCpuWhileShown() {
 @Composable
 internal fun MoguraGameScreen(
     viewModel: AndroidGameViewModel = viewModel(),
-    onGameStartedChanged: (Boolean) -> Unit = {},
+    onBackgroundMusicStateChanged: (Boolean, Boolean) -> Unit = { _, _ -> },
     soundEffects: AndroidSoundEffectPlayer = NoOpAndroidSoundEffectPlayer,
     audioSettings: AndroidAudioSettings = AndroidAudioSettings(),
     onAudioSettingsChanged: (AndroidAudioSettings) -> Unit = {},
@@ -264,8 +264,9 @@ internal fun MoguraGameScreen(
     val cpuPlayScreenClear = state.isGameStarted && !showRules && !showAudioSettings &&
         cpuPauseLayers.open == 0
 
-    LaunchedEffect(state.isGameStarted) {
-        onGameStartedChanged(state.isGameStarted)
+    val hasWinner = state.gameResult?.winnerPlayerId != null
+    LaunchedEffect(state.isGameStarted, hasWinner) {
+        onBackgroundMusicStateChanged(state.isGameStarted, hasWinner)
     }
     DisposableEffect(viewModel, cpuPlayScreenClear) {
         viewModel.setCpuPlayScreenClear(cpuPlayScreenClear)
