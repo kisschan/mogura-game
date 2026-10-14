@@ -8,7 +8,7 @@ class AndroidBackgroundMusicControllerTest {
     fun `sets default quiet volume on creation`() {
         val player = FakeBackgroundMusicPlayer()
 
-        AndroidBackgroundMusicController(player)
+        AndroidBackgroundMusicController(createPlayer = { player })
 
         assertEquals(listOf(DEFAULT_ANDROID_BGM_VOLUME), player.volumeEvents)
     }
@@ -16,7 +16,7 @@ class AndroidBackgroundMusicControllerTest {
     @Test
     fun `does not play before game starts`() {
         val player = FakeBackgroundMusicPlayer()
-        val controller = AndroidBackgroundMusicController(player)
+        val controller = AndroidBackgroundMusicController(createPlayer = { player })
 
         controller.onForegrounded()
 
@@ -26,11 +26,11 @@ class AndroidBackgroundMusicControllerTest {
     @Test
     fun `plays when game starts in foreground`() {
         val player = FakeBackgroundMusicPlayer()
-        val controller = AndroidBackgroundMusicController(player)
+        val controller = AndroidBackgroundMusicController(createPlayer = { player })
 
         controller.onForegrounded()
         player.resetCounts()
-        controller.onGameStartedChanged(true)
+        controller.onGameStateChanged(true)
 
         assertEquals(1, player.playCount)
         assertEquals(0, player.pauseCount)
@@ -39,10 +39,10 @@ class AndroidBackgroundMusicControllerTest {
     @Test
     fun `pauses on background and resumes started game on foreground`() {
         val player = FakeBackgroundMusicPlayer()
-        val controller = AndroidBackgroundMusicController(player)
+        val controller = AndroidBackgroundMusicController(createPlayer = { player })
 
         controller.onForegrounded()
-        controller.onGameStartedChanged(true)
+        controller.onGameStateChanged(true)
         player.resetCounts()
 
         controller.onBackgrounded()
@@ -55,13 +55,13 @@ class AndroidBackgroundMusicControllerTest {
     @Test
     fun `pauses when returning to setup`() {
         val player = FakeBackgroundMusicPlayer()
-        val controller = AndroidBackgroundMusicController(player)
+        val controller = AndroidBackgroundMusicController(createPlayer = { player })
 
         controller.onForegrounded()
-        controller.onGameStartedChanged(true)
+        controller.onGameStateChanged(true)
         player.resetCounts()
 
-        controller.onGameStartedChanged(false)
+        controller.onGameStateChanged(false)
 
         assertEquals(0, player.playCount)
         assertEquals(1, player.pauseCount)
@@ -70,9 +70,9 @@ class AndroidBackgroundMusicControllerTest {
     @Test
     fun `pauses when bgm volume changes to zero`() {
         val player = FakeBackgroundMusicPlayer()
-        val controller = AndroidBackgroundMusicController(player)
+        val controller = AndroidBackgroundMusicController(createPlayer = { player })
         controller.onForegrounded()
-        controller.onGameStartedChanged(true)
+        controller.onGameStateChanged(true)
         player.resetCounts()
 
         controller.onAudioSettingsChanged(AndroidAudioSettings(bgmVolume = 0f))
@@ -86,13 +86,13 @@ class AndroidBackgroundMusicControllerTest {
     fun `does not start when volume is zero`() {
         val player = FakeBackgroundMusicPlayer()
         val controller = AndroidBackgroundMusicController(
-            player = player,
+            createPlayer = { player },
             initialSettings = AndroidAudioSettings(bgmVolume = 0f),
         )
         player.resetCounts()
 
         controller.onForegrounded()
-        controller.onGameStartedChanged(true)
+        controller.onGameStateChanged(true)
 
         assertEquals(0, player.playCount)
     }
@@ -100,9 +100,9 @@ class AndroidBackgroundMusicControllerTest {
     @Test
     fun `resumes a started foreground game after raising bgm volume from zero`() {
         val player = FakeBackgroundMusicPlayer()
-        val controller = AndroidBackgroundMusicController(player)
+        val controller = AndroidBackgroundMusicController(createPlayer = { player })
         controller.onForegrounded()
-        controller.onGameStartedChanged(true)
+        controller.onGameStateChanged(true)
         controller.onAudioSettingsChanged(AndroidAudioSettings(bgmVolume = 0f))
         player.resetCounts()
 
@@ -116,7 +116,7 @@ class AndroidBackgroundMusicControllerTest {
     @Test
     fun `closes player once`() {
         val player = FakeBackgroundMusicPlayer()
-        val controller = AndroidBackgroundMusicController(player)
+        val controller = AndroidBackgroundMusicController(createPlayer = { player })
 
         controller.close()
         controller.close()

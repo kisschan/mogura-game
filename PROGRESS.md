@@ -1,3 +1,12 @@
+## 2026-10-14 勝利時BGM
+
+- [x] ユーザー提供の `the_champion_s_burrow.mp3` を `assets/audio` とAndroidの `res/raw` に追加。元添付と両リソースのSHA-256一致を確認。
+- [x] Android・デスクトップで勝者が確定した結果表示時に通常曲から勝利曲へ切り替えてループ再生。引き分けでは通常曲を維持し、再戦時は通常曲へ復帰する。
+- [x] Androidの音量・ミュート・バックグラウンド停止・フォーカス制御を維持。曲変更時に旧プレイヤーを解放し、結果表示の更新では再生成しない。デスクトップでは曲変更直前に開始された旧再生スレッドも停止する。
+- 検証: mainに今回のBGM差分だけを加えたソースを、秘密情報を参照しない隔離環境で確認。`:core:test :androidApp:testDebugUnitTest :desktop:test :androidApp:compileDebugAndroidTestKotlin --continue` が成功。core 278件・Android 201件・Desktop 63件成功、Desktopの既存条件付き3件スキップ、失敗/エラー0。追加7件で切り替え・再戦・音量・ライフサイクル・MP3全フレームのデコードを確認。製品設定を参照するcoreの設定検査3件は隔離検証の対象外。
+- コミット対象: 勝利BGMの13ファイルのみ。mainをベースとする `codex/victory-bgm` から通常PRを作成する。
+- 実機での聴取確認は未実施。製品ビルド設定・署名・配布は変更していない。
+
 ## 2026-10-13 Android CPU対戦
 
 - ユーザー承認済み仕様: Androidのみ、2〜4席の人間/CPU混在・全CPU観戦、標準1段階、行動を追える自動進行。

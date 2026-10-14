@@ -7,5 +7,6 @@ class AndroidBackgroundMusicResourceTest {
     @Test
     fun `background music raw resource is generated`() {
         assertTrue(R.raw.burrowed_logic != 0)
+        assertTrue(R.raw.the_champion_s_burrow != 0)
     }
 }
