@@ -1,5 +1,7 @@
 package com.moguru.game.android
 
+import com.moguru.game.cpu.CpuDifficulty
+
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -795,6 +797,7 @@ private fun SetupScreen(
                     onNestSelected = viewModel::selectPlayerNest,
                     onStartSelected = viewModel::selectStartPlayer,
                     onKindSelected = viewModel::selectPlayerKind,
+                    onDifficultySelected = viewModel::selectCpuDifficulty,
                 )
             }
         }
@@ -824,6 +827,7 @@ private fun SetupPlayerRow(
     onNestSelected: (Int, Position) -> Unit,
     onStartSelected: (Int) -> Unit,
     onKindSelected: (Int, Boolean) -> Unit,
+    onDifficultySelected: (Int, CpuDifficulty) -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -894,6 +898,21 @@ private fun SetupPlayerRow(
             }
         }
 
+        if (player.isCpu) {
+            Text("CPUの強さ", color = Color(0xFF4B3826), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                CpuDifficulty.entries.forEach { difficulty ->
+                    CpuDifficultyButton(player, difficulty, soundEffectClick {
+                        onDifficultySelected(player.seatIndex, difficulty)
+                    })
+                }
+            }
+        }
+
         FlowRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -938,6 +957,39 @@ private fun SetupPlayerRow(
                 )
             }
         }
+    }
+}
+
+internal fun cpuDifficultyLabel(difficulty: CpuDifficulty): String = when (difficulty) {
+    CpuDifficulty.EASY -> "やさしい"
+    CpuDifficulty.NORMAL -> "ふつう"
+    CpuDifficulty.HARD -> "つよい"
+}
+
+internal fun setupCpuDifficultyTestTag(seat: Int, difficulty: CpuDifficulty) = "setup-cpu-difficulty-$seat-${difficulty.name}"
+
+@Composable
+private fun CpuDifficultyButton(player: AndroidSetupPlayerUiState, difficulty: CpuDifficulty, onClick: () -> Unit) {
+    val isSelected = player.cpuDifficulty == difficulty
+    val label = cpuDifficultyLabel(difficulty)
+    val selectedColors = setupSelectedChoiceColors()
+    OutlinedButton(
+        onClick = onClick,
+        modifier = Modifier.heightIn(min = 48.dp)
+            .testTag(setupCpuDifficultyTestTag(player.seatIndex, difficulty))
+            .semantics {
+                contentDescription = "P${player.seatIndex + 1}のCPUの強さ: $label"
+                selected = isSelected
+                stateDescription = if (isSelected) "選択中" else "未選択"
+            },
+        shape = RoundedCornerShape(8.dp),
+        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+        border = BorderStroke(2.dp, if (isSelected) Color(selectedColors.borderArgb) else Color(0xFF9A7A52)),
+        colors = if (isSelected) ButtonDefaults.buttonColors(
+            containerColor = Color(selectedColors.containerArgb), contentColor = Color(selectedColors.contentArgb),
+        ) else ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF2E2115)),
+    ) {
+        Text(label, fontSize = 13.sp, fontWeight = FontWeight.Black)
     }
 }
 

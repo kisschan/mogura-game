@@ -21,6 +21,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.unit.dp
 import com.moguru.game.cpu.CpuAction
+import com.moguru.game.cpu.CpuDifficulty
 import com.moguru.game.cpu.CpuStrategy
 import com.moguru.game.engine.TurnPhase
 import com.moguru.game.model.FoodType
@@ -41,6 +42,26 @@ class CpuGameScreenTest {
     private val boardClickTargets = hasClickAction() and hasAnyAncestor(hasTestTag("game-board"))
 
     private fun controller() = MoguraGameController(FixedDiceRoller(listOf(6)), FixedShuffler())
+
+    @Test
+    fun difficultySelectionFitsNarrowPortraitAndOnlyAppearsForCpuSeats() {
+        val vm = AndroidGameViewModel(controller())
+        rule.setContent { Box(Modifier.requiredSize(320.dp, 640.dp)) { MoguraGameScreen(viewModel = vm) } }
+        rule.onAllNodesWithTag(setupCpuDifficultyTestTag(0, CpuDifficulty.HARD)).assertCountEquals(0)
+        rule.onNodeWithTag(setupSeatKindTestTag(0, true)).performScrollTo().performClick()
+        rule.onNodeWithTag(setupCpuDifficultyTestTag(0, CpuDifficulty.NORMAL)).performScrollTo().assertIsSelected()
+        for (difficulty in CpuDifficulty.entries) {
+            val node = rule.onNodeWithTag(setupCpuDifficultyTestTag(0, difficulty)).performScrollTo().performClick()
+            node.assertIsSelected()
+            val bounds = node.getUnclippedBoundsInRoot()
+            assertTrue(bounds.left >= 0.dp && bounds.right <= 320.dp)
+            assertTrue(bounds.bottom - bounds.top >= 48.dp)
+        }
+        rule.onNodeWithTag(setupSeatKindTestTag(0, false)).performScrollTo().performClick()
+        rule.onAllNodesWithTag(setupCpuDifficultyTestTag(0, CpuDifficulty.HARD)).assertCountEquals(0)
+        rule.onNodeWithTag(setupSeatKindTestTag(0, true)).performScrollTo().performClick()
+        rule.onNodeWithTag(setupCpuDifficultyTestTag(0, CpuDifficulty.HARD)).performScrollTo().assertIsSelected()
+    }
 
     private fun captureReadySave(type: FoodType): SavedGame {
         val initial = controller().apply { startNewGame(2) }.exportSnapshot()

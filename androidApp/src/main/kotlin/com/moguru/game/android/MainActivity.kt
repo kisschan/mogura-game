@@ -10,7 +10,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import com.moguru.game.cpu.StandardCpuStrategy
 
 class MainActivity : ComponentActivity() {
     private val audioSettingsRepository by lazy {
@@ -40,7 +39,6 @@ class MainActivity : ComponentActivity() {
                 return AndroidGameViewModel(
                     saveRepository = GameSaveDependencies.repositoryFactory(applicationContext),
                     saveIo = GameSaveDependencies.ioFactory(),
-                    cpuStrategy = StandardCpuStrategy(),
                     cpuScheduler = MainHandlerCpuStepScheduler(),
                 ) as T
             }

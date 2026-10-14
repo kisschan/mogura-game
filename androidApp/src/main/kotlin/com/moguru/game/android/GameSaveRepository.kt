@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.AtomicFile
 import com.moguru.game.model.Position
+import com.moguru.game.cpu.CpuDifficulty
 import com.moguru.game.persistence.GameSnapshot
 import com.moguru.game.presenter.MoguraGameController
 import java.io.File
@@ -20,11 +21,14 @@ data class SavedGame(
     val lastMessage: String? = null,
     /** CPU operators by player ID. Saves from before CPU play have none. */
     val cpuPlayerIds: Set<Int> = emptySet(),
+    val cpuDifficulties: Map<Int, CpuDifficulty> = cpuPlayerIds.associateWith { CpuDifficulty.NORMAL },
 )
 
 /** Every CPU operator must take part in the saved game; anything else is a damaged save. */
-internal fun SavedGame.requireCpuParticipants() =
+internal fun SavedGame.requireCpuParticipants() {
     require(game.engine.players.map { it.id }.containsAll(cpuPlayerIds))
+    require(cpuDifficulties.keys == cpuPlayerIds)
+}
 
 interface GameSaveRepository {
     fun load(): SavedGame?
