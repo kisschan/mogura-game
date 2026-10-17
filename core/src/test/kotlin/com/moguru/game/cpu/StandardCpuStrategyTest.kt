@@ -54,7 +54,10 @@ class StandardCpuStrategyTest {
         val other = MoguraGameController.fromSnapshot(changed)
 
         assertEquals(original.cpuObservation(), other.cpuObservation())
-        assertEquals(strategy.choose(original.cpuObservation()), strategy.choose(other.cpuObservation()))
+        for (difficulty in CpuDifficulty.entries) {
+            val policy = difficulty.createStrategy()
+            assertEquals(policy.choose(original.cpuObservation()), policy.choose(other.cpuObservation()))
+        }
     }
 
     @Test

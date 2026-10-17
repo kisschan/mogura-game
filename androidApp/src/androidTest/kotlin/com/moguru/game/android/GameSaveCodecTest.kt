@@ -1,6 +1,7 @@
 package com.moguru.game.android
 
 import com.moguru.game.engine.TurnPhase
+import com.moguru.game.cpu.CpuDifficulty
 import com.moguru.game.model.*
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.util.FixedDiceRoller
@@ -52,7 +53,7 @@ class GameSaveCodecTest {
 
     @Test
     fun futureVersionIsDistinguishedFromCorruption() {
-        for (version in listOf(0, 3)) {
+        for (version in listOf(0, 4)) {
             val unknown = JSONObject(GameSaveCodec.encode(saved())).put("formatVersion", version).toString()
             try { GameSaveCodec.decode(unknown); fail("accepted unknown version") }
             catch (e: InvalidGameSaveException) { assertEquals(GameSaveLoadIssue.UNSUPPORTED, e.issue) }
@@ -60,13 +61,14 @@ class GameSaveCodecTest {
     }
 
     @Test
-    fun cpuPlayersRoundTripInStableOrderAsVersionTwo() {
+    fun cpuPlayersAndDifficultiesRoundTripInStableOrderAsVersionThree() {
         for (ids in listOf(emptySet(), setOf(2), setOf(3, 1, 0), setOf(0, 1, 2, 3))) {
-            val expected = saved().copy(cpuPlayerIds = ids)
+            val expected = saved().copy(cpuPlayerIds = ids,
+                cpuDifficulties = ids.associateWith { CpuDifficulty.entries[it % 3] })
             val text = GameSaveCodec.encode(expected)
             assertEquals(expected, GameSaveCodec.decode(text))
             val root = JSONObject(text)
-            assertEquals(2, root.getInt("formatVersion"))
+            assertEquals(3, root.getInt("formatVersion"))
             val array = root.getJSONArray("cpuPlayerIds")
             assertEquals(ids.sorted(), (0 until array.length()).map { array.getInt(it) })
         }
@@ -75,7 +77,8 @@ class GameSaveCodecTest {
     @Test
     fun versionOneSavesLoadWithEveryPlayerHuman() {
         val expected = saved()
-        val v1 = JSONObject(GameSaveCodec.encode(expected.copy(cpuPlayerIds = setOf(1)))).apply {
+        val v1 = JSONObject(GameSaveCodec.encode(expected.copy(cpuPlayerIds = setOf(1),
+            cpuDifficulties = mapOf(1 to CpuDifficulty.NORMAL)))).apply {
             put("formatVersion", 1)
             remove("cpuPlayerIds")
         }.toString()
@@ -87,9 +90,36 @@ class GameSaveCodecTest {
     }
 
     @Test
+    fun versionTwoDefaultsToNormalAndVersionThreeRejectsInvalidDifficulties() {
+        val base = saved().copy(cpuPlayerIds = setOf(1), cpuDifficulties = mapOf(1 to CpuDifficulty.HARD))
+        val v2 = JSONObject(GameSaveCodec.encode(base)).apply {
+            put("formatVersion", 2)
+            remove("cpuDifficulties")
+        }
+        assertEquals(mapOf(1 to CpuDifficulty.NORMAL), GameSaveCodec.decode(v2.toString()).cpuDifficulties)
+        val invalid = listOf(
+            null, JSONObject.NULL, JSONArray(),
+            JSONArray().put(JSONObject().put("playerId", 1).put("difficulty", "UNKNOWN")),
+            JSONArray().put(JSONObject().put("playerId", 0).put("difficulty", "HARD")),
+            JSONArray().put(JSONObject().put("playerId", 1).put("difficulty", 2)),
+            JSONArray().put(JSONObject().put("playerId", "1").put("difficulty", "HARD")),
+            JSONArray().put(JSONObject().put("playerId", 1).put("difficulty", "HARD"))
+                .put(JSONObject().put("playerId", 1).put("difficulty", "EASY")),
+        )
+        for (value in invalid) {
+            val root = JSONObject(GameSaveCodec.encode(base)).apply {
+                if (value == null) remove("cpuDifficulties") else put("cpuDifficulties", value)
+            }
+            try { GameSaveCodec.decode(root.toString()); fail("accepted invalid difficulty") }
+            catch (e: InvalidGameSaveException) { assertEquals(GameSaveLoadIssue.CORRUPT, e.issue) }
+        }
+    }
+
+    @Test
     fun versionTwoCpuPlayerIdsAreValidatedStrictly() {
         val twoPlayers = MoguraGameController(FixedDiceRoller(listOf(6)), FixedShuffler()).apply { startNewGame(2) }
-        val base = GameSaveCodec.encode(SavedGame(twoPlayers.exportSnapshot(), 1, 1, cpuPlayerIds = setOf(1)))
+        val base = JSONObject(GameSaveCodec.encode(SavedGame(twoPlayers.exportSnapshot(), 1, 1, cpuPlayerIds = setOf(1))))
+            .put("formatVersion", 2).toString()
         fun withIds(value: Any?) = JSONObject(base).apply {
             if (value == null) remove("cpuPlayerIds") else put("cpuPlayerIds", value)
         }.toString()

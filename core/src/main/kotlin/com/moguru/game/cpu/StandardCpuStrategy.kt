@@ -248,6 +248,78 @@ internal class PublicBoard(
     private val occupied = otherPlayers.map { it.position }.filter { it != player.nestPosition }.toSet()
     private val blocked = otherPlayers.filter { it.position == it.nestPosition }.map { it.nestPosition }.toSet()
     private val distances = mutableMapOf<Position, Map<Position, Int>>()
+    private val returnRoutes = mutableMapOf<Position, ReturnRoute?>()
+    private val opponentReachability = mutableMapOf<Pair<Int, Position>, Set<Position>>()
+    private val possibleDigReachability = mutableMapOf<Int, Set<Position>>()
+
+    /** Exact public movement after the evaluated move, including immediate nest eviction. */
+    fun projectedPosition(actor: CpuPlayer, movingPlayerPosition: Position): Position = when {
+        actor.id == player.id -> movingPlayerPosition
+        movingPlayerPosition == player.nestPosition && actor.position == player.nestPosition ->
+            Board.NEST_EVICTION_DESTINATIONS.getValue(player.nestPosition)
+        else -> actor.position
+    }
+
+    fun reachableFor(actor: CpuPlayer, movingPlayerPosition: Position = player.position): Set<Position> =
+        opponentReachability.getOrPut(actor.id to movingPlayerPosition) {
+            val others = view.players.filter { it.id != actor.id && !it.isEliminated }
+            val occupied = others.map { projectedPosition(it, movingPlayerPosition) }.filter { it != actor.nestPosition }.toSet()
+            val blocked = others.filter { projectedPosition(it, movingPlayerPosition) == it.nestPosition }.map { it.nestPosition }.toSet()
+            val start = projectedPosition(actor, movingPlayerPosition)
+            setOf(start) + MovementEngine(board).findReachablePositions(start, state, occupied, blocked)
+        }
+
+    /** Conservative possibility only: a CROSS could open an adjacent dig; no hidden draw is inspected. */
+    fun possiblyReachableAfterDig(actor: CpuPlayer): Set<Position> = possibleDigReachability.getOrPut(actor.id) {
+        val others = view.players.filter { it.id != actor.id && !it.isEliminated }
+        val occupied = others.map { it.position }.filter { it != actor.nestPosition }.toSet()
+        val blocked = others.filter { it.position == it.nestPosition }.map { it.nestPosition }.toSet()
+        val type = board.getCell(actor.position)?.type
+        val directions = if (type == CellType.NEST || type == CellType.GROUND) Direction.entries.toSet()
+            else tiles[actor.position]?.openSides.orEmpty()
+        buildSet {
+            addAll(reachableFor(actor))
+            for (dig in board.getValidNeighbors(actor.position)) {
+                if (dig !in tiles || others.any { it.position == dig } || directionBetween(actor.position, dig) !in directions) continue
+                val possible = BoardState(board).apply {
+                    tiles.forEach { (position, tile) ->
+                        tile.shape?.let { placeTile(position, HoleTile(it, tile.openSides, isFaceDown = false)) }
+                    }
+                    placeTile(dig, HoleTile(TileShape.CROSS).flip())
+                }
+                addAll(MovementEngine(board).findReachablePositions(actor.position, possible, occupied, blocked))
+            }
+        }
+    }
+
+    data class ReturnRoute(val turns: Int, val healthCost: Int)
+
+    /** Stops use the real movement rules. Costs exclude the turn ending at [from]. */
+    fun returnRoute(from: Position): ReturnRoute? {
+        if (from in returnRoutes) return returnRoutes[from]
+        return findReturnRoute(from).also { returnRoutes[from] = it }
+    }
+
+    private fun findReturnRoute(from: Position): ReturnRoute? {
+        val best = mutableMapOf(from to ReturnRoute(0, 0))
+        val pending = mutableSetOf(from)
+        while (pending.isNotEmpty()) {
+            val position = pending.minWith(compareBy<Position> { best.getValue(it).healthCost }.thenBy { best.getValue(it).turns })
+            pending.remove(position)
+            val route = best.getValue(position)
+            if (position == player.nestPosition) return route
+            for (next in MovementEngine(board).findReachablePositions(position, state, occupied, blocked)) {
+                val candidate = ReturnRoute(route.turns + 1, route.healthCost + turnCost(next))
+                val old = best[next]
+                if (old == null || candidate.healthCost < old.healthCost ||
+                    candidate.healthCost == old.healthCost && candidate.turns < old.turns) {
+                    best[next] = candidate
+                    pending.add(next)
+                }
+            }
+        }
+        return null
+    }
 
     fun reachableIncludingCurrent(): List<Position> = listOf(player.position) +
         MovementEngine(board).findReachablePositions(player.position, state, occupied, blocked)

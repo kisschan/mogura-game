@@ -1,24 +1,31 @@
 package com.moguru.game.android
 
 import com.moguru.game.engine.*
+import com.moguru.game.cpu.CpuDifficulty
 import com.moguru.game.model.*
 import com.moguru.game.persistence.*
 import com.moguru.game.presenter.*
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Explicit v2 schema; v1 only lacks the CPU players. Enum names are persisted, never ordinal positions. */
+/** v3 stores CPU difficulty; v1 is all-human and v2 CPUs use NORMAL. */
 internal object GameSaveCodec {
-    private const val VERSION = 2
+    private const val VERSION = 3
     private const val VERSION_BEFORE_CPU_PLAYERS = 1
 
-    fun encode(save: SavedGame): String = obj(
-        "formatVersion" to VERSION, "revision" to save.revision, "savedAtMillis" to save.savedAtMillis,
-        "selectedMovePosition" to save.selectedMovePosition?.let(::position),
-        "boardPiecesTransparent" to save.boardPiecesTransparent, "lastMessage" to save.lastMessage,
-        "cpuPlayerIds" to JSONArray(save.cpuPlayerIds.sorted()),
-        "game" to game(save.game),
-    ).toString()
+    fun encode(save: SavedGame): String {
+        save.requireCpuParticipants()
+        return obj(
+            "formatVersion" to VERSION, "revision" to save.revision, "savedAtMillis" to save.savedAtMillis,
+            "selectedMovePosition" to save.selectedMovePosition?.let(::position),
+            "boardPiecesTransparent" to save.boardPiecesTransparent, "lastMessage" to save.lastMessage,
+            "cpuPlayerIds" to JSONArray(save.cpuPlayerIds.sorted()),
+            "cpuDifficulties" to array(save.cpuDifficulties.toSortedMap().entries) {
+                obj("playerId" to it.key, "difficulty" to it.value.name)
+            },
+            "game" to game(save.game),
+        ).toString()
+    }
 
     fun decode(text: String): SavedGame {
         try {
@@ -39,10 +46,14 @@ internal object GameSaveCodec {
                 val participants = snapshot.engine.players.map { it.id }
                 root.uniqueInts("cpuPlayerIds") { it in participants }
             }
+            val difficulties = if (version < 3) cpuPlayerIds.associateWith { CpuDifficulty.NORMAL } else {
+                root.objects("cpuDifficulties") { it.int("playerId") to it.enum<CpuDifficulty>("difficulty") }
+                    .uniqueMap().also { require(it.keys == cpuPlayerIds) }
+            }
             return SavedGame(
                 snapshot, root.long("revision").also { require(it in 0 until Long.MAX_VALUE) },
                 root.long("savedAtMillis").also { require(it >= 0) }, selectedMove,
-                root.bool("boardPiecesTransparent"), root.optionalString("lastMessage"), cpuPlayerIds,
+                root.bool("boardPiecesTransparent"), root.optionalString("lastMessage"), cpuPlayerIds, difficulties,
             )
         } catch (e: InvalidGameSaveException) {
             throw e

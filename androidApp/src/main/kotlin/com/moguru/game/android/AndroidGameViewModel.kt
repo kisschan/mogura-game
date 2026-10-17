@@ -3,7 +3,7 @@ package com.moguru.game.android
 import androidx.lifecycle.ViewModel
 import com.moguru.game.cpu.CpuAction
 import com.moguru.game.cpu.CpuStrategy
-import com.moguru.game.cpu.StandardCpuStrategy
+import com.moguru.game.cpu.CpuDifficulty
 import com.moguru.game.cpu.applyCpuAction
 import com.moguru.game.cpu.cpuObservation
 import com.moguru.game.engine.GameState
@@ -98,6 +98,7 @@ data class AndroidSetupPlayerUiState(
     val nestPosition: Position,
     val isStartPlayer: Boolean,
     val isCpu: Boolean = false,
+    val cpuDifficulty: CpuDifficulty = CpuDifficulty.NORMAL,
 )
 
 /** 腹減りメーターに表示する各プレイヤーの体力マーカー。 */
@@ -189,7 +190,7 @@ class AndroidGameViewModel(
     private var controller: MoguraGameController = MoguraGameController(),
     private val saveRepository: GameSaveRepository = MemoryGameSaveRepository(),
     private val saveIo: GameSaveIo = ImmediateGameSaveIo,
-    private val cpuStrategy: CpuStrategy = StandardCpuStrategy(),
+    private val cpuStrategy: CpuStrategy? = null,
     private val cpuScheduler: CpuStepScheduler = ManualCpuStepScheduler(),
 ) : ViewModel() {
     private var savedGame: SavedGame? = null
@@ -208,6 +209,8 @@ class AndroidGameViewModel(
     private var setupNestPositions = defaultSetupNestPositions(selectedPlayerCount)
     // The operator belongs to the seat during setup, so swapping moles does not move it.
     private var setupCpuSeats = List(selectedPlayerCount) { false }
+    private var setupCpuDifficulties = List(selectedPlayerCount) { CpuDifficulty.NORMAL }
+    private val difficultyStrategies = CpuDifficulty.entries.associateWith { it.createStrategy() }
     private var selectedStartPlayerIndex = 0
     private var gameResultOverlayDismissed = false
     private var captureAnimation: AndroidCaptureAnimationUiState? = null
@@ -219,6 +222,7 @@ class AndroidGameViewModel(
     private var turnConsumptionPostMessage: String? = null
     // Fixed to player IDs once a game starts, and saved with it.
     private var cpuPlayerIds: Set<Int> = emptySet()
+    private var cpuDifficulties: Map<Int, CpuDifficulty> = emptyMap()
     private var cpuHostResumed = false
     private var cpuPlayScreenClear = false
     private var cpuStep: CpuStepCancellation? = null
@@ -302,6 +306,8 @@ class AndroidGameViewModel(
         setupNestPositions = saved.game.engine.players.map { it.nestPosition }
         setupCpuSeats = saved.game.engine.players.map { it.id in saved.cpuPlayerIds }
         cpuPlayerIds = saved.cpuPlayerIds
+        cpuDifficulties = saved.cpuDifficulties
+        setupCpuDifficulties = setupPlayerIds.map { cpuDifficulties[it] ?: CpuDifficulty.NORMAL }
         selectedStartPlayerIndex = saved.game.engine.currentPlayerIndex
         selectedMovePosition = saved.selectedMovePosition
         boardPiecesTransparent = saved.boardPiecesTransparent
@@ -355,7 +361,7 @@ class AndroidGameViewModel(
         if (previous != null && game == previous.game &&
             next.selectedMovePosition == previous.selectedMovePosition &&
             boardPiecesTransparent == previous.boardPiecesTransparent &&
-            cpuPlayerIds == previous.cpuPlayerIds
+            cpuPlayerIds == previous.cpuPlayerIds && cpuDifficulties == previous.cpuDifficulties
         ) {
             publishCommitted(next)
             return
@@ -367,6 +373,7 @@ class AndroidGameViewModel(
             boardPiecesTransparent = boardPiecesTransparent,
             lastMessage = if (turnConsumptionAnimation != null) turnConsumptionPostMessage else next.lastMessage,
             cpuPlayerIds = cpuPlayerIds,
+            cpuDifficulties = cpuDifficulties,
         )
         pendingSave = saved to next
         executePendingSave()
@@ -464,6 +471,13 @@ class AndroidGameViewModel(
         refresh(null)
     }
 
+    fun selectCpuDifficulty(seatIndex: Int, difficulty: CpuDifficulty) {
+        if (operationBlocked() || _uiState.value.isGameStarted) return
+        if (seatIndex !in 0 until selectedPlayerCount || !setupCpuSeats[seatIndex]) return
+        setupCpuDifficulties = setupCpuDifficulties.toMutableList().also { it[seatIndex] = difficulty }
+        refresh(null)
+    }
+
     fun selectStartPlayer(seatIndex: Int) {
         if (operationBlocked()) return
         if (seatIndex !in 0 until selectedPlayerCount) return
@@ -489,6 +503,7 @@ class AndroidGameViewModel(
         showResumeEntry = false
         clearPresentation()
         cpuPlayerIds = configuredCpuPlayerIds()
+        cpuDifficulties = configuredCpuDifficulties()
         val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
         commitState(snapshot(
             isGameStarted = true,
@@ -505,6 +520,7 @@ class AndroidGameViewModel(
         clearPresentation()
         resetSetupDefaults(playerCount)
         cpuPlayerIds = configuredCpuPlayerIds()
+        cpuDifficulties = configuredCpuDifficulties()
         val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
         commitState(snapshot(
             isGameStarted = true,
@@ -855,7 +871,10 @@ class AndroidGameViewModel(
         val action = if (previewed != null) {
             CpuAction.Move(previewed)
         } else {
-            runCatching { cpuStrategy.choose(controller.cpuObservation()) }.getOrNull()
+            runCatching {
+                val difficulty = cpuDifficulties[controller.currentPlayer?.id] ?: CpuDifficulty.NORMAL
+                (cpuStrategy ?: difficultyStrategies.getValue(difficulty)).choose(controller.cpuObservation())
+            }.getOrNull()
                 ?: return stopCpu(AndroidCpuFault.NO_DECISION)
         }
         if (action is CpuAction.Move && previewed == null) return previewCpuMove(action.position)
@@ -1081,11 +1100,17 @@ class AndroidGameViewModel(
         setupPlayerIds = defaultSetupPlayerIds(playerCount)
         setupNestPositions = defaultSetupNestPositions(playerCount)
         setupCpuSeats = List(playerCount) { false }
+        setupCpuDifficulties = List(playerCount) { CpuDifficulty.NORMAL }
         selectedStartPlayerIndex = 0
     }
 
     private fun configuredCpuPlayerIds(): Set<Int> =
         setupPlayerIds.filterIndexed { seatIndex, _ -> setupCpuSeats[seatIndex] }.toSet()
+
+    private fun configuredCpuDifficulties(): Map<Int, CpuDifficulty> =
+        setupPlayerIds.mapIndexedNotNull { index, id ->
+            if (setupCpuSeats[index]) id to setupCpuDifficulties[index] else null
+        }.toMap()
 
     private fun setupConfigs(): List<PlayerConfig> =
         setupPlayerIds.zip(setupNestPositions).map { (playerId, nestPosition) ->
@@ -1105,6 +1130,7 @@ class AndroidGameViewModel(
                 nestPosition = nestPosition,
                 isStartPlayer = index == selectedStartPlayerIndex,
                 isCpu = setupCpuSeats[index],
+                cpuDifficulty = setupCpuDifficulties[index],
             )
         }
 
