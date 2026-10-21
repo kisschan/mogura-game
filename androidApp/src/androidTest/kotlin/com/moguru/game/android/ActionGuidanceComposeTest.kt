@@ -10,13 +10,20 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
@@ -537,14 +544,164 @@ class ActionGuidanceComposeTest {
         composeRule.runOnIdle { assertEquals(logsBeforeHistory, fixture.viewModel.uiState.value.logs) }
     }
 
+    @Test
+    fun copyAllWritesTheWholeHistoryOldestFirstInOneTapWithoutChangingTheGame() {
+        val fixture = historyFixture()
+        val chronological = fixture.controller.logs.toList()
+        assertTrue("History must include events older than the latest five", chronological.size > 5)
+        val clipboard = RecordingClipboard()
+        show(fixture, width = 360, height = 740, fontScale = 1.5f, clipboard = clipboard)
+        val collapsedBounds = gameplayBounds()
+
+        composeRule.onNodeWithText("履歴").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("log-history-drawer").assertIsDisplayed()
+        composeRule.onNodeWithTag(LOG_HISTORY_COPY_STATUS_TEST_TAG).assertDoesNotExist()
+        val stateWithHistoryOpen = composeRule.runOnIdle {
+            assertTrue("Opening the history must not write to the clipboard", clipboard.writtenTexts.isEmpty())
+            fixture.viewModel.uiState.value
+        }
+        val phase = fixture.controller.engine!!.currentPhase
+        val currentPlayerId = fixture.controller.currentPlayer!!.id
+
+        composeRule.onNodeWithTag(LOG_HISTORY_COPY_TEST_TAG).assertIsDisplayed().performClick()
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle {
+            // One tap writes every entry, oldest first and one per line, with nothing cut or added.
+            assertEquals(chronological, clipboard.writtenTexts.single().split("\n"))
+            assertEquals("The history must never read the clipboard", 0, clipboard.reads)
+        }
+        // The list shows the newest entry first; the copy ends with it.
+        composeRule.onNodeWithTag("log-history-entry-0", useUnmergedTree = true).assertTextEquals(chronological.last())
+        assertCopyFeedback("全${chronological.size}件をコピーしました")
+        composeRule.onNodeWithTag("log-history-drawer").assertIsDisplayed()
+        assertHistoryPopupPlacement()
+        assertGameplayBoundsEqual(collapsedBounds, gameplayBounds())
+        composeRule.runOnIdle {
+            assertEquals(stateWithHistoryOpen, fixture.viewModel.uiState.value)
+            assertEquals(chronological, fixture.controller.logs)
+            assertEquals(phase, fixture.controller.engine!!.currentPhase)
+            assertEquals(currentPlayerId, fixture.controller.currentPlayer!!.id)
+        }
+    }
+
+    @Test
+    fun copyAllCopiesTheLatestHistoryOnEveryTap() {
+        val fixture = dugFixture()
+        val clipboard = RecordingClipboard()
+        show(fixture, width = 390, height = 844, clipboard = clipboard)
+        composeRule.onNodeWithText("履歴").performClick()
+        composeRule.waitForIdle()
+        val copyAll = composeRule.onNodeWithTag(LOG_HISTORY_COPY_TEST_TAG)
+
+        val earlier = composeRule.runOnIdle { fixture.controller.logs.toList() }
+        copyAll.performClick()
+        composeRule.waitForIdle()
+        assertCopyFeedback("全${earlier.size}件をコピーしました")
+
+        // Events that arrive while the history stays open retire the earlier result.
+        val latest = composeRule.runOnIdle {
+            assertTrue(fixture.controller.finishTurn().success)
+            fixture.publishPreparedState()
+            fixture.controller.logs.toList()
+        }
+        assertTrue("Finishing the turn must add events", latest.size > earlier.size)
+        composeRule.onNodeWithTag("log-history-count", useUnmergedTree = true)
+            .assertTextEquals("履歴（${latest.size}件）")
+        composeRule.onNodeWithTag(LOG_HISTORY_COPY_STATUS_TEST_TAG).assertDoesNotExist()
+
+        copyAll.performClick()
+        copyAll.performClick()
+        composeRule.waitForIdle()
+
+        composeRule.runOnIdle {
+            assertEquals(listOf(earlier, latest, latest), clipboard.writtenTexts.map { it.split("\n") })
+        }
+        assertCopyFeedback("全${latest.size}件をコピーしました")
+        composeRule.onNodeWithTag("log-history-drawer").assertIsDisplayed()
+    }
+
+    @Test
+    fun copyAllReportsARefusedCopyWithoutClaimingSuccess() {
+        val fixture = historyFixture()
+        val clipboard = RecordingClipboard(rejectWrites = true)
+        show(fixture, clipboard = clipboard)
+        val logs = fixture.viewModel.uiState.value.logs
+
+        composeRule.onNodeWithText("履歴").performClick()
+        composeRule.onNodeWithTag(LOG_HISTORY_COPY_TEST_TAG).performClick()
+        composeRule.waitForIdle()
+
+        assertCopyFeedback("コピーできませんでした")
+        composeRule.onNodeWithText("コピーしました", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithTag("log-history-drawer").assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertTrue(clipboard.writtenTexts.isEmpty())
+            assertEquals(logs, fixture.viewModel.uiState.value.logs)
+        }
+    }
+
+    @Test
+    fun historyCopyAndCloseKeepFullTouchTargetsAt360By740Viewport() {
+        assertHistoryHeaderControlsFit(width = 360, height = 740)
+    }
+
+    @Test
+    fun historyCopyAndCloseKeepFullTouchTargetsAt360By740ViewportAt150PercentFontScale() {
+        assertHistoryHeaderControlsFit(width = 360, height = 740, fontScale = 1.5f)
+    }
+
+    @Test
+    fun historyCopyAndCloseKeepFullTouchTargetsAt390By844ViewportAt150PercentFontScale() {
+        assertHistoryHeaderControlsFit(width = 390, height = 844, fontScale = 1.5f)
+    }
+
+    private fun assertHistoryHeaderControlsFit(width: Int, height: Int, fontScale: Float = 1f) {
+        show(historyFixture(), width, height, fontScale)
+        composeRule.onNodeWithText("履歴").performClick()
+        composeRule.waitForIdle()
+        assertHistoryPopupPlacement()
+        val drawer = composeRule.onNodeWithTag("log-history-drawer")
+
+        val buttonBounds = listOf("全件コピー", "閉じる").map { label ->
+            val button = composeRule.onNode(hasText(label) and hasClickAction())
+                .assertIsDisplayed()
+                .assertHeightIsAtLeast(44.dp)
+                .assertWidthIsAtLeast(44.dp)
+            assertFitsInside(button, drawer)
+            val text = composeRule.onNode(hasText(label) and hasAnyAncestor(hasClickAction()), useUnmergedTree = true)
+            assertTextDoesNotOverflow(text)
+            assertFitsInsideClickTarget(text)
+            button.fetchSemanticsNode().boundsInRoot
+        }
+        assertFalse("全件コピー and 閉じる must not overlap", buttonBounds[0].overlaps(buttonBounds[1]))
+        val title = composeRule.onNodeWithTag("log-history-count", useUnmergedTree = true).assertIsDisplayed()
+        assertTextDoesNotOverflow(title)
+        assertFitsInside(title, drawer)
+    }
+
+    private fun assertCopyFeedback(message: String) {
+        val feedback = composeRule.onNodeWithTag(LOG_HISTORY_COPY_STATUS_TEST_TAG, useUnmergedTree = true)
+            .assertIsDisplayed()
+            .assertTextEquals(message)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+        assertTextDoesNotOverflow(feedback)
+        assertFitsInside(feedback, composeRule.onNodeWithTag("log-history-drawer"))
+    }
+
     private fun show(
         fixture: Fixture,
         width: Int = 360,
         height: Int = 740,
         fontScale: Float = 1f,
+        clipboard: RecordingClipboard = RecordingClipboard(),
     ) {
         composeRule.setContent {
-            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = fontScale)) {
+            CompositionLocalProvider(
+                LocalDensity provides Density(density = 1f, fontScale = fontScale),
+                LocalClipboard provides clipboard,
+            ) {
                 Box(Modifier.requiredSize(width.dp, height.dp).testTag(VIEWPORT_TAG)) {
                     MoguraGameScreen(viewModel = fixture.viewModel)
                 }
@@ -755,14 +912,20 @@ class ActionGuidanceComposeTest {
     }
 
     private fun historyFixture(): Fixture {
+        val fixture = dugFixture()
+        assertTrue(fixture.controller.finishTurn().success)
+        fixture.publishPreparedState()
+        return fixture
+    }
+
+    /** The first player has placed the dug tile and may still move, so finishing the turn adds events. */
+    private fun dugFixture(): Fixture {
         val fixture = initialDigTShapeFixture()
         fixture.viewModel.onCellClicked(fixture.controller.digTargets().single())
         assertTrue(fixture.viewModel.uiState.value.showDigControls)
         fixture.viewModel.selectDigChoice(DigTileChoice.DRAWN)
         fixture.viewModel.confirmDigPlacement()
         assertEquals(TurnPhase.MOVE, fixture.controller.engine!!.currentPhase)
-        assertTrue(fixture.controller.finishTurn().success)
-        fixture.publishPreparedState()
         return fixture
     }
 

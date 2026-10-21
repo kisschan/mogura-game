@@ -1,3 +1,20 @@
+## 2026-10-21 ログ履歴の全件コピー・レビューと検証完了
+
+- 最終更新日: 2026-10-21。ユーザー依頼の「ログもワンタップでコピー」に対応。`claude -p` が実装し、Codexが独立に差分レビューと検証を実施。`codex/tutorial-mode-77` の通常PR #78へ追加する。バージョンは同PRの23を維持。
+- ログ履歴の「全件コピー」で、その時点の全履歴を古い順・改行区切りでコピーする。成功/失敗は履歴内に表示・読み上げし、通常対戦・練習で共通利用する。クリップボードを読む処理はない。対象6ファイルは `AGENT.md`、`PROGRESS.md`、`GameScreen.kt`、`ActionGuidanceComposeTest.kt`、`TutorialPlayScreenComposeTest.kt`、新規 `RecordingClipboard.kt`。
+- 検証: 秘密設定を参照しないソース専用コピーで `:androidApp:testDebugUnitTest :androidApp:compileDebugAndroidTestKotlin :androidApp:lintDebug --continue` が `BUILD SUCCESSFUL`。Android JVM226件成功・失敗/エラー0、追加7件を含むComposeテストのコンパイル成功。Lintはエラー0・既存と同じ警告15・Hint1。変更したKotlin4ファイルが検証コピーと一致し、`git diff --check` も成功。記録: `.codex-analysis/tutorial/log-copy-validation-20261021.log`。
+- core/desktopは変更せず、直前のcore330件・Desktop63件成功/既存3件スキップを維持。接続端末がないため、追加Composeテストの実行、実表示・タップ・TalkBack・実際のクリップボードへの書き込みは未検証。
+- 次作業: 変更をコミット・pushし、規約の5分待機後にPR #78の本文・CI・レビューを確認する。以下はClaude実装時点の履歴。
+
+## 2026-10-21 ログ履歴の全件コピー（Claude実装時点の記録・検証待ち）
+
+- 最終更新日: 2026-10-21。ユーザー依頼「ログもワンタップでコピーできる様にして」。`claude -p` が `codex/tutorial-mode-77` 上で実装し、Codexがレビューと `.codex-analysis/tutorial/verify.ps1` での検証を担当する。コミット・push・PR作成なし。`versionCode` / `versionName` は23のまま。
+- 仕様: 実装前に `AGENT.md` のログルールへ2項目を追記。履歴を開いた状態の1タップで、その時点のログ全件を古い順・改行区切りで、画面外の古いログも省略せずクリップボードへ書き込む（通常対戦・練習とも）。成功・失敗を履歴内に表示して読み上げにも伝え、端末に拒否された場合は失敗と表示する。クリップボードの読み取り、履歴を閉じること、ゲーム状態・ログ・CPU停止の変更、ゲーム操作の追加は行わない。盤面・操作バー・最新ログのタップ動作は変えず、ボタンは44dp以上、狭い画面・文字拡大時は見出し行を折り返す。
+- 実装（`GameScreen.kt` の `LogHistoryPopup` のみ）: 見出し行を `FlowRow` にし、「履歴（N件）」の横に「全件コピー」「閉じる」を置く（入りきらない場合は2つのボタンがまとめて次の行へ移る）。「全件コピー」は既存の `LocalClipboard`（Compose標準、依存追加なし）へ `ClipData.newPlainText("ログ履歴", logs.joinToString("\n"))` を書き込む。クリップボードはPopupの外で取得する（Popupのウィンドウが独自のプラットフォーム値を渡す可能性があるため）。成功時は「全N件をコピーしました」、例外時は「コピーできませんでした」を見出しの下に表示し、`liveRegion = Polite` で読み上げる。表示はコピーした時点のログ一覧に対応し、ログが増えると消える。毎回タップ時点のログを使う。テスト用タグ `LOG_HISTORY_COPY_TEST_TAG` / `LOG_HISTORY_COPY_STATUS_TEST_TAG` を追加。
+- テスト（実装より先に追加。端末未実行）: 新規 `RecordingClipboard`（androidTest。端末のクリップボードの代わりに書き込みを記録し、拒否も再現できる。読み取り回数を数え、ネイティブのクリップボードには触れない）。`ActionGuidanceComposeTest` と `TutorialPlayScreenComposeTest` の `show()` は常にこれを `LocalClipboard` に渡す。追加テスト: 360×740・文字1.5倍で1タップで全件が古い順・改行区切りで一致、履歴は開いたまま、ゲーム状態・ログ・フェーズ・手番・盤面と操作バーの位置が不変、クリップボードを読まない、成功表示と読み上げ（`ActionGuidanceComposeTest`）。履歴を開いたままログが増えると成功表示が消え、再タップで最新のログ全件、続けてのタップでも同じ内容（同）。拒否時は失敗表示のみで成功と表示しない（同）。360×740・360×740の文字1.5倍・390×844の文字1.5倍で「全件コピー」「閉じる」が44dp以上・履歴内に収まり重ならず、文字が切れない（同）。練習の基本編第3章で全件コピーしても練習状態・通常保存が不変（`TutorialPlayScreenComposeTest`）。`historyFixture` を、移動フェーズで止める `dugFixture` と手番終了に分けた（既存テストの状態は同じ）。
+- `MobileGameplayLayoutContractTest` は変更なし（`joinToString` をなぞるだけのJVMテストを避け、実寸・内容はComposeテストで確認）。core・desktopは変更なし。
+- 未実施: Claudeはシェルを持たないため、Gradle・コンパイル・テストは一切実行していない。Codexによる隔離検証（JVM回帰・instrumentationのコンパイル・Lint）待ち。接続端末がないため、Composeテストの実行、実表示、TalkBack、実際のクリップボードへの書き込みは未検証。
+
 ## 2026-10-21 チュートリアルモードのPR準備（v23）
 
 - 最終更新日: 2026-10-21。ユーザー依頼によりAndroidの `versionCode` / `versionName` を22から23へ更新。最新main `71a61ec` を取り込み、`codex/tutorial-mode-77` からmain向け通常PRへまとめる。

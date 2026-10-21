@@ -2,6 +2,7 @@ package com.moguru.game.android
 
 import com.moguru.game.cpu.CpuDifficulty
 
+import android.content.ClipData
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -65,6 +66,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -86,16 +88,20 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.imageResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -137,6 +143,8 @@ import com.moguru.game.presenter.RobberyTargetDisplay
 import com.moguru.game.presenter.displayName
 import com.moguru.game.tutorial.TutorialControl
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 internal const val BOARD_HIGHLIGHT_Z = 15f
 internal const val BOARD_TILE_Z = 20f
@@ -164,6 +172,8 @@ internal const val ACTIVE_GAMEPLAY_USES_VERTICAL_SCROLL = false
 internal const val LOG_HISTORY_COLLAPSED_BY_DEFAULT = true
 internal const val LOG_HISTORY_LIST_TEST_TAG = "log-history-list"
 internal const val LOG_HISTORY_ENTRY_TEST_TAG_PREFIX = "log-history-entry-"
+internal const val LOG_HISTORY_COPY_TEST_TAG = "log-history-copy"
+internal const val LOG_HISTORY_COPY_STATUS_TEST_TAG = "log-history-copy-status"
 internal const val AUDIO_SETTINGS_BUTTON_TEST_TAG = "audio-settings-button"
 internal const val GAME_MENU_BUTTON_TEST_TAG = "game-menu-button"
 internal const val GAME_MENU_RULES_ITEM_TEST_TAG = "game-menu-rules-item"
@@ -1874,6 +1884,9 @@ internal class AboveAnchorPopupPositionProvider(
     }
 }
 
+/** What 全件コピー reports in the history; [failed] when the platform refused the clip. */
+private data class LogCopyFeedback(val message: String, val failed: Boolean)
+
 @Composable
 private fun LogHistoryPopup(
     logs: List<String>,
@@ -1901,6 +1914,26 @@ private fun LogHistoryPopup(
             verticalGapPx = verticalGapPx,
         )
     }
+    // Read before the popup, whose own window may provide platform values instead of this screen's.
+    val clipboard = LocalClipboard.current
+    val copyScope = rememberCoroutineScope()
+    // Describes the copied snapshot only; new log entries clear it.
+    var copyFeedback by remember(logs) { mutableStateOf<LogCopyFeedback?>(null) }
+    val copyAll = soundEffectClick {
+        val copiedLogs = logs
+        copyScope.launch {
+            copyFeedback = try {
+                // Oldest first, as the game recorded them, unlike the newest-first list.
+                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("ログ履歴", copiedLogs.joinToString("\n"))))
+                LogCopyFeedback("全${copiedLogs.size}件をコピーしました", failed = false)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // The platform may refuse the clip, for example when it is too large to transfer.
+                LogCopyFeedback("コピーできませんでした", failed = true)
+            }
+        }
+    }
 
     Popup(
         popupPositionProvider = positionProvider,
@@ -1927,29 +1960,53 @@ private fun LogHistoryPopup(
                 modifier = Modifier.padding(10.dp),
                 verticalArrangement = Arrangement.spacedBy(5.dp),
             ) {
-                Row(
+                // The buttons move below the title together when large text leaves no room beside it.
+                FlowRow(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Text(
                         text = "履歴（${logs.size}件）",
                         modifier = Modifier
-                            .weight(1f)
+                            .align(Alignment.CenterVertically)
                             .testTag("log-history-count")
                             .semantics { heading() },
                         color = Color(0xFF2E2115),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Black,
                     )
-                    TextButton(
-                        onClick = soundEffectClick(onClick = onDismiss),
-                        modifier = Modifier
-                            .widthIn(min = 44.dp)
-                            .heightIn(min = 44.dp),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                    ) {
-                        Text("閉じる", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Row {
+                        TextButton(
+                            onClick = copyAll,
+                            modifier = Modifier
+                                .widthIn(min = 44.dp)
+                                .heightIn(min = 44.dp)
+                                .testTag(LOG_HISTORY_COPY_TEST_TAG),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        ) {
+                            Text("全件コピー", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        TextButton(
+                            onClick = soundEffectClick(onClick = onDismiss),
+                            modifier = Modifier
+                                .widthIn(min = 44.dp)
+                                .heightIn(min = 44.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        ) {
+                            Text("閉じる", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
+                }
+                copyFeedback?.let { feedback ->
+                    Text(
+                        text = feedback.message,
+                        modifier = Modifier
+                            .testTag(LOG_HISTORY_COPY_STATUS_TEST_TAG)
+                            .semantics { liveRegion = LiveRegionMode.Polite },
+                        color = if (feedback.failed) Color(0xFF8A302A) else Color(0xFF2F5A26),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
                 }
                 Text("新しい順・スクロールで過去のログを表示", fontSize = 11.sp, color = Color(0xFF6A543C))
                 LazyColumn(

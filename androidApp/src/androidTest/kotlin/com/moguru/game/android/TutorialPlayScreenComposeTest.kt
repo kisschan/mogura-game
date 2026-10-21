@@ -7,6 +7,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
@@ -16,6 +17,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -308,6 +310,34 @@ class TutorialPlayScreenComposeTest {
         composeRule.runOnIdle { assertEquals(0, practice.store.saves) }
     }
 
+    // ---- Log history ----
+
+    @Test
+    fun practiceHistoryCopiesEveryEntryWithoutMovingThePracticeOn() {
+        // Chapter 3 starts after replaying chapters 1 and 2, so its history already holds their events.
+        val practice = PracticeDriver(TutorialLessonId.BASIC, startChapter = 2)
+        val clipboard = RecordingClipboard()
+        show(practice.vm, width = 360, height = 740, fontScale = 1.5f, clipboard = clipboard)
+
+        composeRule.onNodeWithText("履歴").performClick()
+        composeRule.onNodeWithTag("log-history-drawer").assertIsDisplayed()
+        val before = composeRule.runOnIdle { practice.state }
+        assertTrue(before.logs.isNotEmpty())
+        composeRule.onNodeWithTag(LOG_HISTORY_COPY_TEST_TAG).performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag(LOG_HISTORY_COPY_STATUS_TEST_TAG, useUnmergedTree = true)
+            .assertIsDisplayed()
+            .assertTextEquals("全${before.logs.size}件をコピーしました")
+        composeRule.onNodeWithTag("log-history-drawer").assertIsDisplayed()
+        composeRule.runOnIdle {
+            assertEquals(before.logs, clipboard.writtenTexts.single().split("\n"))
+            assertEquals(0, clipboard.reads)
+            assertEquals(before, practice.state)
+            assertEquals(0, practice.store.saves)
+        }
+    }
+
     // ---- Helpers ----
 
     private fun show(
@@ -315,10 +345,14 @@ class TutorialPlayScreenComposeTest {
         width: Int = 360,
         height: Int = 740,
         fontScale: Float = 1f,
+        clipboard: RecordingClipboard = RecordingClipboard(),
     ): MutableState<AndroidGameViewModel> {
         val screen = mutableStateOf(vm)
         composeRule.setContent {
-            CompositionLocalProvider(LocalDensity provides Density(density = 1f, fontScale = fontScale)) {
+            CompositionLocalProvider(
+                LocalDensity provides Density(density = 1f, fontScale = fontScale),
+                LocalClipboard provides clipboard,
+            ) {
                 Box(Modifier.requiredSize(width.dp, height.dp).testTag(VIEWPORT_TAG)) {
                     MoguraGameScreen(viewModel = screen.value)
                 }
