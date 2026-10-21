@@ -22,6 +22,22 @@ class EatRecoverySoundEffectTriggerTest {
         assertNull(trigger.soundEffectFor(first))
     }
 
+    @Test
+    fun `a later playback generation plays its reused IDs once and an earlier one stays silent`() {
+        val trigger = EatRecoverySoundEffectTrigger()
+        val first = event(11L)
+        val next = event(12L)
+
+        assertEquals(AndroidSoundEffect.EAT_RECOVERY, trigger.soundEffectFor(next, generation = 1L))
+        assertNull(trigger.soundEffectFor(first, generation = 1L))
+        // A restarted chapter, another lesson or a new match numbers its meals again.
+        assertEquals(AndroidSoundEffect.EAT_RECOVERY, trigger.soundEffectFor(first, generation = 2L))
+        assertNull(trigger.soundEffectFor(first, generation = 2L))
+        assertNull(trigger.soundEffectFor(next, generation = 1L))
+        assertNull(trigger.soundEffectFor(event(13L), generation = 1L))
+        assertEquals(AndroidSoundEffect.EAT_RECOVERY, trigger.soundEffectFor(next, generation = 2L))
+    }
+
     private fun event(id: Long): EatAnimationEvent =
         EatAnimationEvent(
             id = id,

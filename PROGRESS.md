@@ -1,3 +1,49 @@
+## 2026-10-21 チュートリアルモードのPR準備（v23）
+
+- 最終更新日: 2026-10-21。ユーザー依頼によりAndroidの `versionCode` / `versionName` を22から23へ更新。最新main `71a61ec` を取り込み、`codex/tutorial-mode-77` からmain向け通常PRへまとめる。
+- コミット対象: Issue #77の操作練習（基本編6章・追加レッスン5種）、coreのシナリオ/進捗、Androidの画面/保存分離/演出制御、回帰テスト、要件定義書・AGENT/CLAUDE・本進捗、Androidバージョン設定。実装・指摘修正は `claude -p`、独立レビュー・検証はCodexが担当。
+- v23で隔離検証の `:core:test :desktop:test :androidApp:testDebugUnitTest :androidApp:compileDebugAndroidTestKotlin :androidApp:lintDebug --continue` が `BUILD SUCCESSFUL`（変更のないタスクは直前の成功結果を再利用）。core330件・Android226件・Desktop63件の計619件成功、Desktop既存3件スキップ、失敗/エラー0。生成されたAndroidManifestでもコード/名称が23で一致。Lintはエラー0・警告15・Hint1。記録: `.codex-analysis/tutorial/v23-validation-20261021.log`。
+- 元の秘密設定は参照せず、証明書ファイルを開く既存 `GradlePropertiesTest` 2件は隔離検証から除外。実機/エミュレーターでのComposeテスト実行・表示・タッチ・読み上げ・プロセス終了/復帰は引き続き未検証。
+- 次作業: コミット・push、規約の5分待機後にmain向け通常PRを作成。PR作成後も5分待機してレビュー・コメント・CIを確認する。以下は各作業時点の履歴。
+
+## 2026-10-21 チュートリアルモード Issue #77 最終レビュー・自動検証完了
+
+- 最終更新日: 2026-10-21。ユーザー指定どおり `claude -p` が実装・修正し、Codexが独立してコードレビュー、再現テスト、最終検証を実施。基本編6章と追加レッスン5種を実装。Issue: https://github.com/kisschan/mogura-game/issues/77 。ブランチは `codex/tutorial-mode-77`、変更は未コミット（push・PR作成なし）。
+- レビュー指摘4件を修正: 古い「次へ」を世代＋説明シリアルで拒否、練習のダイス・演出の入力遮断をHUDより下に限定してメニューの読み上げも維持、山札枚数のテスト期待値を1へ修正、食事・逃走の効果音を世代＋イベントIDで重複判定。効果音の不具合はCodexが実操作による章再開で先に再現し、Claudeの修正後に同じプローブが成功した。
+- 最終検証: `.codex-analysis/tutorial/verify.ps1` から `:core:test :desktop:test :androidApp:testDebugUnitTest :androidApp:compileDebugAndroidTestKotlin :androidApp:lintDebug --continue` を実行し `BUILD SUCCESSFUL`。core330件・Android226件・Desktop63件＝製品テスト619件成功、Desktopの既存3件スキップ、失敗/エラー0。別途Codexの効果音再現プローブ1件成功。Androidの全6レッスン完走、通常保存4状態の保持、設定・乱数の分離、進捗失敗/再試行/章からの再開、古い操作・相手役予約・演出通知、効果音の再生を確認。
+- 追加のComposeテストはコンパイル成功。練習メニュー、演出中の操作・Semantics、360×740/390×844と文字倍率1/1.2/1.5、盤面位置、入口/完了、演出軽減を対象にしている。接続端末がないため、これらのテスト実行・実表示・TalkBack・実際のプロセス終了/復帰は未検証。HUDの修正はコードレビューとコンパイルまでの確認であり、実機で動作確認済みとはしない。
+- Lintはエラー0、警告15、Hint1。従来14警告に加え、`DiceRouletteOverlay` の任意の `modifier` 引数の位置に関する `ModifierParameter` 警告が1件ある。機能上の失敗ではなく、依存関係・製品ビルド設定は変更していない。
+- 元の秘密設定・署名ファイルを読み込まない検証用コピーを使用。証明書ファイルを読む既存 `GradlePropertiesTest` 2件は従来どおり除外。検証したKotlinソース147ファイルが作業ツリーと一致し、`git diff --check` も成功。レビュー用一時テストは検証コピーから削除し、再現用の原本だけ `.codex-analysis/tutorial` に保持。
+- 記録: `.codex-analysis/tutorial/final-validation-20261021.log`、`review-feedback.txt`、`review-status.txt`、Claudeの `resume-20261021-retry-events.jsonl` / `review-followup-20261021-events.jsonl`。下記は実装時点の履歴であり、検証待ちの記述はこの最終結果で更新された。
+- 残る確認: 実機/エミュレーターでComposeテストを実行し、表示・タッチ・読み上げ・プロセス終了/復帰を確認する。
+
+## 2026-10-21 チュートリアルモード Issue #77 レビュー指摘の修正（Claude実装時点の記録）
+
+- 最終更新日: 2026-10-21。ユーザー指定により `claude -p` が修正し、Codexが独立にレビュー・`verify.ps1` で検証する。ブランチは `codex/tutorial-mode-77` のまま。コミット・push・PR作成なし。Claudeはシェルを持たないため、Gradle・テストは一切実行していない。
+- Codexの検証報告（HUD下の遮断層の修正前）: core 330件成功、desktop 63件成功/既存3件スキップ、Android JVM 221件成功（`AndroidTutorialTest` 17件を含む）。その後のHUD修正では `Modifier.belowPlayHud()` が `WindowInsets.safeDrawing` を非Composable文脈で読みコンパイル不可となったため、Composable側で読んだ上端insetを引数で渡す形に修正済み。この修正と指摘4の修正以降の結果は未確認。
+- 指摘1（説明確認）: `acknowledgeTutorial(generation, explanationSerial)` に変更し、画面世代と説明シリアルの両方が一致した場合だけ進める。既定値なし。操作バーの「次へ」は表示時点の世代とシリアルを捕まえて渡す。
+- 指摘2（ダイス・演出中の練習メニュー）: 練習中だけ、捕獲ダイス表示と捕獲・食事・体力消費の入力遮断層をHUDの下（上端の安全領域＋余白＋HUD高）から覆う。既存のHUDメニューの「この章をやり直す」「練習を終了」にタッチで届く。読み上げでは、演出中も練習HUDを残し、盤面と操作バーだけを従来どおり隠す。通常対戦の全画面遮断・Back消費・盤面の位置と大きさは変更なし。
+- 指摘3: `AdditionalLessonsTest` の第5章開始時の山札期待値を1に修正（エンジンは変更なし）。
+- 指摘4（章やり直し後の効果音、Codexの検証待ち）: 捕獲失敗・食事回復の効果音の重複防止を、イベントIDだけでなくプレイバック世代込みで判定する。`CaptureFailureSoundEffectTrigger`/`EatRecoverySoundEffectTrigger` は最後に鳴らした（世代, ID）を保持し、同じ世代ではそのID以下を鳴らさず、新しい世代では同じIDも1回だけ鳴らし、古い世代は鳴らさない。ViewModelの `captureFailureSoundEffectFor`/`eatRecoverySoundEffectFor(event, generation)` は現在の世代以外を無視する（既定値は現在の世代）。画面は表示中の世代を渡し、効果音のLaunchedEffectを世代ごとに作り直す。同じ世代の再通知とActivity再作成時の二重再生の抑止は従来どおり（ViewModelが状態を保持）。先に追加したテスト: トリガー単体（世代違いの同じID・古い世代の無音）各1件、`AndroidTutorialTest` 3件（NEST_EAT/DICE_ESCAPEの章やり直し、レッスン切替・終了後の再開始、練習後に開始した通常対戦の最初の逃走・食事）。
+- 追加したAndroid JVMテスト `AndroidTutorialTest`（実ViewModel・手動タイマー・演出完了通知経由）: 説明確認の正当な確認／連打、レッスン切替・章再開・終了後の再開始での古い確認の無効化。全6レッスン完走（説明中・演出中は相手役の予約なし、完了は演出後のみ、完了後の予約なし、通常セーブ読込1回・書込0回）。通常保存の無し・途中・終了済み・破損で、練習後も保存と表示が不変で、途中/終了済みは練習前と同じ状態に再開、破損は上書き確認を維持。設定（人数・モグラ・巣・先手・CPU席・難易度）と乱数・駒透が練習で変わらないこと（同じシードの参照対局と一致）。進捗の読込失敗→未記録表示→次の保存で置換、保存失敗中も練習継続→再試行で最新の記録、プロセス終了後に章の先頭から再開（途中操作は再適用しない）。章再開・終了後の古い相手役予約、同じIDを再使用する捕獲・食事・体力消費・ダイス着地の古い完了通知が状態を変えないこと。
+- 追加したinstrumentationテスト（端末未実行。Codexはコンパイルのみ可能）: `TutorialPlayScreenComposeTest`（ダイス表示中・捕獲/食事/体力消費の演出中にHUDメニューへタッチと読み上げで到達してやり直し/終了、通常対戦のダイス表示はメニューを遮断、360×740・390×844と文字倍率1/1.2/1.5で盤面とHUDが通常対戦と同じ位置・大きさで第1章を通して不動、設定画面からの入口・「次へ」・終了、古い「次へ」ボタンのタップ無効、完了画面）、`TutorialReducedMotionComposeTest`（演出軽減時のダイス・捕獲の自動完了と盤面不動）、共通ドライバー `TutorialComposeTestSupport`。
+- 未完了: Codexによる `verify.ps1` での全モジュール回帰・instrumentationのコンパイル・Lint、端末/エミュレーターでのCompose実行・実表示・読み上げ・プロセス終了/復帰の確認。`.codex-analysis/tutorial` のレビュー用プローブのうち `ReviewTutorialLifecycleTest`/`ReviewTutorialPlaybackTest` は旧シグネチャ `acknowledgeTutorial(serial)` を使うため、そのままでは新APIでコンパイルできない（製品テストへ置き換え済み）。`ReviewTutorialSoundTest` は新シグネチャで変更不要（世代を省いた効果音の問い合わせは現在の世代として扱う）。
+
+## 2026-10-20 チュートリアルモード Issue #77（実装途中・レビュー修正待ち）
+
+- ユーザー指定により `claude -p` が実装し、Codexがコードレビューと隔離ビルドを担当。Issue: https://github.com/kisschan/mogura-game/issues/77 。作業ブランチは `codex/tutorial-mode-77`。コミット・push・PR作成は未実施。
+- Claudeが利用上限で停止したため、完了扱いにはしない。次の解除表示は2026-10-20 23:10（日本時間）。実装担当をCodexへ変更するか、Claudeの利用枠が戻ってから続行するかをユーザーへ確認中。
+- 追加済み: 要件16章と6・14・15章の注記、AGENT/CLAUDEとの整合。coreの `TutorialModel` / `TutorialScenario` / `TutorialSession` / `TutorialSteps` / `TutorialScenarios` / `TutorialProgress`。基本編6章、追加レッスン5種、合法手の再生による開始状態、操作の許可判定、章再開、進捗Codec。
+- 追加済み（レビュー修正未反映）: Androidの `TutorialProgressRepository` / `TutorialScreens`、ViewModelの練習セッション・通常保存との分離・進捗保存・演出/相手役の制御、設定/再開画面/遊び方からの入口、HUDメニュー、対象の枠、完了画面。通常のゲームルール・保存形式v3・デスクトップUIは変更していない。
+- Claude作成のcoreテスト: `TutorialSessionTest` / `TutorialLessonsTest` / `AdditionalLessonsTest` / `TutorialProgressTest` と共通ヘルパー。追加後の31件中30件成功、1件失敗。基本編と追加レッスンの完走・各章の再開・許容分岐・拒否時不変性・体力/得点/逃走/強奪/防衛・進捗の版互換を確認。失敗は `AdditionalLessonsTest.kt:135` の山札期待値（2ではなく1。手番開始時の1枚は引かれている）。
+- 最初のcore全体検証は307件中306件成功。公開直後の案内文に関する当時の失敗は、Claudeによる `LARVA_REVEALED` の修正後に解消した。
+- Androidの既存JVMテスト204件は成功。Codexのレビュー用一時テスト2件では、練習中に通常保存を再読み込みしない検査が成功し、別レッスンへ切り替えた後に古い説明確認を送る検査が失敗。`acknowledgeTutorial` は説明シリアルだけを比較し、新しいセッションで番号が再使用されるため、画面世代も照合する必要がある。
+- Codexの別のレビュー用テストで、Androidの操作入口・演出完了通知・手動CPUスケジューラーを通して全6レッスンを完走し、通常セーブへの書き込み0回・通常勝利表示なし・完了後の予約なしを確認。一時テストは `.codex-analysis/tutorial` に保存し、製品のテストソースには追加していない。
+- 静的レビュー指摘: 捕獲ダイスの全画面入力遮断とBackHandlerにより、練習のHUDメニューから「終了/章やり直し」を常に利用する要件を満たさない。練習中の捕獲表示にも到達できる終了/再開導線を設け、通常対戦の背面入力遮断を維持する必要がある。
+- Android本体と既存instrumentationソースのコンパイル成功。`:androidApp:lintDebug` はエラー0、警告14、Hint 1。端末がないため、Composeの実行・360×740/390×844の実表示・文字拡大・読み上げ・実機のプロセス終了/復帰は未検証。
+- 検証は `.codex-analysis/tutorial/verify.ps1` のソース専用コピーで実行。署名や秘密情報を含み得る元の設定を読み込まず、証明書ファイルを参照する既存 `GradlePropertiesTest` 2件は対象外。変更前の基準はcore299件・Android204件・Desktop63件成功、Desktopの既存3件スキップ。
+- 残作業: 上記レビュー指摘の修正、Androidの保存状態4種・進捗の失敗/再開・古い通知・UI導線/レイアウトを覆う製品テストの追加、全モジュールの最終回帰、端末検証。詳細と再現用ソースは `.codex-analysis/tutorial/review-feedback.txt`、検証ログは同ディレクトリに保持。
+
 ## 2026-10-14 CPU難易度・相手対応戦略のPR準備（v22）
 
 - 最終更新日: 2026-10-14

@@ -88,6 +88,8 @@ private data class RuleDetailSection(
 internal fun RulesScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    /** Opens the practice lessons. Null where practice is not offered, such as during play. */
+    onPractice: (() -> Unit)? = null,
 ) {
     BackHandler(onBack = onBack)
 
@@ -109,6 +111,28 @@ internal fun RulesScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             RulesHeroCard()
+
+            onPractice?.let { practice ->
+                OutlinedButton(
+                    onClick = practice,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp)
+                        .testTag(TUTORIAL_RULES_BUTTON_TEST_TAG),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(2.dp, Color(TUTORIAL_FRAME_ARGB)),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = Color.White.copy(alpha = 0.72f),
+                        contentColor = RulesInk,
+                    ),
+                ) {
+                    Text(
+                        text = "操作を練習する（実際の盤面で）",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Black,
+                    )
+                }
+            }
 
             RulesSectionTitle("まず、これだけ覚えよう")
             RulesGoalCard()

@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
                     saveRepository = GameSaveDependencies.repositoryFactory(applicationContext),
                     saveIo = GameSaveDependencies.ioFactory(),
                     cpuScheduler = MainHandlerCpuStepScheduler(),
+                    tutorialProgressRepository = TutorialProgressDependencies.repositoryFactory(applicationContext),
                 ) as T
             }
         })[AndroidGameViewModel::class.java]

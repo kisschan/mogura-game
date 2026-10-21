@@ -197,12 +197,15 @@ internal fun EatAnimationOverlay(
     }
 }
 
-/** A transparent sibling blocks every game control, including system back, during playback. */
+/**
+ * A transparent sibling blocks every game control, including system back, during playback.
+ * [modifier] limits the covered area, such as below the practice HUD.
+ */
 @Composable
-internal fun EatAnimationInputBlocker(event: EatAnimationEvent) {
+internal fun EatAnimationInputBlocker(event: EatAnimationEvent, modifier: Modifier = Modifier) {
     BackHandler {}
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .zIndex(1f)
             .testTag(EAT_ANIMATION_INPUT_BLOCKER_TEST_TAG)

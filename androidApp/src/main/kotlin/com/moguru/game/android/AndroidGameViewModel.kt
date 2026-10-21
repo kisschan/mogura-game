@@ -27,6 +27,13 @@ import com.moguru.game.presenter.PendingCaptureRoll
 import com.moguru.game.presenter.PlayScreenUiState
 import com.moguru.game.presenter.TurnConsumptionAnimationEvent
 import com.moguru.game.persistence.validate
+import com.moguru.game.tutorial.TutorialAction
+import com.moguru.game.tutorial.TutorialControl
+import com.moguru.game.tutorial.TutorialLessonId
+import com.moguru.game.tutorial.TutorialProgress
+import com.moguru.game.tutorial.TutorialScenarios
+import com.moguru.game.tutorial.TutorialSession
+import com.moguru.game.tutorial.TutorialStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -60,6 +67,78 @@ data class AndroidGameUiState(
     val cpuFault: AndroidCpuFault? = null,
     /** Identifies this capture within [playbackGeneration], including the reveal and landing. */
     val diceRouletteEventId: Long? = null,
+    /** The practice lesson on the play screen. Practice never reads or writes the match save. */
+    val tutorial: AndroidTutorialUiState? = null,
+    /** The practice lesson list, while it is open. */
+    val tutorialMenu: AndroidTutorialMenuUiState? = null,
+    /** The completion screen of the lesson just finished, once its playback is over. */
+    val tutorialCompletion: AndroidTutorialCompletionUiState? = null,
+    /** A lesson interrupted when the app last stopped, offered on the entry screens. */
+    val tutorialResume: AndroidTutorialLessonUiState? = null,
+)
+
+data class AndroidTutorialUiState(
+    val lesson: TutorialLessonId,
+    val title: String,
+    /** 1-based chapter number. */
+    val chapter: Int,
+    val chapterCount: Int,
+    val stage: Int,
+    val stageCount: Int,
+    val text: String,
+    /** Why the last operation was refused and what to do instead, until something is accepted. */
+    val notice: String?,
+    val targetCells: Set<Position>,
+    val controls: Set<TutorialControl>,
+    /** 1-based explanation page while an explanation waits for 「次へ」. */
+    val page: Int?,
+    val pageCount: Int?,
+    /** Passed back with 「次へ」, so a repeated tap on an old page is ignored. */
+    val explanationSerial: Long,
+    val opponentTurn: Boolean,
+    val completed: Boolean,
+) {
+    val awaitingAcknowledgement: Boolean get() = page != null
+}
+
+data class AndroidTutorialLessonUiState(
+    val lesson: TutorialLessonId,
+    val title: String,
+    val summary: String,
+    val chapterCount: Int,
+    val completed: Boolean,
+    /** 0-based chapter that can be resumed, or null. */
+    val resumeChapter: Int?,
+)
+
+data class AndroidTutorialMenuUiState(
+    val lessons: List<AndroidTutorialLessonUiState>,
+    /** Progress could not be read, so the list starts from no record. */
+    val progressLoadFailed: Boolean,
+    val progressSaveFailed: Boolean,
+)
+
+data class AndroidTutorialCompletionUiState(
+    val lesson: TutorialLessonId,
+    val title: String,
+    val text: String,
+    val isBasic: Boolean,
+    val progressSaveFailed: Boolean,
+)
+
+/** Where 「練習を終了」 and the completion screen lead. */
+enum class TutorialExit {
+    /** The screen the practice was opened from. */
+    BACK,
+    LESSONS,
+    SETUP,
+}
+
+/** What the screen showed before practice began, restored when it ends. */
+private data class TutorialReturn(
+    val showResumeEntry: Boolean,
+    val boardPiecesTransparent: Boolean,
+    val selectedMovePosition: Position?,
 )
 
 /** Why CPU play stopped. It continues only after an explicit retry. */
@@ -187,12 +266,31 @@ enum class AndroidVisibleAction {
 }
 
 class AndroidGameViewModel(
-    private var controller: MoguraGameController = MoguraGameController(),
+    controller: MoguraGameController = MoguraGameController(),
     private val saveRepository: GameSaveRepository = MemoryGameSaveRepository(),
     private val saveIo: GameSaveIo = ImmediateGameSaveIo,
     private val cpuStrategy: CpuStrategy? = null,
     private val cpuScheduler: CpuStepScheduler = ManualCpuStepScheduler(),
+    private val tutorialProgressRepository: TutorialProgressRepository = MemoryTutorialProgressRepository(),
 ) : ViewModel() {
+    /** The match, with its own randomness. Practice never replaces or plays it. */
+    private var gameController: MoguraGameController = controller
+    private var tutorial: TutorialSession? = null
+    /** The game on screen: the practice game during a lesson, otherwise the match. */
+    private val controller: MoguraGameController
+        get() = tutorial?.controller ?: gameController
+    /** Players moved automatically: the scripted opponent in practice, otherwise the CPU seats. */
+    private val automatedPlayerIds: Set<Int>
+        get() = tutorial?.let { setOf(it.opponentPlayerId) } ?: cpuPlayerIds
+    private var tutorialProgress = TutorialProgress()
+    /** Counts local progress changes. A later load or an older save completion must not undo them. */
+    private var tutorialProgressRevision = 0L
+    private var tutorialProgressLoadFailed = false
+    private var tutorialProgressSaveFailed = false
+    private var showTutorialMenu = false
+    private var tutorialReturn: TutorialReturn? = null
+    private var tutorialRecordedChapter: Int? = null
+    private var tutorialCompleted: TutorialLessonId? = null
     private var savedGame: SavedGame? = null
     private var persistenceBusy = false
     private var saveFailed = false
@@ -243,18 +341,28 @@ class AndroidGameViewModel(
     init { reloadSavedGame() }
 
     fun reloadSavedGame() {
-        if (operationBlocked()) return
+        if (setupBlocked()) return
         persistenceBusy = true
         publishPersistence()
         val generation = playbackGeneration
+        // Learning progress is read in the same task, so the match save still loads in one step.
+        // Its result never decides the match save's state.
         saveIo.execute({
-            saveRepository.load()?.also {
-                it.game.validate()
-                it.requireCpuParticipants()
+            val progress = runCatching { tutorialProgressRepository.load() }
+            val game = runCatching {
+                saveRepository.load()?.also {
+                    it.game.validate()
+                    it.requireCpuParticipants()
+                }
             }
-        }) { result ->
+            game to progress
+        }) { loaded ->
             if (!alive || generation != playbackGeneration) return@execute
             persistenceBusy = false
+            val parts = loaded.getOrNull()
+            parts?.second?.let(::applyLoadedTutorialProgress)
+            val result: Result<SavedGame?> = parts?.first
+                ?: Result.failure(loaded.exceptionOrNull() ?: IllegalStateException("Load did not finish"))
             result.fold(
                 onSuccess = { savedGame = it; loadIssue = null; showResumeEntry = it != null },
                 onFailure = {
@@ -271,7 +379,7 @@ class AndroidGameViewModel(
     }
 
     fun chooseNewGame() {
-        if (operationBlocked()) return
+        if (setupBlocked()) return
         showResumeEntry = false
         confirmOverwrite = false
         _uiState.value = snapshot(false, null)
@@ -283,22 +391,22 @@ class AndroidGameViewModel(
     }
 
     fun confirmNewGame() {
-        if (operationBlocked() || !confirmOverwrite) return
+        if (setupBlocked() || !confirmOverwrite) return
         confirmOverwrite = false
         beginSelectedGame()
     }
 
     fun resumeSavedGame() {
-        if (operationBlocked() || loadIssue != null) return
+        if (operationBlocked() || loadIssue != null || tutorial != null) return
         val saved = savedGame ?: return
-        val restored = runCatching { controller.restored(saved.game).apply { settleAfterRestore() } }
+        val restored = runCatching { gameController.restored(saved.game).apply { settleAfterRestore() } }
         if (restored.isFailure) {
             loadIssue = GameSaveLoadIssue.CORRUPT
             showResumeEntry = true
             publishPersistence()
             return
         }
-        controller = restored.getOrThrow()
+        gameController = restored.getOrThrow()
         playbackGeneration++
         clearPresentation()
         selectedPlayerCount = saved.game.engine.players.size
@@ -323,7 +431,8 @@ class AndroidGameViewModel(
 
     fun selectMoveTarget(position: Position) {
         if (humanInputBlocked() || position !in controller.moveTargets()) return
-        selectedMovePosition = position
+        val refused = tutorial?.perform(TutorialAction.SelectMoveTarget(position))?.accepted == false
+        if (!refused) selectedMovePosition = position
         refresh(_uiState.value.lastMessage)
     }
 
@@ -334,6 +443,9 @@ class AndroidGameViewModel(
     }
 
     private fun operationBlocked() = !alive || persistenceBusy || pendingSave != null
+
+    /** Setup and the match save stay as they are while practice is on screen. */
+    private fun setupBlocked() = operationBlocked() || tutorial != null
 
     private fun persistenceState(): GamePersistenceUiState {
         val engine = savedGame?.game?.engine
@@ -347,12 +459,22 @@ class AndroidGameViewModel(
     }
 
     private fun publishPersistence() {
-        _uiState.value = _uiState.value.copy(persistence = persistenceState())
+        _uiState.value = _uiState.value.copy(
+            persistence = persistenceState(),
+            tutorialMenu = tutorialMenuUiState(),
+            tutorialResume = tutorialResumeUiState(),
+        )
     }
 
     private fun commitState(next: AndroidGameUiState) {
         if (!next.isGameStarted) {
             _uiState.value = next.copy(persistence = persistenceState())
+            return
+        }
+        if (tutorial != null) {
+            // Practice is published without saving: the match save stays exactly as it was.
+            syncTutorialProgress()
+            publishCommitted(next.copy(tutorialCompletion = tutorialCompletionUiState()))
             return
         }
         check(pendingSave == null)
@@ -435,8 +557,238 @@ class AndroidGameViewModel(
         super.onCleared()
     }
 
-    fun selectPlayerCount(playerCount: Int) {
+    fun openTutorialMenu() {
+        if (setupBlocked()) return
+        showTutorialMenu = true
+        publishPersistence()
+    }
+
+    fun closeTutorialMenu() {
+        if (!showTutorialMenu) return
+        showTutorialMenu = false
+        publishPersistence()
+    }
+
+    /**
+     * Opens a practice lesson at its recorded chapter, or from the beginning. The match controller,
+     * its save and the setup stay as they are, so starting never asks to overwrite anything.
+     */
+    fun startTutorial(lesson: TutorialLessonId, fromBeginning: Boolean = false) {
         if (operationBlocked()) return
+        val scenario = TutorialScenarios.of(lesson)
+        val chapter = if (fromBeginning) 0 else tutorialProgress.resumeChapter(scenario) ?: 0
+        val session = runCatching { TutorialSession(scenario, chapter) }.getOrNull() ?: TutorialSession(scenario, 0)
+        if (tutorial == null) {
+            tutorialReturn = TutorialReturn(showResumeEntry, boardPiecesTransparent, selectedMovePosition)
+        }
+        tutorial = session
+        tutorialCompleted = null
+        tutorialRecordedChapter = null
+        showTutorialMenu = false
+        playbackGeneration++
+        clearPresentation()
+        selectedMovePosition = null
+        boardPiecesTransparent = false
+        showResumeEntry = false
+        commitState(snapshot(isGameStarted = true, lastMessage = null))
+    }
+
+    /** Continues the lesson that was open when the app last stopped, from its chapter start. */
+    fun resumeInterruptedTutorial() {
+        val lesson = tutorialProgress.interrupted()?.lesson ?: return
+        startTutorial(lesson)
+    }
+
+    /**
+     * 「次へ」 for the page the screen showed with [generation] and [explanationSerial]. Both are
+     * required: a new lesson or attempt numbers its pages again, so a tap left over from an earlier
+     * page, chapter attempt or lesson does nothing.
+     */
+    fun acknowledgeTutorial(generation: Long, explanationSerial: Long) {
+        val session = tutorial ?: return
+        if (operationBlocked() || animationInProgress()) return
+        if (generation != playbackGeneration || explanationSerial != session.explanationSerial) return
+        if (!session.acknowledge()) return
+        resolveAfterSuccessfulAction(_uiState.value.lastMessage)
+    }
+
+    /** Back to the start of the current chapter. Reserved opponent steps and playback callbacks become stale. */
+    fun restartTutorialChapter() {
+        val session = tutorial ?: return
+        if (operationBlocked()) return
+        session.restartChapter()
+        tutorialCompleted = null
+        playbackGeneration++
+        clearPresentation()
+        selectedMovePosition = null
+        commitState(snapshot(isGameStarted = true, lastMessage = null))
+    }
+
+    /** Leaves practice. The match, its controller and the setup come back exactly as before. */
+    fun exitTutorial(destination: TutorialExit = TutorialExit.BACK) {
+        val session = tutorial ?: return
+        if (!alive) return
+        if (session.status != TutorialStatus.COMPLETED) updateTutorialProgress(tutorialProgress.left())
+        tutorial = null
+        tutorialCompleted = null
+        tutorialRecordedChapter = null
+        playbackGeneration++
+        clearPresentation()
+        val back = tutorialReturn
+        tutorialReturn = null
+        boardPiecesTransparent = back?.boardPiecesTransparent ?: false
+        selectedMovePosition = back?.selectedMovePosition
+        val entry = back?.showResumeEntry ?: (savedGame != null || loadIssue != null)
+        showResumeEntry = destination != TutorialExit.SETUP && entry
+        showTutorialMenu = destination == TutorialExit.LESSONS
+        _uiState.value = snapshot(isGameStarted = false, lastMessage = null)
+    }
+
+    /** Saving progress failed. Practice goes on; only the record is written again. */
+    fun retryTutorialProgressSave() {
+        if (!alive || !tutorialProgressSaveFailed) return
+        saveTutorialProgress()
+    }
+
+    /** Human input in practice: the lesson accepts or refuses it before the game sees it. */
+    private fun runPracticeAction(action: TutorialAction) {
+        val session = tutorial ?: return
+        val displayBeforeAction = displayedTurnConsumptionSnapshot()
+        val result = session.perform(action)
+        val game = result.game
+        if (result.accepted && game != null) {
+            presentSuccessfulAction(game, displayBeforeAction, game.message)
+        } else {
+            // A refusal only changes the lesson's notice, which the guidance shows.
+            refresh(_uiState.value.lastMessage)
+        }
+    }
+
+    /** Records a new chapter or the completion once, whenever practice is published. */
+    private fun syncTutorialProgress() {
+        val session = tutorial ?: return
+        val scenario = session.scenario
+        if (session.status == TutorialStatus.COMPLETED) {
+            if (tutorialCompleted != scenario.lesson) {
+                tutorialCompleted = scenario.lesson
+                updateTutorialProgress(tutorialProgress.completed(scenario))
+            }
+        } else if (session.chapterIndex != tutorialRecordedChapter) {
+            tutorialRecordedChapter = session.chapterIndex
+            updateTutorialProgress(tutorialProgress.started(scenario, session.chapterIndex))
+        }
+    }
+
+    private fun applyLoadedTutorialProgress(result: Result<TutorialProgress>) {
+        // Anything recorded since start-up is newer than the file.
+        if (tutorialProgressRevision != 0L) return
+        result.fold(
+            onSuccess = {
+                tutorialProgress = it
+                tutorialProgressLoadFailed = false
+            },
+            onFailure = { tutorialProgressLoadFailed = true },
+        )
+    }
+
+    private fun updateTutorialProgress(next: TutorialProgress) {
+        if (next == tutorialProgress) return
+        tutorialProgress = next
+        tutorialProgressRevision++
+        saveTutorialProgress()
+    }
+
+    /** Writes the latest progress. Only the newest request decides whether a failure is shown. */
+    private fun saveTutorialProgress() {
+        val revision = tutorialProgressRevision
+        val progress = tutorialProgress
+        saveIo.execute({ tutorialProgressRepository.save(progress) }) { result ->
+            if (!alive || revision != tutorialProgressRevision) return@execute
+            tutorialProgressSaveFailed = result.isFailure
+            if (result.isSuccess) tutorialProgressLoadFailed = false
+            _uiState.value = _uiState.value.copy(
+                tutorialMenu = tutorialMenuUiState(),
+                tutorialCompletion = tutorialCompletionUiState(),
+                tutorialResume = tutorialResumeUiState(),
+            )
+        }
+    }
+
+    private fun tutorialUiState(): AndroidTutorialUiState? {
+        val session = tutorial ?: return null
+        val scenario = session.scenario
+        val guidance = session.guidance
+        val status = session.status
+        return AndroidTutorialUiState(
+            lesson = scenario.lesson,
+            title = scenario.title,
+            chapter = session.chapterIndex + 1,
+            chapterCount = scenario.chapterCount,
+            stage = guidance.stage,
+            stageCount = scenario.stageCount,
+            text = guidance.text,
+            notice = guidance.notice,
+            targetCells = guidance.targetCells,
+            controls = guidance.controls,
+            page = guidance.page,
+            pageCount = guidance.pageCount,
+            explanationSerial = session.explanationSerial,
+            opponentTurn = status == TutorialStatus.OPPONENT_TURN,
+            completed = status == TutorialStatus.COMPLETED,
+        )
+    }
+
+    private fun tutorialLessonUiState(lesson: TutorialLessonId): AndroidTutorialLessonUiState {
+        val scenario = TutorialScenarios.of(lesson)
+        return AndroidTutorialLessonUiState(
+            lesson = lesson,
+            title = scenario.title,
+            summary = scenario.summary,
+            chapterCount = scenario.chapterCount,
+            completed = tutorialProgress.isCompleted(lesson),
+            resumeChapter = tutorialProgress.resumeChapter(scenario),
+        )
+    }
+
+    private fun tutorialMenuUiState(): AndroidTutorialMenuUiState? =
+        if (!showTutorialMenu || tutorial != null) {
+            null
+        } else {
+            AndroidTutorialMenuUiState(
+                lessons = TutorialLessonId.entries.map(::tutorialLessonUiState),
+                progressLoadFailed = tutorialProgressLoadFailed,
+                progressSaveFailed = tutorialProgressSaveFailed,
+            )
+        }
+
+    /** Shown only once the last playback is over, so it never covers a running meal or capture. */
+    private fun tutorialCompletionUiState(): AndroidTutorialCompletionUiState? {
+        val session = tutorial ?: return null
+        if (session.status != TutorialStatus.COMPLETED || animationInProgress()) return null
+        val scenario = session.scenario
+        return AndroidTutorialCompletionUiState(
+            lesson = scenario.lesson,
+            title = scenario.title,
+            text = scenario.completionText,
+            isBasic = scenario.lesson == TutorialLessonId.BASIC,
+            progressSaveFailed = tutorialProgressSaveFailed,
+        )
+    }
+
+    private fun tutorialResumeUiState(): AndroidTutorialLessonUiState? =
+        if (tutorial != null) null else tutorialProgress.interrupted()?.lesson?.let(::tutorialLessonUiState)
+
+    /** The destination the lesson guides to, used as the first tentative move target. */
+    private fun guidedMoveTarget(targets: Set<Position>): Position? {
+        val session = tutorial ?: return null
+        if (session.status != TutorialStatus.LEARNER_ACTION) return null
+        val guidance = session.guidance
+        if (TutorialControl.MOVE !in guidance.controls) return null
+        return guidance.targetCells.firstOrNull { it in targets }
+    }
+
+    fun selectPlayerCount(playerCount: Int) {
+        if (setupBlocked()) return
         require(playerCount in 2..4) { "プレイヤー人数は2〜4人にしてください。" }
         resetSetupDefaults(playerCount)
         _uiState.value = snapshot(
@@ -446,7 +798,7 @@ class AndroidGameViewModel(
     }
 
     fun selectPlayerMole(seatIndex: Int, playerId: Int) {
-        if (operationBlocked()) return
+        if (setupBlocked()) return
         if (seatIndex !in 0 until selectedPlayerCount) return
         if (MoguraGameController.moleOptions.none { it.playerId == playerId }) return
 
@@ -455,7 +807,7 @@ class AndroidGameViewModel(
     }
 
     fun selectPlayerNest(seatIndex: Int, nestPosition: Position) {
-        if (operationBlocked()) return
+        if (setupBlocked()) return
         if (seatIndex !in 0 until selectedPlayerCount) return
         if (nestPosition !in MoguraGameController.nestPositions) return
 
@@ -464,7 +816,7 @@ class AndroidGameViewModel(
     }
 
     fun selectPlayerKind(seatIndex: Int, isCpu: Boolean) {
-        if (operationBlocked()) return
+        if (setupBlocked()) return
         if (seatIndex !in 0 until selectedPlayerCount) return
 
         setupCpuSeats = setupCpuSeats.toMutableList().also { it[seatIndex] = isCpu }
@@ -472,14 +824,14 @@ class AndroidGameViewModel(
     }
 
     fun selectCpuDifficulty(seatIndex: Int, difficulty: CpuDifficulty) {
-        if (operationBlocked() || _uiState.value.isGameStarted) return
+        if (setupBlocked() || _uiState.value.isGameStarted) return
         if (seatIndex !in 0 until selectedPlayerCount || !setupCpuSeats[seatIndex]) return
         setupCpuDifficulties = setupCpuDifficulties.toMutableList().also { it[seatIndex] = difficulty }
         refresh(null)
     }
 
     fun selectStartPlayer(seatIndex: Int) {
-        if (operationBlocked()) return
+        if (setupBlocked()) return
         if (seatIndex !in 0 until selectedPlayerCount) return
 
         selectedStartPlayerIndex = seatIndex
@@ -487,7 +839,7 @@ class AndroidGameViewModel(
     }
 
     fun startSelectedGame() {
-        if (operationBlocked()) return
+        if (setupBlocked()) return
         if (savedGame != null || loadIssue != null) {
             confirmOverwrite = true
             publishPersistence()
@@ -497,14 +849,16 @@ class AndroidGameViewModel(
     }
 
     private fun beginSelectedGame() {
+        if (tutorial != null) return
         playbackGeneration++
         selectedMovePosition = null
         boardPiecesTransparent = false
         showResumeEntry = false
+        showTutorialMenu = false
         clearPresentation()
         cpuPlayerIds = configuredCpuPlayerIds()
         cpuDifficulties = configuredCpuDifficulties()
-        val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
+        val result = gameController.startNewGame(setupConfigs(), selectedStartPlayerIndex)
         commitState(snapshot(
             isGameStarted = true,
             lastMessage = messageForCurrentTurn(result.message),
@@ -512,16 +866,17 @@ class AndroidGameViewModel(
     }
 
     fun startNewGame(playerCount: Int) {
-        if (operationBlocked()) return
+        if (operationBlocked() || tutorial != null) return
         playbackGeneration++
         selectedMovePosition = null
         boardPiecesTransparent = false
         showResumeEntry = false
+        showTutorialMenu = false
         clearPresentation()
         resetSetupDefaults(playerCount)
         cpuPlayerIds = configuredCpuPlayerIds()
         cpuDifficulties = configuredCpuDifficulties()
-        val result = controller.startNewGame(setupConfigs(), selectedStartPlayerIndex)
+        val result = gameController.startNewGame(setupConfigs(), selectedStartPlayerIndex)
         commitState(snapshot(
             isGameStarted = true,
             lastMessage = messageForCurrentTurn(result.message),
@@ -530,6 +885,7 @@ class AndroidGameViewModel(
 
     fun returnToSetup() {
         if (operationBlocked()) return
+        if (tutorial != null) return exitTutorial()
         playbackGeneration++
         showResumeEntry = savedGame != null || loadIssue != null
         clearPresentation()
@@ -549,6 +905,15 @@ class AndroidGameViewModel(
     fun onCellClicked(position: Position) {
         if (humanInputBlocked()) return
         val engine = controller.engine ?: return refresh(null)
+        if (tutorial != null) {
+            val practice = when (engine.currentPhase) {
+                TurnPhase.DIG -> TutorialAction.SelectDigCell(position)
+                TurnPhase.MOVE -> TutorialAction.Move(position)
+                TurnPhase.CAPTURE -> TutorialAction.Capture.takeIf { controller.currentPlayer?.position == position }
+                TurnPhase.DECIDE, TurnPhase.END -> null
+            }
+            if (practice != null) return runPracticeAction(practice)
+        }
         val result = when (engine.currentPhase) {
             TurnPhase.DIG -> controller.digAt(position, _uiState.value.playState.selectedRotation)
             TurnPhase.MOVE -> controller.moveTo(position)
@@ -569,31 +934,31 @@ class AndroidGameViewModel(
     }
 
     fun selectDigChoice(choice: DigTileChoice) {
-        runAction { controller.selectPendingDigTile(choice) }
+        runAction(TutorialAction.SelectDigTile(choice)) { controller.selectPendingDigTile(choice) }
     }
 
     fun selectRotation(rotation: Rotation) {
-        runAction { controller.setPendingDigRotation(rotation) }
+        runAction(TutorialAction.RotateDigTile(rotation)) { controller.setPendingDigRotation(rotation) }
     }
 
     fun confirmDigPlacement() {
-        runAction { controller.confirmPendingDig() }
+        runAction(TutorialAction.ConfirmDig) { controller.confirmPendingDig() }
     }
 
     fun selectCaptureTarget(index: Int) {
-        runAction { controller.selectCaptureTarget(index) }
+        runAction(TutorialAction.SelectCaptureTarget(index)) { controller.selectCaptureTarget(index) }
     }
 
     fun selectRobberyTarget(index: Int) {
-        runAction { controller.selectRobberyTarget(index) }
+        runAction(TutorialAction.SelectRobberyTarget(index)) { controller.selectRobberyTarget(index) }
     }
 
     fun capture() {
-        runAction { controller.captureCurrentPosition() }
+        runAction(TutorialAction.Capture) { controller.captureCurrentPosition() }
     }
 
     fun rob() {
-        runAction { controller.robSelectedFood() }
+        runAction(TutorialAction.Rob) { controller.robSelectedFood() }
     }
 
     /**
@@ -606,8 +971,14 @@ class AndroidGameViewModel(
     }
 
     private fun rollDiceRoulette(): Boolean {
-        val result = controller.rollCaptureDice()
-        if (result.success) refresh(null)
+        val session = tutorial
+        val result = if (session != null) {
+            // Only the learner captures with dice in practice, so the lesson decides first.
+            session.perform(TutorialAction.RollDice).let { it.game ?: GameActionResult(false, it.message) }
+        } else {
+            controller.rollCaptureDice()
+        }
+        if (result.success) refresh(null) else if (session != null) refresh(_uiState.value.lastMessage)
         return result.success
     }
 
@@ -632,8 +1003,16 @@ class AndroidGameViewModel(
 
     private fun resolveDiceRoulette(): Boolean {
         val boardBefore = AndroidBoardUiState(buildBoardCells())
-        val result = controller.resolveCaptureRoll()
-        if (!result.success) return false
+        val session = tutorial
+        val result = if (session != null) {
+            session.perform(TutorialAction.ResolveCapture).let { it.game ?: GameActionResult(false, it.message) }
+        } else {
+            controller.resolveCaptureRoll()
+        }
+        if (!result.success) {
+            if (session != null) refresh(_uiState.value.lastMessage)
+            return false
+        }
         cpuRouletteSpinning = false
         val event = controller.playScreenUiState().captureOutcome?.animation
         if (event != null) {
@@ -649,15 +1028,25 @@ class AndroidGameViewModel(
         return true
     }
 
-    /** The ViewModel retains this consumption state when the Activity is recreated. */
+    /**
+     * The ViewModel retains this consumption state when the Activity is recreated. [generation] is
+     * the one the screen showed [event] in: a restarted chapter, another lesson or a new match
+     * reuses event IDs and plays them again, while an event of an earlier generation stays silent.
+     */
     internal fun captureFailureSoundEffectFor(
         event: CaptureAnimationEvent?,
-    ): AndroidSoundEffect? = captureFailureSoundEffectTrigger.soundEffectFor(event)
+        generation: Long = playbackGeneration,
+    ): AndroidSoundEffect? =
+        if (generation != playbackGeneration) null
+        else captureFailureSoundEffectTrigger.soundEffectFor(event, generation)
 
-    /** Keep played meal IDs across Activity recreation, just like capture sounds. */
+    /** Keep played meal IDs across Activity recreation, per generation just like capture sounds. */
     internal fun eatRecoverySoundEffectFor(
         event: EatAnimationEvent?,
-    ): AndroidSoundEffect? = eatRecoverySoundEffectTrigger.soundEffectFor(event)
+        generation: Long = playbackGeneration,
+    ): AndroidSoundEffect? =
+        if (generation != playbackGeneration) null
+        else eatRecoverySoundEffectTrigger.soundEffectFor(event, generation)
 
     /** An old completion callback must never finish a newer capture or advance twice. */
     fun finishCaptureAnimation(eventId: Long, generation: Long = playbackGeneration) {
@@ -665,7 +1054,7 @@ class AndroidGameViewModel(
     }
 
     fun eat() {
-        runAction { controller.eatPendingFood() }
+        runAction(TutorialAction.Eat) { controller.eatPendingFood() }
     }
 
     /** An old completion callback must never finish a newer meal or advance twice. */
@@ -709,7 +1098,7 @@ class AndroidGameViewModel(
     }
 
     private fun completionMustWait(): Boolean =
-        persistenceBusy || pendingSave != null || (cpuPlayerIds.isNotEmpty() && !cpuHostActive())
+        persistenceBusy || pendingSave != null || (automatedPlayerIds.isNotEmpty() && !cpuHostActive())
 
     private fun deliverDeferredCompletion(): Boolean {
         val completion = deferredCompletion ?: return false
@@ -747,23 +1136,27 @@ class AndroidGameViewModel(
     }
 
     fun carry() {
-        runAction { controller.carryPendingFood() }
+        runAction(TutorialAction.Carry) { controller.carryPendingFood() }
     }
 
     fun skip() {
-        runAction { controller.skipPhase() }
+        runAction(TutorialAction.Skip) { controller.skipPhase() }
     }
 
     fun finishTurn() {
-        runAction { controller.finishTurn() }
+        runAction(TutorialAction.FinishTurn) { controller.finishTurn() }
     }
 
     private fun humanInputBlocked(): Boolean =
         operationBlocked() || animationInProgress() || cpuControlsCurrentTurn()
 
-    /** Human action-bar input. CPU operations enter through [runCpuStep] instead. */
-    private fun runAction(action: () -> GameActionResult) {
+    /**
+     * Human action-bar input. In practice the lesson decides on [practice] before the game sees it.
+     * CPU operations enter through [runCpuStep] instead.
+     */
+    private fun runAction(practice: TutorialAction, action: () -> GameActionResult) {
         if (humanInputBlocked()) return
+        if (tutorial != null) return runPracticeAction(practice)
         val displayBeforeAction = displayedTurnConsumptionSnapshot()
         val result = action()
         if (result.success) {
@@ -827,11 +1220,13 @@ class AndroidGameViewModel(
     /** Read from the live controller: a frozen consumption display still shows the previous player. */
     private fun cpuControlsCurrentTurn(): Boolean =
         controller.engine?.gameState == GameState.PLAYING &&
-            controller.currentPlayer?.let { it.id in cpuPlayerIds } == true
+            controller.currentPlayer?.let { it.id in automatedPlayerIds } == true
 
     private fun cpuStepReady(): Boolean =
         _uiState.value.isGameStarted && !operationBlocked() && !animationInProgress() &&
             cpuHostActive() && cpuFault == null && cpuControlsCurrentTurn() &&
+            // The practice opponent also waits for every open explanation and stops at completion.
+            (tutorial?.let { it.status == TutorialStatus.OPPONENT_TURN } ?: true) &&
             // A confirmed roll belongs to the overlay until its landing callback resolves it.
             controller.pendingCaptureRoll?.roll == null
 
@@ -868,8 +1263,12 @@ class AndroidGameViewModel(
         // A previewed move is confirmed as shown instead of being decided and saved again.
         val previewed = cpuMovePreview?.takeIf { it in controller.moveTargets() }
         cpuMovePreview = previewed
+        val session = tutorial
         val action = if (previewed != null) {
             CpuAction.Move(previewed)
+        } else if (session != null) {
+            // The practice opponent plays its scripted legal step instead of deciding.
+            session.nextOpponentAction() ?: return stopCpu(AndroidCpuFault.NO_DECISION)
         } else {
             runCatching {
                 val difficulty = cpuDifficulties[controller.currentPlayer?.id] ?: CpuDifficulty.NORMAL
@@ -881,7 +1280,13 @@ class AndroidGameViewModel(
 
         val displayBeforeAction = displayedTurnConsumptionSnapshot()
         val before = controller.exportSnapshot()
-        val result = runCatching { controller.applyCpuAction(action) }.getOrNull()
+        val result = runCatching {
+            if (session != null) {
+                session.performOpponent(action).let { it.game ?: GameActionResult(false, it.message) }
+            } else {
+                controller.applyCpuAction(action)
+            }
+        }.getOrNull()
         when {
             result == null || !result.success -> stopCpu(AndroidCpuFault.ILLEGAL_ACTION)
             // Re-selecting the rotation already shown, for example, would otherwise repeat forever.
@@ -947,7 +1352,9 @@ class AndroidGameViewModel(
         // This must come from the controller's live pre-auto state, never the possibly
         // frozen _uiState. It keeps chained consumption animations exactly one turn apart.
         val displayBeforeAutoAdvance = liveTurnConsumptionSnapshot(messageForCurrentTurn(message))
-        val autoResult = controller.autoAdvanceWhileNoChoice()
+        // In practice an open explanation or the finished lesson holds automatic progression.
+        val session = tutorial
+        val autoResult = if (session != null) session.advanceAutomatic() else controller.autoAdvanceWhileNoChoice()
         val resolvedMessage = if (autoResult != null) null else message
         val postMessage = messageForCurrentTurn(resolvedMessage)
         autoResult?.turnConsumptionAnimation?.let { event ->
@@ -987,7 +1394,7 @@ class AndroidGameViewModel(
         val gameResult = if (turnConsumptionAnimation != null) null else buildGameResult(isGameStarted)
         // Follows the displayed player, so the label stays with a frozen consumption display.
         val cpuTurn = isGameStarted && gameResult == null &&
-            playState.currentPlayer.playerId?.let { it in cpuPlayerIds } == true
+            playState.currentPlayer.playerId?.let { it in automatedPlayerIds } == true
         return AndroidGameUiState(
             isGameStarted = isGameStarted,
             selectedPlayerCount = selectedPlayerCount,
@@ -1023,6 +1430,8 @@ class AndroidGameViewModel(
             selectedMovePosition = if (controller.engine?.currentPhase == TurnPhase.MOVE) {
                 val targets = controller.moveTargets()
                 selectedMovePosition?.takeIf { it in targets }
+                    // Practice starts on the guided destination instead of the first one.
+                    ?: guidedMoveTarget(targets)
                     ?: targets.sortedWith(compareBy<Position> { it.row }.thenBy { it.col }).firstOrNull()
             } else null,
             boardPiecesTransparent = boardPiecesTransparent,
@@ -1035,6 +1444,10 @@ class AndroidGameViewModel(
             diceRouletteEventId = if (isGameStarted && controller.pendingCaptureRoll != null) {
                 controller.exportSnapshot().captureAnimationId + 1
             } else null,
+            tutorial = if (isGameStarted) tutorialUiState() else null,
+            tutorialMenu = tutorialMenuUiState(),
+            tutorialCompletion = tutorialCompletionUiState(),
+            tutorialResume = tutorialResumeUiState(),
         )
     }
 

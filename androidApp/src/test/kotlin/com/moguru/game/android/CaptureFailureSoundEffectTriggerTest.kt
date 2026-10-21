@@ -35,6 +35,23 @@ class CaptureFailureSoundEffectTriggerTest {
         )
     }
 
+    @Test
+    fun `a later playback generation plays its reused IDs once and an earlier one stays silent`() {
+        val trigger = CaptureFailureSoundEffectTrigger()
+        val escape = event(11L, CaptureOutcomeKind.ESCAPED)
+        val nextEscape = event(12L, CaptureOutcomeKind.ESCAPED)
+
+        assertEquals(AndroidSoundEffect.CAPTURE_FAILURE, trigger.soundEffectFor(nextEscape, generation = 1L))
+        assertNull(trigger.soundEffectFor(escape, generation = 1L))
+        // A restarted chapter numbers its captures again.
+        assertEquals(AndroidSoundEffect.CAPTURE_FAILURE, trigger.soundEffectFor(escape, generation = 2L))
+        assertNull(trigger.soundEffectFor(escape, generation = 2L))
+        assertNull(trigger.soundEffectFor(nextEscape, generation = 1L))
+        assertNull(trigger.soundEffectFor(event(13L, CaptureOutcomeKind.ESCAPED), generation = 1L))
+        assertNull(trigger.soundEffectFor(event(11L, CaptureOutcomeKind.CAPTURED), generation = 3L))
+        assertEquals(AndroidSoundEffect.CAPTURE_FAILURE, trigger.soundEffectFor(nextEscape, generation = 2L))
+    }
+
     private fun event(id: Long, kind: CaptureOutcomeKind): CaptureAnimationEvent =
         CaptureAnimationEvent(
             id = id,

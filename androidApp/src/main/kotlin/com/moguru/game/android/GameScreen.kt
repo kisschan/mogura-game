@@ -15,6 +15,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -58,6 +61,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -131,6 +135,7 @@ import com.moguru.game.presenter.FoodDecisionSource
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.presenter.RobberyTargetDisplay
 import com.moguru.game.presenter.displayName
+import com.moguru.game.tutorial.TutorialControl
 import kotlin.math.roundToInt
 
 internal const val BOARD_HIGHLIGHT_Z = 15f
@@ -141,6 +146,8 @@ internal const val BOARD_PLAYER_BASE_Z = 45f
 internal const val BOARD_CURRENT_CELL_RING_Z = 72f
 internal const val BOARD_SELECTED_MOVE_RING_Z = 74f
 internal const val BOARD_CURRENT_PLAYER_OUTLINE_Z = 75f
+/** Practice frames stay above every existing mark and below the click targets. */
+internal const val BOARD_TUTORIAL_TARGET_Z = 77f
 internal const val BOARD_CLICK_TARGET_Z = 80f
 
 internal val MOBILE_PLAY_HUD_HEIGHT = 56.dp
@@ -275,16 +282,28 @@ internal fun MoguraGameScreen(
         onDispose { viewModel.setCpuPlayScreenClear(false) }
     }
 
-    CaptureFailureSoundEffect(
-        event = state.captureAnimation?.event,
-        soundEffects = soundEffects,
-        soundEffectFor = viewModel::captureFailureSoundEffectFor,
-    )
-    EatRecoverySoundEffect(
-        event = state.eatAnimation,
-        soundEffects = soundEffects,
-        soundEffectFor = viewModel::eatRecoverySoundEffectFor,
-    )
+    // A restarted chapter, another lesson or a new match reuses event IDs: the sounds follow the
+    // generation shown, so the same ID plays again there and a leftover effect stays silent.
+    key(playbackGeneration) {
+        CaptureFailureSoundEffect(
+            event = state.captureAnimation?.event,
+            soundEffects = soundEffects,
+            soundEffectFor = { viewModel.captureFailureSoundEffectFor(it, playbackGeneration) },
+        )
+        EatRecoverySoundEffect(
+            event = state.eatAnimation,
+            soundEffects = soundEffects,
+            soundEffectFor = { viewModel.eatRecoverySoundEffectFor(it, playbackGeneration) },
+        )
+    }
+
+    val playbackShown = state.captureAnimation != null || state.eatAnimation != null ||
+        state.turnConsumptionAnimation != null
+    // 16.1: practice keeps the HUD menu's restart and exit reachable by touch and screen readers, so
+    // the dice and playback layers cover only the area below the HUD. Matches keep full coverage.
+    val practiceHudKept = state.isGameStarted && state.tutorial != null
+    val safeDrawingTop = WindowInsets.safeDrawing.only(WindowInsetsSides.Top)
+    val playLayerArea = if (practiceHudKept) Modifier.belowPlayHud(safeDrawingTop) else Modifier
 
     MaterialTheme {
         CompositionLocalProvider(
@@ -303,9 +322,8 @@ internal fun MoguraGameScreen(
                                 if (
                                     showRules ||
                                     state.persistence.busy || state.persistence.saveFailed ||
-                                    state.captureAnimation != null ||
-                                    state.eatAnimation != null ||
-                                    state.turnConsumptionAnimation != null
+                                    // In practice PlayScreen hides only the board and action bar instead.
+                                    (playbackShown && !practiceHudKept)
                                 ) {
                                     Modifier.clearAndSetSemantics {}
                                 } else {
@@ -313,6 +331,7 @@ internal fun MoguraGameScreen(
                                 },
                             ),
                     ) {
+                        val tutorialMenu = state.tutorialMenu
                         if (state.isGameStarted) {
                             PlayScreen(
                                 state = state,
@@ -321,6 +340,16 @@ internal fun MoguraGameScreen(
                                 onAudioSettingsClick = { showAudioSettings = true },
                                 onRulesClick = { showRules = true },
                             )
+                        } else if (tutorialMenu != null) {
+                            TutorialMenuScreen(
+                                menu = tutorialMenu,
+                                onStart = { lesson, fromBeginning ->
+                                    soundEffects.play(AndroidSoundEffect.BUTTON_PRESS)
+                                    viewModel.startTutorial(lesson, fromBeginning)
+                                },
+                                onBack = viewModel::closeTutorialMenu,
+                                onRetrySave = viewModel::retryTutorialProgressSave,
+                            )
                         } else if (state.persistence.showEntry) {
                             GameResumeScreen(
                                 state.persistence,
@@ -328,6 +357,9 @@ internal fun MoguraGameScreen(
                                 onNewGame = viewModel::chooseNewGame,
                                 onRetryLoad = viewModel::reloadSavedGame,
                                 onRules = { showRules = true },
+                                tutorialResume = state.tutorialResume,
+                                onPractice = viewModel::openTutorialMenu,
+                                onResumePractice = viewModel::resumeInterruptedTutorial,
                             )
                         } else {
                             SetupScreen(
@@ -350,6 +382,7 @@ internal fun MoguraGameScreen(
                                 },
                                 cpuControlled = state.cpuTurn,
                                 cpuSpinning = state.cpuRouletteSpinning,
+                                modifier = playLayerArea,
                             )
                         }
                         val gameResult = state.gameResult
@@ -358,6 +391,17 @@ internal fun MoguraGameScreen(
                                 result = gameResult,
                                 onViewBoard = viewModel::dismissGameResultOverlay,
                                 onNewGame = viewModel::returnToSetup,
+                            )
+                        }
+                        val completion = state.tutorialCompletion
+                        if (state.isGameStarted && completion != null) {
+                            PauseCpuWhileShown()
+                            TutorialCompletionDialog(
+                                completion = completion,
+                                onRetry = soundEffectClick { viewModel.startTutorial(completion.lesson, fromBeginning = true) },
+                                onLessons = soundEffectClick { viewModel.exitTutorial(TutorialExit.LESSONS) },
+                                onSetup = soundEffectClick { viewModel.exitTutorial(TutorialExit.SETUP) },
+                                onRetrySave = viewModel::retryTutorialProgressSave,
                             )
                         }
                         if (showAudioSettings) {
@@ -376,13 +420,13 @@ internal fun MoguraGameScreen(
                     }
                     if (!showRules) {
                         state.captureAnimation?.let { animation ->
-                            CaptureAnimationInputBlocker(animation.event)
+                            CaptureAnimationInputBlocker(animation.event, playLayerArea)
                         }
                         state.eatAnimation?.let { event ->
-                            EatAnimationInputBlocker(event)
+                            EatAnimationInputBlocker(event, playLayerArea)
                         }
                         state.turnConsumptionAnimation?.let { event ->
-                            TurnConsumptionAnimationInputBlocker(event)
+                            TurnConsumptionAnimationInputBlocker(event, playLayerArea)
                         }
                     }
                     if (showRules) {
@@ -390,6 +434,13 @@ internal fun MoguraGameScreen(
                         RulesScreen(
                             onBack = { showRules = false },
                             modifier = Modifier.zIndex(1f),
+                            // Offered from setup and the resume screen only, never in the middle of play.
+                            onPractice = if (state.isGameStarted) null else {
+                                {
+                                    showRules = false
+                                    viewModel.openTutorialMenu()
+                                }
+                            },
                         )
                     }
                     GameSaveDialogs(state.persistence, viewModel)
@@ -439,6 +490,11 @@ private fun soundEffectClick(
         onClick()
     }
 }
+
+/** The play screen below its HUD: the same [safeDrawingTop] inset and padding as [PlayScreen]. */
+private fun Modifier.belowPlayHud(safeDrawingTop: WindowInsets): Modifier =
+    windowInsetsPadding(safeDrawingTop)
+        .padding(top = MOBILE_PLAY_VERTICAL_PADDING + MOBILE_PLAY_HUD_HEIGHT)
 
 @Composable
 private fun InputBlockingLayer() {
@@ -493,6 +549,9 @@ private fun CompactGameMenuButton(
     onAudioSettingsClick: () -> Unit,
     onNewGameClick: () -> Unit,
     modifier: Modifier = Modifier,
+    practice: AndroidTutorialUiState? = null,
+    onRestartPracticeChapter: () -> Unit = {},
+    onExitPractice: () -> Unit = {},
 ) {
     var expanded by remember { mutableStateOf(false) }
     if (expanded) PauseCpuWhileShown()
@@ -523,6 +582,17 @@ private fun CompactGameMenuButton(
             expanded = expanded,
             onDismissRequest = { expanded = false },
         ) {
+            practice?.let {
+                Text(
+                    text = tutorialMenuInfoText(it),
+                    modifier = Modifier
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .testTag(GAME_MENU_PRACTICE_INFO_TEST_TAG),
+                    color = Color(0xFF6F5943),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
             DropdownMenuItem(
                 text = {
                     Text(
@@ -558,19 +628,39 @@ private fun CompactGameMenuButton(
                 },
                 modifier = Modifier.testTag(GAME_MENU_AUDIO_ITEM_TEST_TAG),
             )
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        text = "新規ゲーム",
-                        fontWeight = FontWeight.Bold,
-                    )
-                },
-                onClick = soundEffectClick {
-                    expanded = false
-                    onNewGameClick()
-                },
-                modifier = Modifier.testTag(GAME_MENU_NEW_GAME_ITEM_TEST_TAG),
-            )
+            if (practice != null) {
+                // Always reachable from here, so the action bar needs no extra permanent buttons.
+                DropdownMenuItem(
+                    text = { Text(text = "この章をやり直す", fontWeight = FontWeight.Bold) },
+                    onClick = soundEffectClick {
+                        expanded = false
+                        onRestartPracticeChapter()
+                    },
+                    modifier = Modifier.testTag(GAME_MENU_RESTART_CHAPTER_ITEM_TEST_TAG),
+                )
+                DropdownMenuItem(
+                    text = { Text(text = "練習を終了", fontWeight = FontWeight.Bold) },
+                    onClick = soundEffectClick {
+                        expanded = false
+                        onExitPractice()
+                    },
+                    modifier = Modifier.testTag(GAME_MENU_EXIT_PRACTICE_ITEM_TEST_TAG),
+                )
+            } else {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = "新規ゲーム",
+                            fontWeight = FontWeight.Bold,
+                        )
+                    },
+                    onClick = soundEffectClick {
+                        expanded = false
+                        onNewGameClick()
+                    },
+                    modifier = Modifier.testTag(GAME_MENU_NEW_GAME_ITEM_TEST_TAG),
+                )
+            }
         }
     }
 }
@@ -757,6 +847,14 @@ private fun SetupScreen(
                 fontWeight = FontWeight.Black,
             )
         }
+        TutorialEntryButtons(
+            resume = state.tutorialResume,
+            onPractice = soundEffectClick(onClick = viewModel::openTutorialMenu),
+            onResume = soundEffectClick(onClick = viewModel::resumeInterruptedTutorial),
+            modifier = Modifier
+                .padding(top = 8.dp)
+                .fillMaxWidth(0.82f),
+        )
         if (state.persistence.hasSavedGame || state.persistence.loadIssue != null) {
             TextButton(onClick = viewModel::returnToSetup, modifier = Modifier.heightIn(min = 48.dp)) {
                 Text("前のゲームに戻る")
@@ -1258,6 +1356,15 @@ private fun PlayScreen(
         selectedIndex = selectedBoardActionIndex,
         phase = activePhase,
     )
+    // During practice playback the HUD menu stays readable; the board and controls are hidden as in a match.
+    val playAreaSemantics = if (
+        state.tutorial != null &&
+        (state.captureAnimation != null || state.eatAnimation != null || state.turnConsumptionAnimation != null)
+    ) {
+        Modifier.clearAndSetSemantics {}
+    } else {
+        Modifier
+    }
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
@@ -1284,6 +1391,8 @@ private fun PlayScreen(
             CompactPlayHud(
                 state = state,
                 onNewGame = viewModel::returnToSetup,
+                onRestartPracticeChapter = viewModel::restartTutorialChapter,
+                onExitPractice = { viewModel.exitTutorial() },
                 audioSettings = audioSettings,
                 onAudioSettingsClick = onAudioSettingsClick,
                 onRulesClick = onRulesClick,
@@ -1299,6 +1408,7 @@ private fun PlayScreen(
                     .fillMaxWidth()
                     .weight(1f)
                     .testTag("board-viewport")
+                    .then(playAreaSemantics)
                     .onSizeChanged { size ->
                         boardViewportHeight = with(density) { size.height.toDp() }
                     },
@@ -1336,7 +1446,8 @@ private fun PlayScreen(
                 boardViewportHeight = boardViewportHeight,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag("action-bar"),
+                    .testTag("action-bar")
+                    .then(playAreaSemantics),
             )
         }
     }
@@ -1346,6 +1457,8 @@ private fun PlayScreen(
 private fun CompactPlayHud(
     state: AndroidGameUiState,
     onNewGame: () -> Unit,
+    onRestartPracticeChapter: () -> Unit,
+    onExitPractice: () -> Unit,
     audioSettings: AndroidAudioSettings,
     onAudioSettingsClick: () -> Unit,
     onRulesClick: () -> Unit,
@@ -1432,6 +1545,9 @@ private fun CompactPlayHud(
             onRulesClick = onRulesClick,
             onAudioSettingsClick = onAudioSettingsClick,
             onNewGameClick = { showNewGameConfirmation = true },
+            practice = state.tutorial,
+            onRestartPracticeChapter = onRestartPracticeChapter,
+            onExitPractice = onExitPractice,
         )
     }
     if (showNewGameConfirmation) {
@@ -1539,6 +1655,13 @@ private fun GameplayActionBar(
     val latestEvent = latestEventText(state)
     val captureOutcome = state.playState.captureOutcome
     var showLogHistory by remember { mutableStateOf(!LOG_HISTORY_COLLAPSED_BY_DEFAULT) }
+    val practice = state.tutorial
+    val practiceControls = practice?.controls.orEmpty()
+    // An explanation waits for 「次へ」 once any playback has finished; the opponent waits with it.
+    val explanation = practice?.takeIf {
+        it.awaitingAcknowledgement && state.captureAnimation == null && state.eatAnimation == null &&
+            state.turnConsumptionAnimation == null
+    }
     BoxWithConstraints(modifier = modifier) {
         val historyPopupWidth = minOf(maxWidth, 360.dp)
         val historyPopupMaxHeight = logHistoryPopupHeightLimit(boardViewportHeight)
@@ -1558,12 +1681,24 @@ private fun GameplayActionBar(
                     captureOutcome = captureOutcome,
                     hasHistory = state.logs.isNotEmpty(),
                     onHistoryClick = { showLogHistory = true },
+                    instructionDescription = practice?.takeIf { instruction == tutorialInstruction(it) }
+                        ?.let(::tutorialInstructionDescription),
                 )
                 when {
                     state.cpuFault != null -> CpuFaultControls(
                         onRetry = viewModel::retryCpuStep,
                         onReturnToSetup = viewModel::returnToSetup,
                     )
+                    explanation != null -> {
+                        // Captured with the page on screen, so a late tap cannot confirm a newer attempt's page.
+                        val generation = state.playbackGeneration
+                        val serial = explanation.explanationSerial
+                        TutorialNextButton(
+                            practice = explanation,
+                            buttonHeight = compactActionButtonHeight(hasEndTurnHint = false, LocalDensity.current.fontScale),
+                            onNext = soundEffectClick { viewModel.acknowledgeTutorial(generation, serial) },
+                        )
+                    }
                     // The CPU's candidates stay visible on the board, without any human control.
                     state.cpuTurn -> Unit
                     state.showDigControls -> CompactDigPlacementControls(
@@ -1571,6 +1706,7 @@ private fun GameplayActionBar(
                         onChoice = viewModel::selectDigChoice,
                         onRotation = viewModel::selectRotation,
                         onConfirm = viewModel::confirmDigPlacement,
+                        practiceControls = practiceControls,
                     )
                     state.playState.captureTargets.size > 1 && state.visibleActions.contains(AndroidVisibleAction.CAPTURE) ->
                         CompactTargetActionRow(
@@ -1582,6 +1718,7 @@ private fun GameplayActionBar(
                             onAction = viewModel::capture,
                             extraActions = state.visibleActions.filter { it != AndroidVisibleAction.CAPTURE },
                             onExtraAction = { action -> viewModel.performVisibleAction(action) },
+                            practiceControls = practiceControls,
                         )
                     state.playState.robberyTargets.size > 1 && state.visibleActions.contains(AndroidVisibleAction.ROB) ->
                         CompactTargetActionRow(
@@ -1595,6 +1732,7 @@ private fun GameplayActionBar(
                             onAction = viewModel::rob,
                             extraActions = state.visibleActions.filter { it != AndroidVisibleAction.ROB },
                             onExtraAction = { action -> viewModel.performVisibleAction(action) },
+                            practiceControls = practiceControls,
                         )
                     selectedBoardAction != null -> CompactBoardActionRow(
                         phase = activePhase,
@@ -1604,6 +1742,7 @@ private fun GameplayActionBar(
                         onBoardAction = { viewModel.onCellClicked(selectedBoardAction.position) },
                         extraActions = visibleActionsAfterBoardAction(activePhase, state.visibleActions),
                         onExtraAction = { action -> viewModel.performVisibleAction(action) },
+                        practiceControls = practiceControls,
                     )
                     state.visibleActions.isNotEmpty() -> ActionControls(state = state, viewModel = viewModel)
                 }
@@ -1628,6 +1767,8 @@ private fun EventStrip(
     captureOutcome: CaptureOutcomeDisplay?,
     hasHistory: Boolean,
     onHistoryClick: () -> Unit,
+    /** Read aloud instead of [instruction] when set, such as the practice stage and targets. */
+    instructionDescription: String? = null,
 ) {
     val presentation = eventStripPresentation(outcome = captureOutcome)
     val containerColor = presentation.containerArgb?.let(::Color) ?: Color(0xFFFFFBF0)
@@ -1645,7 +1786,16 @@ private fun EventStrip(
         ) {
             Text(
                 text = instruction,
-                modifier = Modifier.weight(1f).testTag("next-action-instruction"),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag("next-action-instruction")
+                    .then(
+                        if (instructionDescription != null) {
+                            Modifier.semantics { contentDescription = instructionDescription }
+                        } else {
+                            Modifier
+                        },
+                    ),
                 color = Color(0xFF2E2115),
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
@@ -1952,6 +2102,7 @@ private fun CompactDigPlacementControls(
     onChoice: (DigTileChoice) -> Unit,
     onRotation: (Rotation) -> Unit,
     onConfirm: () -> Unit,
+    practiceControls: Set<TutorialControl> = emptySet(),
 ) {
     val enabledCandidates = state.playState.digCandidates.filter { it.enabled }
     val rotationDegrees = state.playState.selectedRotation.steps * 90
@@ -1963,11 +2114,17 @@ private fun CompactDigPlacementControls(
     ) {
         if (enabledCandidates.size > 1) {
             enabledCandidates.forEach { candidate ->
+                val candidateControl = when (candidate.choice) {
+                    DigTileChoice.REVEALED -> TutorialControl.DIG_TILE_REVEALED
+                    DigTileChoice.DRAWN -> TutorialControl.DIG_TILE_DRAWN
+                }
+                val candidateTarget = candidateControl in practiceControls
                 OutlinedButton(
                     onClick = soundEffectClick { onChoice(candidate.choice) },
                     modifier = Modifier
                         .weight(0.72f)
                         .height(buttonHeight)
+                        .tutorialFrame(candidateTarget)
                         .semantics {
                             contentDescription = digCandidateSemanticLabel(candidate)
                             selected = candidate.selected
@@ -2013,6 +2170,7 @@ private fun CompactDigPlacementControls(
                 .weight(0.9f)
                 .height(buttonHeight)
                 .testTag("dig-rotation-button")
+                .tutorialFrame(TutorialControl.ROTATE in practiceControls)
                 .semantics { contentDescription = "右に90度回転、現在の向き ${rotationDegrees}度" },
             contentPadding = PaddingValues(0.dp),
             shape = RoundedCornerShape(8.dp),
@@ -2060,7 +2218,8 @@ private fun CompactDigPlacementControls(
             onClick = soundEffectClick(onClick = onConfirm),
             modifier = Modifier
                 .weight(1.05f)
-                .height(buttonHeight),
+                .height(buttonHeight)
+                .tutorialFrame(TutorialControl.CONFIRM_DIG in practiceControls),
             contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(
@@ -2127,6 +2286,7 @@ private fun CompactTargetActionRow(
     onAction: () -> Unit,
     extraActions: List<AndroidVisibleAction> = emptyList(),
     onExtraAction: (AndroidVisibleAction) -> Unit = {},
+    practiceControls: Set<TutorialControl> = emptySet(),
 ) {
     val selected = selectedIndex.takeIf { it in labels.indices } ?: 0
     val next = if (labels.isEmpty()) 0 else (selected + 1) % labels.size
@@ -2173,6 +2333,7 @@ private fun CompactTargetActionRow(
             buttonHeight = buttonHeight,
             modifier = Modifier.weight(1f),
             testTag = "primary-action",
+            highlighted = action.tutorialControl() in practiceControls,
             onClick = onAction,
         )
         extraActions.forEach { extraAction ->
@@ -2181,6 +2342,7 @@ private fun CompactTargetActionRow(
                 phase = phase,
                 buttonHeight = buttonHeight,
                 modifier = Modifier.weight(1f),
+                highlighted = extraAction.tutorialControl() in practiceControls,
                 onClick = { onExtraAction(extraAction) },
             )
         }
@@ -2196,8 +2358,14 @@ private fun CompactBoardActionRow(
     onBoardAction: () -> Unit,
     extraActions: List<AndroidVisibleAction>,
     onExtraAction: (AndroidVisibleAction) -> Unit,
+    practiceControls: Set<TutorialControl> = emptySet(),
 ) {
     val selectedBoardAction = selectedPrimaryBoardAction(boardActions, selectedIndex) ?: return
+    val boardActionTarget = when (phase) {
+        TurnPhase.MOVE -> TutorialControl.MOVE in practiceControls
+        TurnPhase.CAPTURE -> TutorialControl.CAPTURE in practiceControls
+        else -> false
+    }
     val buttonHeight = compactActionButtonHeight(
         hasEarlyEndTurnAction(phase, extraActions), LocalDensity.current.fontScale,
     )
@@ -2245,7 +2413,8 @@ private fun CompactBoardActionRow(
             modifier = Modifier
                 .weight(if (phase == TurnPhase.MOVE) 1.6f else 1.2f)
                 .testTag("primary-action")
-                .height(buttonHeight),
+                .height(buttonHeight)
+                .tutorialFrame(boardActionTarget),
             contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
             shape = RoundedCornerShape(8.dp),
             colors = ButtonDefaults.buttonColors(
@@ -2273,6 +2442,7 @@ private fun CompactBoardActionRow(
                 phase = phase,
                 buttonHeight = buttonHeight,
                 modifier = Modifier.weight(1f),
+                highlighted = action.tutorialControl() in practiceControls,
                 onClick = { onExtraAction(action) },
             )
         }
@@ -2527,6 +2697,18 @@ private fun BoardView(
             )
         }
 
+        // A static frame just outside the cell, so the dig, move, capture and selection marks stay visible.
+        val practiceTargets = state.tutorial?.takeIf { !it.completed }?.targetCells.orEmpty()
+        practiceTargets.forEach { position ->
+            Box(
+                modifier = Modifier
+                    .boardRect(maxWidth, maxHeight, cellRect(position, scale = 1.06f))
+                    .zIndex(BOARD_TUTORIAL_TARGET_Z)
+                    .testTag(tutorialTargetTestTag(position.col, position.row))
+                    .border(TUTORIAL_FRAME_WIDTH, Color(TUTORIAL_FRAME_ARGB), RoundedCornerShape(8.dp)),
+            )
+        }
+
         state.boardState.cells
             .forEach { cell ->
                 cell.players.forEachIndexed { index, player ->
@@ -2561,7 +2743,8 @@ private fun BoardView(
                         .boardRect(maxWidth, maxHeight, cellRect(cell.position, scale = 1f))
                         .zIndex(BOARD_CLICK_TARGET_Z)
                         .semantics {
-                            contentDescription = cellDescription(cell)
+                            contentDescription = cellDescription(cell) +
+                                if (cell.position in practiceTargets) "、練習の対象" else ""
                             if (cell.position == selectedMoveTargetPosition) {
                                 selected = true
                                 stateDescription = "選択中の移動先。「このマスへ移動」で確定"
@@ -2736,6 +2919,7 @@ private fun ActionControls(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val primaryTag = if (state.visibleActions.size == 1) "primary-action" else null
+        val practiceControls = state.tutorial?.controls.orEmpty()
         state.visibleActions.forEach { action ->
             ActionButton(
                 action = action,
@@ -2744,6 +2928,7 @@ private fun ActionControls(
                 modifier = Modifier.weight(1f),
                 testTag = primaryTag,
                 decisionSource = state.playState.pendingDecisionSource,
+                highlighted = action.tutorialControl() in practiceControls,
                 onClick = { viewModel.performVisibleAction(action) },
             )
         }
@@ -2758,6 +2943,8 @@ private fun ActionButton(
     modifier: Modifier,
     testTag: String? = null,
     decisionSource: FoodDecisionSource? = null,
+    /** The practice lesson points at this button. */
+    highlighted: Boolean = false,
     onClick: () -> Unit,
 ) {
     val colors = when (action) {
@@ -2784,6 +2971,7 @@ private fun ActionButton(
         onClick = soundEffectClick(onClick = onClick),
         modifier = taggedModifier
             .height(buttonHeight)
+            .tutorialFrame(highlighted)
             .semantics {
                 contentDescription = action.accessibilityLabel(phase, decisionSource)
             },
@@ -2936,6 +3124,10 @@ internal fun actionBarInstruction(state: AndroidGameUiState): String {
     if (state.eatAnimation != null) return "タベる効果で体力を回復中"
     if (state.captureAnimation != null) return "捕獲の結果を表示中"
     if (state.cpuFault != null) return cpuFaultInstruction()
+    // Practice replaces the instruction line, except on the opponent's turn, which reads like a CPU turn.
+    state.tutorial?.let { practice ->
+        if (practice.awaitingAcknowledgement || !practice.opponentTurn) return tutorialInstruction(practice)
+    }
     if (state.cpuTurn) return cpuTurnInstruction(state)
     if (state.playState.diceRouletteActive) return "捕獲判定中：中央の表示を確認"
     if (state.showDigControls) return "次：タイルと向きを選び「置く」で確定"
