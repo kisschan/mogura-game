@@ -27,6 +27,9 @@ internal fun GameResumeScreen(
     onNewGame: () -> Unit,
     onRetryLoad: () -> Unit,
     onRules: () -> Unit,
+    tutorialResume: AndroidTutorialLessonUiState? = null,
+    onPractice: () -> Unit = {},
+    onResumePractice: () -> Unit = {},
 ) {
     Column(
         Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp),
@@ -61,6 +64,13 @@ internal fun GameResumeScreen(
         TextButton(onClick = onRules, modifier = Modifier.padding(top = 12.dp).heightIn(min = 48.dp)) {
             Text("遊び方")
         }
+        // Practice keeps this save as it is, so it can be opened from here without any confirmation.
+        TutorialEntryButtons(
+            resume = tutorialResume,
+            onPractice = onPractice,
+            onResume = onResumePractice,
+            modifier = Modifier.padding(top = 4.dp).fillMaxWidth(),
+        )
         Text("ゲームは自動で保存されます", color = Color(0xFF6F5943), modifier = Modifier.padding(top = 12.dp))
     }
 }

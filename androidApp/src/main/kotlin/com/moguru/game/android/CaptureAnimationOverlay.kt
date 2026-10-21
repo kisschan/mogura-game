@@ -124,12 +124,15 @@ internal fun CaptureAnimationOverlay(
     )
 }
 
-/** A transparent sibling blocks touch without putting gesture handlers on the images. */
+/**
+ * A transparent sibling blocks touch without putting gesture handlers on the images.
+ * [modifier] limits the covered area, such as below the practice HUD.
+ */
 @Composable
-internal fun CaptureAnimationInputBlocker(event: CaptureAnimationEvent) {
+internal fun CaptureAnimationInputBlocker(event: CaptureAnimationEvent, modifier: Modifier = Modifier) {
     BackHandler {}
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .zIndex(1f)
             .testTag("capture-animation-input-blocker")

@@ -50,30 +50,40 @@ internal fun androidSoundEffectResourceIds(): Map<AndroidSoundEffect, Int> =
         AndroidSoundEffect.EAT_RECOVERY to R.raw.eat_recovery,
     )
 
-internal class CaptureFailureSoundEffectTrigger {
-    private var lastPlayedEscapeEventId: Long? = null
+/**
+ * The last event that played, in the playback generation it was shown in. A restarted chapter,
+ * another lesson or a new match numbers its events again, so IDs are compared within one
+ * generation only, and an earlier generation never plays again.
+ */
+private data class PlayedSoundEvent(val generation: Long, val eventId: Long) {
+    fun covers(generation: Long, eventId: Long): Boolean =
+        generation < this.generation || (generation == this.generation && eventId <= this.eventId)
+}
 
-    fun soundEffectFor(event: CaptureAnimationEvent?): AndroidSoundEffect? {
+internal class CaptureFailureSoundEffectTrigger {
+    private var lastPlayedEscape: PlayedSoundEvent? = null
+
+    fun soundEffectFor(event: CaptureAnimationEvent?, generation: Long = 0L): AndroidSoundEffect? {
         if (
             event == null ||
             event.kind != CaptureOutcomeKind.ESCAPED ||
-            lastPlayedEscapeEventId?.let { event.id <= it } == true
+            lastPlayedEscape?.covers(generation, event.id) == true
         ) {
             return null
         }
 
-        lastPlayedEscapeEventId = event.id
+        lastPlayedEscape = PlayedSoundEvent(generation, event.id)
         return AndroidSoundEffect.CAPTURE_FAILURE
     }
 }
 
 internal class EatRecoverySoundEffectTrigger {
-    private var lastPlayedEventId: Long? = null
+    private var lastPlayed: PlayedSoundEvent? = null
 
-    fun soundEffectFor(event: EatAnimationEvent?): AndroidSoundEffect? {
-        if (event == null || lastPlayedEventId?.let { event.id <= it } == true) return null
+    fun soundEffectFor(event: EatAnimationEvent?, generation: Long = 0L): AndroidSoundEffect? {
+        if (event == null || lastPlayed?.covers(generation, event.id) == true) return null
 
-        lastPlayedEventId = event.id
+        lastPlayed = PlayedSoundEvent(generation, event.id)
         return AndroidSoundEffect.EAT_RECOVERY
     }
 }

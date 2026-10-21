@@ -129,12 +129,15 @@ internal fun TurnConsumptionAnimationOverlay(
     }
 }
 
-/** Prevent all board, action-bar and system-back input until the one-shot playback ends. */
+/**
+ * Prevent all board, action-bar and system-back input until the one-shot playback ends.
+ * [modifier] limits the covered area, such as below the practice HUD.
+ */
 @Composable
-internal fun TurnConsumptionAnimationInputBlocker(event: TurnConsumptionAnimationEvent) {
+internal fun TurnConsumptionAnimationInputBlocker(event: TurnConsumptionAnimationEvent, modifier: Modifier = Modifier) {
     BackHandler {}
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .zIndex(1f)
             .testTag(TURN_CONSUMPTION_INPUT_BLOCKER_TEST_TAG)

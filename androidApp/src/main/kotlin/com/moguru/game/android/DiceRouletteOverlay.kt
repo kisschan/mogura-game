@@ -59,6 +59,8 @@ internal const val DICE_ROULETTE_OVERLAY_CONSUMES_BACK_LAYER_INPUT = true
  *
  * [cpuControlled] の間は操作ボタンを出さない。回転開始（[cpuSpinning]）・出目確定・
  * ダイス不要の解決は呼び出し側が進め、ここは表示と着地後の [onFinished] だけを担当する。
+ *
+ * [modifier] は覆う範囲を決める。練習ではHUDのメニューに届くよう、HUDの下だけを覆う。
  */
 @Composable
 fun DiceRouletteOverlay(
@@ -69,6 +71,7 @@ fun DiceRouletteOverlay(
     onFinished: () -> Unit,
     cpuControlled: Boolean = false,
     cpuSpinning: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     var face by remember { mutableIntStateOf(1) }
     var landed by remember { mutableStateOf(false) }
@@ -107,7 +110,7 @@ fun DiceRouletteOverlay(
         )
     }
 
-    DiceRouletteModalLayer {
+    DiceRouletteModalLayer(modifier) {
         if (!spinning && targetFace == null) {
             FoodRevealContent(foodType, escapeRolls, cpuControlled, onPrimaryAction = ::handlePrimaryAction)
         } else {
@@ -152,10 +155,11 @@ internal suspend fun playDiceRoulettePresentation(
  */
 @Composable
 internal fun DiceRouletteModalLayer(
+    modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
         Box(
