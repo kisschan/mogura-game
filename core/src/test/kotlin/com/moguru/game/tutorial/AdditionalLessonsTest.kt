@@ -71,7 +71,7 @@ class AdditionalLessonsTest {
     fun `robbery waits for the next own turn and the returning owner evicts the thief`() {
         val scenario = TutorialScenarios.robberyDefense
         val driver = TutorialDriver(TutorialSession(scenario))
-        val opponentNest = scenario.opponent.nestPosition
+        val opponentNest = requireNotNull(scenario.opponent).nestPosition
         driver.snapshot().player(OPPONENT_ID).let {
             assertEquals(1, it.score, "the opponent stored a larva by legal play")
             assertNotEquals(it.nestPosition, it.position, "and left its nest again")
@@ -110,7 +110,7 @@ class AdditionalLessonsTest {
         carry.afterAction.player(LEARNER_ID).let {
             assertEquals(1, it.score)
             assertNull(it.carriedFood)
-            assertEquals(scenario.opponent.nestPosition, it.position)
+            assertEquals(requireNotNull(scenario.opponent).nestPosition, it.position)
         }
         assertEquals(0, carry.afterAction.player(OPPONENT_ID).score)
         assertTrue(driver.shownGuidance.any { "巣まで運ぶ" in it.text }, "it is told apart from a captured card")
@@ -130,16 +130,17 @@ class AdditionalLessonsTest {
     }
 
     @Test
-    fun `lessons reuse the discard pile when the draw pile runs out`() {
+    fun `the basic lesson draws one tile per turn alone and the robbery lessons reuse the discard pile`() {
         val basic = TutorialScenarios.basic
-        // 9 at the start, two per chapter (learner + opponent): 7, 5, 3, then 1 before chapter 5.
-        // The learner's own card for chapter 5 is already held in pendingDigDrawnTile.
-        assertEquals(1, basic.chapterStartSnapshot(4).engine.tileDrawPile.size)
+        // 9 at the start and one per chapter, as the learner plays alone: 5 before chapter 5 and 4
+        // before chapter 6. Each chapter's own card is already held in pendingDigDrawnTile.
+        assertEquals(5, basic.chapterStartSnapshot(4).engine.tileDrawPile.size)
         basic.chapterStartSnapshot(5).let {
-            assertTrue(it.engine.tileDiscardPile.isEmpty())
-            assertEquals(9, it.engine.tileDrawPile.size)
+            assertEquals(5, it.engine.tileDiscardPile.size)
+            assertEquals(4, it.engine.tileDrawPile.size)
             assertEquals(TileShape.L_SHAPE, it.pendingDigDrawnTile?.shape)
         }
+        // Two players dig ten times before the first robbery chapter, so the discard pile is drawn again.
         TutorialScenarios.robberyDefense.chapterStartSnapshot(0).let {
             assertTrue(it.engine.tileDiscardPile.isEmpty())
             assertEquals(9, it.engine.tileDrawPile.size)

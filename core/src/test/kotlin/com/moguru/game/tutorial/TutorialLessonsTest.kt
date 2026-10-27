@@ -6,7 +6,7 @@ import com.moguru.game.model.FoodCard
 import com.moguru.game.model.HoleTile
 import com.moguru.game.model.Position
 import com.moguru.game.model.Rotation
-import com.moguru.game.persistence.validate
+import com.moguru.game.persistence.validatePractice
 import com.moguru.game.presenter.DigTileChoice
 import com.moguru.game.presenter.MoguraGameController
 import com.moguru.game.util.FixedDiceRoller
@@ -56,12 +56,12 @@ class TutorialLessonsTest {
     }
 
     @Test
-    fun `every lesson starts from a regulation two player game on the learner's turn`() {
+    fun `every lesson starts from a regulation practice game on the learner's turn`() {
         scenarios.forEach { scenario ->
             val start = scenario.newController().exportSnapshot()
-            start.validate()
+            start.validatePractice()
             assertEquals(start, scenario.chapterStartSnapshot(0), "${scenario.lesson}")
-            assertEquals(listOf(scenario.learnerPlayerId, scenario.opponentPlayerId), start.engine.players.map { it.id })
+            assertEquals(listOfNotNull(scenario.learnerPlayerId, scenario.opponentPlayerId), start.engine.players.map { it.id })
             assertEquals(scenario.learnerPlayerId, start.engine.players[start.engine.currentPlayerIndex].id)
             assertEquals(scenario.learnerNest, start.player(scenario.learnerPlayerId).nestPosition)
             val tiles = start.engine.tiles.values + start.engine.tileDrawPile + start.engine.tileDiscardPile +
@@ -100,7 +100,7 @@ class TutorialLessonsTest {
         scenarios.forEach { scenario ->
             for (chapter in 0 until scenario.chapterCount) {
                 val expected = scenario.chapterStartSnapshot(chapter)
-                expected.validate()
+                expected.validatePractice()
                 val driver = TutorialDriver(TutorialSession(scenario, chapter))
                 assertEquals(expected, driver.snapshot(), "${scenario.lesson} chapter $chapter")
                 // Leave the chapter half done, then restart it.
@@ -230,7 +230,7 @@ class TutorialLessonsTest {
      */
     private fun isLegalForTheGame(session: TutorialSession, probe: TutorialAction): Boolean {
         if (probe is TutorialAction.SelectMoveTarget) return false
-        val copy = MoguraGameController.fromSnapshot(session.controller.exportSnapshot(), FixedDiceRoller(listOf(6)), FixedShuffler())
+        val copy = MoguraGameController.fromPracticeSnapshot(session.controller.exportSnapshot(), FixedDiceRoller(listOf(6)), FixedShuffler())
         return copy.runTutorialAction(probe)?.success == true
     }
 

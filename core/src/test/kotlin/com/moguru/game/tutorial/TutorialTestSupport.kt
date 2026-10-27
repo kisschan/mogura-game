@@ -16,7 +16,6 @@ import com.moguru.game.presenter.displayName
 import org.junit.jupiter.api.Assertions.*
 
 internal val LEARNER_NEST = Position(0, 1)
-internal val OPPONENT_NEST = Position(5, 4)
 internal const val LEARNER_ID = 0
 internal const val OPPONENT_ID = 1
 private const val MAX_STEPS = 200
@@ -83,14 +82,14 @@ internal object BasicLesson {
     )
     val chapters = listOf(chapter0, chapter1, chapter2, chapter3, chapter4, chapter5)
 
-    /** Learner health, opponent health and learner score when each chapter begins. */
+    /** Learner health and score when each chapter begins. The learner practises alone. */
     val chapterStartStats = listOf(
-        Triple(13, 13, 0),
-        Triple(12, 12, 0),
-        Triple(11, 11, 0),
-        Triple(11, 10, 0),
-        Triple(10, 9, 0),
-        Triple(9, 8, 1),
+        13 to 0,
+        12 to 0,
+        11 to 0,
+        11 to 0,
+        10 to 0,
+        9 to 1,
     )
 
     fun withChapter(index: Int, actions: List<TutorialAction>): List<List<TutorialAction>> =
@@ -126,7 +125,7 @@ internal class TutorialDriver(val session: TutorialSession) {
 
     fun learner(): PlayerSnapshot = snapshot().player(session.learnerPlayerId)
 
-    fun opponent(): PlayerSnapshot = snapshot().player(session.opponentPlayerId)
+    fun opponent(): PlayerSnapshot = snapshot().player(requireNotNull(session.opponentPlayerId))
 
     fun learnerConsumptions(): List<TurnConsumptionAnimationEvent> =
         results.mapNotNull { it.turnConsumptionAnimation }.filter { it.playerId == session.learnerPlayerId }

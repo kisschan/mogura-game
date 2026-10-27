@@ -44,6 +44,15 @@ fun HoleTile.detached(): HoleTile = copy(openSides = openSides.toSet())
 
 /** Validate before creating any live game. Never repair a damaged save by dropping state. */
 fun GameSnapshot.validate() {
+    validateWith(minPlayers = 2)
+}
+
+/** A practice game may also have a single player. Everything else is checked exactly as for a save. */
+internal fun GameSnapshot.validatePractice() {
+    validateWith(minPlayers = 1)
+}
+
+private fun GameSnapshot.validateWith(minPlayers: Int) {
     val board = Board()
     fun validPosition(position: Position) =
         board.getCell(position)?.type?.let { it != CellType.INVALID } == true
@@ -55,7 +64,7 @@ fun GameSnapshot.validate() {
         require(Rotation.entries.any { HoleTile(value.shape).rotate(it).openSides == value.openSides })
     }
     val players = engine.players
-    require(players.size in 2..4)
+    require(players.size in minPlayers..4)
     require(players.map { it.id }.distinct().size == players.size)
     require(players.map { it.nestPosition }.distinct().size == players.size)
     require(engine.currentPlayerIndex in players.indices)

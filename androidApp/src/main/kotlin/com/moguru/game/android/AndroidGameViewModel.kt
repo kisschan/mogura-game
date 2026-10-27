@@ -279,9 +279,9 @@ class AndroidGameViewModel(
     /** The game on screen: the practice game during a lesson, otherwise the match. */
     private val controller: MoguraGameController
         get() = tutorial?.controller ?: gameController
-    /** Players moved automatically: the scripted opponent in practice, otherwise the CPU seats. */
+    /** Players moved automatically: the scripted opponent in practice (none alone), otherwise the CPU seats. */
     private val automatedPlayerIds: Set<Int>
-        get() = tutorial?.let { setOf(it.opponentPlayerId) } ?: cpuPlayerIds
+        get() = tutorial?.let { setOfNotNull(it.opponentPlayerId) } ?: cpuPlayerIds
     private var tutorialProgress = TutorialProgress()
     /** Counts local progress changes. A later load or an older save completion must not undo them. */
     private var tutorialProgressRevision = 0L
@@ -1069,7 +1069,7 @@ class AndroidGameViewModel(
 
     /**
      * Completion callbacks are not human input, so they stay open on CPU turns. A valid one that
-     * arrives mid-save or while a CPU game is paused is held and applied once play may continue.
+     * arrives mid-save or while a CPU game or practice is paused is held and applied once play may continue.
      */
     private fun onPresentationFinished(completion: PresentationCompletion, generation: Long) {
         if (!alive || generation != playbackGeneration || !isShownPresentation(completion)) return
@@ -1098,7 +1098,8 @@ class AndroidGameViewModel(
     }
 
     private fun completionMustWait(): Boolean =
-        persistenceBusy || pendingSave != null || (automatedPlayerIds.isNotEmpty() && !cpuHostActive())
+        persistenceBusy || pendingSave != null ||
+            ((tutorial != null || automatedPlayerIds.isNotEmpty()) && !cpuHostActive())
 
     private fun deliverDeferredCompletion(): Boolean {
         val completion = deferredCompletion ?: return false

@@ -215,7 +215,7 @@ class TutorialPlayScreenComposeTest {
         }
         assertTextDoesNotOverflow(composeRule.onNodeWithTag("next-action-instruction", useUnmergedTree = true))
 
-        // Through the first chapter's pages, dig, move, playback and opponent turn, nothing moves
+        // Through the first chapter's pages, dig, move, playback and turn end, nothing moves
         // and the menu stays reachable.
         composeRule.mainClock.autoAdvance = false
         try {

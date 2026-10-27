@@ -38,9 +38,7 @@ private val X = TileShape.CROSS
 private const val MOGUO = 0
 private const val MOGUTA = 1
 private val NEST_A = p(0, 1)
-private val NEST_B = p(5, 1)
 private val NEST_C = p(0, 4)
-private val NEST_D = p(5, 4)
 
 private fun mole(id: Int, nest: Position) = PlayerConfig(MoguraGameController.playerNameForId(id), nest, playerId = id)
 
@@ -69,7 +67,6 @@ private const val LARVA_REVEALED = "幼虫はダイス不要！「捕獲する�
 // ---------------------------------------------------------------------------------------------
 
 private fun basicLesson(): TutorialScenario {
-    val dig = p(4, 4)
     val chapters = listOf(
         // 第1章: 駒・巣・体力 → 掘る → 移動
         TutorialChapter(
@@ -89,7 +86,7 @@ private fun basicLesson(): TutorialScenario {
                     "move", 3,
                     listOf("道がつながったマスへ移動できるよ", "道が続けば何マスでも進めるよ"),
                 ) { it.learnersTurn && it.phase == TurnPhase.MOVE },
-                TutorialExplanation("opponent", 3, listOf("次は相手役モグタの番。見ていてね")) { !it.learnersTurn },
+                TutorialExplanation("turn-end", 3, listOf("手番が終わり、体力が1減ったよ", "練習は君1人。次も君の番だよ")) { it.turnOver },
             ),
         ) { context ->
             context.guidedDig(
@@ -130,7 +127,7 @@ private fun basicLesson(): TutorialScenario {
                     TutorialAction.Eat in it.accepted
                 },
                 TutorialExplanation("cost", 5, listOf("手番を終えたので体力が1減ったよ", "回復と消費は別々に起きるよ")) {
-                    !it.learnersTurn
+                    it.turnOver
                 },
             ),
         ) { context ->
@@ -194,7 +191,7 @@ private fun basicLesson(): TutorialScenario {
             stage = 7,
             explanations = listOf(
                 TutorialExplanation(
-                    "self", 7, listOf("山札が尽きて捨て札を混ぜ直したよ", "最後は自分で掘って移動しよう"),
+                    "self", 7, listOf("最後は自分で掘って移動しよう"),
                     showsWhen = learnerTurnOpen,
                 ),
             ),
@@ -231,17 +228,16 @@ private fun basicLesson(): TutorialScenario {
     )
     return TutorialScenario(
         lesson = TutorialLessonId.BASIC,
-        version = 1,
+        version = 2,
         title = "基本編",
         summary = "掘る・いどう・捕獲・タベる・レンコウ",
         learner = mole(MOGUO, NEST_A),
-        opponent = mole(MOGUTA, NEST_D),
+        opponent = null,
         tiles = BASIC_TILES,
         foods = foodOrder(),
         rolls = emptyList(),
         prelude = emptyList(),
         chapters = chapters,
-        opponentScript = digAndStay(dig),
         solution = solution,
         completionText = "練習クリア！本番は2〜3人4点、4人5点で勝ち",
         stageCount = 7,
@@ -253,26 +249,21 @@ private val BASIC_TILES = deal(
     listOf(L, L, S, T),
     listOf(S, L, S, T),
     listOf(S, L, S, S),
-    pile = listOf(L, T, L, X, S, T, L, X, S, L),
+    // 学習者だけが引くので、第1〜6章の手番ではL字, L字, 直線, L字, 直線, L字を引く。
+    pile = listOf(L, L, S, L, S, L, T, X, T, X),
 )
 
-/** 基本編の第1〜4章の操作。巣のエサの練習では相手役の手番と合わせて自動で再生する。 */
-private fun basicOpening(): List<TutorialAction> {
-    val opponent = listOf(TutorialAction.SelectDigCell(p(4, 4)), TutorialAction.ConfirmDig)
-    return listOf(
-        TutorialAction.SelectDigCell(p(1, 1)), TutorialAction.RotateDigTile(Rotation.DEG_90), TutorialAction.ConfirmDig,
-        TutorialAction.Move(p(1, 1)),
-    ) + opponent + listOf(
-        TutorialAction.SelectDigCell(p(2, 1)), TutorialAction.SelectDigTile(DigTileChoice.DRAWN), TutorialAction.ConfirmDig,
-        TutorialAction.Move(p(2, 1)),
-    ) + opponent + listOf(
-        TutorialAction.SelectDigCell(p(2, 2)), TutorialAction.RotateDigTile(Rotation.DEG_180), TutorialAction.ConfirmDig,
-        TutorialAction.Move(p(2, 2)), TutorialAction.Capture, TutorialAction.ResolveCapture, TutorialAction.Eat,
-    ) + opponent + listOf(
-        TutorialAction.SelectDigCell(p(3, 2)), TutorialAction.RotateDigTile(Rotation.DEG_90), TutorialAction.ConfirmDig,
-        TutorialAction.Move(p(3, 2)), TutorialAction.Capture, TutorialAction.ResolveCapture, TutorialAction.Carry,
-    ) + opponent
-}
+/** 基本編の第1〜4章の操作。巣のエサの練習では最初に自動で再生する。 */
+private fun basicOpening(): List<TutorialAction> = listOf(
+    TutorialAction.SelectDigCell(p(1, 1)), TutorialAction.RotateDigTile(Rotation.DEG_90), TutorialAction.ConfirmDig,
+    TutorialAction.Move(p(1, 1)),
+    TutorialAction.SelectDigCell(p(2, 1)), TutorialAction.SelectDigTile(DigTileChoice.DRAWN), TutorialAction.ConfirmDig,
+    TutorialAction.Move(p(2, 1)),
+    TutorialAction.SelectDigCell(p(2, 2)), TutorialAction.RotateDigTile(Rotation.DEG_180), TutorialAction.ConfirmDig,
+    TutorialAction.Move(p(2, 2)), TutorialAction.Capture, TutorialAction.ResolveCapture, TutorialAction.Eat,
+    TutorialAction.SelectDigCell(p(3, 2)), TutorialAction.RotateDigTile(Rotation.DEG_90), TutorialAction.ConfirmDig,
+    TutorialAction.Move(p(3, 2)), TutorialAction.Capture, TutorialAction.ResolveCapture, TutorialAction.Carry,
+)
 
 /** The last basic chapter: any legal dig that joins the learner's cell, then a real move. */
 private fun TutorialContext.selfPractice(): TutorialStep? {
@@ -358,32 +349,29 @@ private fun diceEscapeLesson(): TutorialScenario {
                 ?: context.guidedDecision(3, "タベるかレンコウを選ぼう", eat = true, carry = true, refusal = "タベるかレンコウを選ぼう")
         },
     )
-    val opponentTurn = listOf(TutorialAction.SelectDigCell(p(4, 1)), TutorialAction.ConfirmDig)
     return TutorialScenario(
         lesson = TutorialLessonId.DICE_ESCAPE,
-        version = 1,
+        version = 2,
         title = "ダイスと逃走",
         summary = "出目と矢印、逃げられない時の捕獲",
         learner = mole(MOGUO, NEST_C),
-        opponent = mole(MOGUTA, NEST_B),
+        opponent = null,
         tiles = deal(
             listOf(L, S, L, S),
             listOf(L, T, S, L),
             listOf(S, S, L, T),
             listOf(S, L, S, L),
-            pile = listOf(L, S, L, T, L, S, X, T, S, X),
+            pile = listOf(L, L, L, X, S, T, S, T, S, X),
         ),
         foods = foodOrder(FoodType.BEETLE_LARVA, FoodType.BEETLE_LARVA, FoodType.EARTHWORM, FoodType.BEETLE_LARVA),
         rolls = listOf(2, 2),
         prelude = listOf(
             TutorialAction.SelectDigCell(p(1, 4)), TutorialAction.RotateDigTile(Rotation.DEG_90), TutorialAction.ConfirmDig,
             TutorialAction.Move(p(1, 4)),
-        ) + opponentTurn + listOf(
             TutorialAction.SelectDigCell(p(2, 4)), TutorialAction.RotateDigTile(Rotation.DEG_90), TutorialAction.ConfirmDig,
             TutorialAction.Move(p(2, 4)),
-        ) + opponentTurn,
+        ),
         chapters = chapters,
-        opponentScript = digAndStay(p(4, 1)),
         solution = listOf(
             listOf(
                 TutorialAction.SelectDigCell(p(2, 3)), TutorialAction.ConfirmDig,
@@ -414,7 +402,7 @@ private fun surfaceHealthLesson(): TutorialScenario {
                     "intro", 1, listOf("地上と体力の減り方を練習しよう", "一番上の段は地上だよ"),
                     showsWhen = learnerTurnOpen,
                 ),
-                TutorialExplanation("under", 1, listOf("地下で手番を終えたので体力−1")) { !it.learnersTurn },
+                TutorialExplanation("under", 1, listOf("地下で手番を終えたので体力−1")) { it.turnOver },
             ),
         ) { context ->
             context.guidedDig(
@@ -430,7 +418,7 @@ private fun surfaceHealthLesson(): TutorialScenario {
                 ) { it.learnersTurn && it.phase == TurnPhase.MOVE },
                 TutorialExplanation(
                     "surface", 2, listOf("地上で手番を終えると体力−2！", "地上は減りが大きいので注意"),
-                ) { !it.learnersTurn },
+                ) { it.turnOver },
             ),
         ) { context ->
             context.guidedDig(2, p(2, 1), "黄色い枠の3列2行を掘ろう", TAKE_ANY_TEXT)
@@ -439,7 +427,7 @@ private fun surfaceHealthLesson(): TutorialScenario {
         TutorialChapter(
             stage = 3,
             explanations = listOf(
-                TutorialExplanation("back", 3, listOf("地下に戻ると減り方は−1に戻るよ")) { !it.learnersTurn },
+                TutorialExplanation("back", 3, listOf("地下に戻ると減り方は−1に戻るよ")) { it.turnOver },
             ),
             completesWhen = { context -> context.shown("back") },
         ) { context ->
@@ -451,23 +439,22 @@ private fun surfaceHealthLesson(): TutorialScenario {
     )
     return TutorialScenario(
         lesson = TutorialLessonId.SURFACE_HEALTH,
-        version = 1,
+        version = 2,
         title = "地上と体力",
         summary = "地下は−1、地上は−2",
         learner = mole(MOGUO, NEST_A),
-        opponent = mole(MOGUTA, NEST_D),
+        opponent = null,
         tiles = deal(
             listOf(T, L, S, L),
             listOf(S, L, S, L),
             listOf(L, S, L, S),
             listOf(S, L, T, S),
-            pile = listOf(L, S, X, T, S, L, X, T, S, L),
+            pile = listOf(L, X, S, S, T, L, X, T, S, L),
         ),
         foods = foodOrder(),
         rolls = emptyList(),
         prelude = emptyList(),
         chapters = chapters,
-        opponentScript = digAndStay(p(4, 4)),
         solution = listOf(
             listOf(
                 TutorialAction.SelectDigCell(p(1, 1)), TutorialAction.ConfirmDig,
@@ -661,17 +648,16 @@ private fun nestEatLesson(): TutorialScenario {
     )
     return TutorialScenario(
         lesson = TutorialLessonId.NEST_EAT,
-        version = 1,
+        version = 2,
         title = "巣のエサをタベる",
         summary = "巣のエサを食べると得点を失う",
         learner = mole(MOGUO, NEST_A),
-        opponent = mole(MOGUTA, NEST_D),
+        opponent = null,
         tiles = BASIC_TILES,
         foods = foodOrder(),
         rolls = emptyList(),
         prelude = basicOpening(),
         chapters = chapters,
-        opponentScript = digAndStay(p(4, 4)),
         solution = listOf(
             listOf(
                 TutorialAction.SelectDigCell(p(4, 2)), TutorialAction.ConfirmDig,

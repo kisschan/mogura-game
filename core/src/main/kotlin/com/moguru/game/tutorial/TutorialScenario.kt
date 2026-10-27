@@ -19,8 +19,8 @@ import com.moguru.game.util.Shuffler
 
 /**
  * A reproducible practice game: a fixed deal of the regulation tiles and food, an optional prelude
- * of legal moves that sets the scene, the learner's chapters, and the opponent's scripted moves.
- * Everything runs through the normal [MoguraGameController].
+ * of legal moves that sets the scene, the learner's chapters, and, in lessons that need one, the
+ * opponent's scripted moves. Everything runs through the normal [MoguraGameController].
  */
 class TutorialScenario internal constructor(
     val lesson: TutorialLessonId,
@@ -29,14 +29,15 @@ class TutorialScenario internal constructor(
     val title: String,
     val summary: String,
     internal val learner: PlayerConfig,
-    internal val opponent: PlayerConfig,
+    /** The scripted opponent, or null when the learner practises alone. */
+    internal val opponent: PlayerConfig?,
     tiles: List<TileShape>,
     foods: List<FoodType>,
     private val rolls: List<Int>,
-    /** Legal moves for both players, played automatically before the first chapter. */
+    /** Legal moves for every player, played automatically before the first chapter. */
     private val prelude: List<TutorialAction>,
     internal val chapters: List<TutorialChapter>,
-    internal val opponentScript: (TutorialContext) -> CpuAction?,
+    internal val opponentScript: (TutorialContext) -> CpuAction? = { null },
     /** The learner's operations for each chapter, used to build and check every chapter start. */
     val solution: List<List<TutorialAction>>,
     /** Shown when the lesson is complete. */
@@ -46,12 +47,14 @@ class TutorialScenario internal constructor(
 ) {
     init {
         require(chapters.isNotEmpty() && chapters.size == solution.size)
-        require(learner.playerId != null && opponent.playerId != null)
+        require(learner.playerId != null && (opponent == null || opponent.playerId != null))
     }
 
     val chapterCount: Int get() = chapters.size
     val learnerPlayerId: Int get() = requireNotNull(learner.playerId)
-    val opponentPlayerId: Int get() = requireNotNull(opponent.playerId)
+    val opponentPlayerId: Int? get() = opponent?.playerId
+    /** The learner plays alone, so every turn is the learner's and a chapter ends with it. */
+    val solo: Boolean get() = opponent == null
     val learnerNest: Position get() = learner.nestPosition
 
     internal val shuffler: Shuffler = ScenarioShuffler(tiles, foods)
@@ -71,7 +74,7 @@ class TutorialScenario internal constructor(
     internal fun deal(): Pair<MoguraGameController, ScenarioDice> {
         val dice = dice(0)
         val controller = MoguraGameController(dice, shuffler)
-        check(controller.startNewGame(listOf(learner, opponent), startPlayerIndex = 0).success)
+        check(controller.startPracticeGame(listOfNotNull(learner, opponent), startPlayerIndex = 0).success)
         prelude.forEach { action ->
             val result = controller.runTutorialAction(action)
             check(result == null || result.success) { "$lesson prelude refused $action: ${result?.message}" }
@@ -102,16 +105,20 @@ internal class TutorialContext(
     val controller: MoguraGameController,
     val chapter: Int,
     val learnerId: Int,
-    val opponentId: Int,
+    val opponentId: Int?,
     private val shownKeys: Set<String>,
     /** Learner operations accepted in this chapter, in order. */
     val accepted: List<TutorialAction>,
+    /** The learner's turn in this chapter has ended. Alone, the learner's next turn has already begun. */
+    val turnOver: Boolean,
 ) {
     val engine: GameEngine get() = requireNotNull(controller.engine)
     val phase: TurnPhase get() = engine.currentPhase
     val learner: Player get() = engine.players.first { it.id == learnerId }
-    val opponent: Player get() = engine.players.first { it.id == opponentId }
-    val learnersTurn: Boolean get() = controller.currentPlayer?.id == learnerId
+    /** Only lessons with an opponent ask for it. */
+    val opponent: Player get() = engine.players.first { it.id == requireNotNull(opponentId) }
+    /** The learner's turn of this chapter, never a later one that belongs to the next chapter. */
+    val learnersTurn: Boolean get() = controller.currentPlayer?.id == learnerId && !turnOver
 
     fun shown(key: String): Boolean = key in shownKeys
 }
@@ -135,7 +142,7 @@ internal class TutorialExplanation(
     val showsWhen: (TutorialContext) -> Boolean,
 )
 
-/** One learner turn and the opponent turn after it. */
+/** One learner turn, and the opponent turn after it when the lesson has an opponent. */
 internal class TutorialChapter(
     val stage: Int,
     val explanations: List<TutorialExplanation> = emptyList(),
@@ -146,7 +153,7 @@ internal class TutorialChapter(
 
 /**
  * Deals the complete tile set and food deck in the scenario's order. Any other list is a discard
- * pile being reused, and keeps the order in which it was discarded. A two-player discard pile can
+ * pile being reused, and keeps the order in which it was discarded. A practice discard pile can
  * never hold all 26 tiles or all 12 food cards, so the sizes tell the cases apart.
  */
 internal class ScenarioShuffler(

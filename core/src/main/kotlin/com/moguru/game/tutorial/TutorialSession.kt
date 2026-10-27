@@ -18,6 +18,8 @@ internal const val COMPLETED_REFUSAL = "この練習はクリア済みだよ"
  * ordinary [MoguraGameController], so every rule is checked and applied exactly as in a match.
  *
  * A chapter begins on the learner's turn and ends when the opponent's turn after it is over.
+ * When the learner practises alone, it ends with the learner's own turn once its explanations
+ * have been read, and the next chapter begins on the learner's next turn.
  */
 class TutorialSession(val scenario: TutorialScenario, startChapterIndex: Int = 0) {
     var controller: MoguraGameController
@@ -35,10 +37,12 @@ class TutorialSession(val scenario: TutorialScenario, startChapterIndex: Int = 0
         private set
 
     val learnerPlayerId: Int get() = scenario.learnerPlayerId
-    val opponentPlayerId: Int get() = scenario.opponentPlayerId
+    val opponentPlayerId: Int? get() = scenario.opponentPlayerId
 
     private var dice: ScenarioDice
     private var turnOwner: Int?
+    /** Turns ended when the current chapter began, so the end of its turn can be told apart. */
+    private var chapterTurnEnds: Long
     private val starts = mutableMapOf<Int, TutorialStart>()
     private var explanation: TutorialExplanation? = null
     private var page = 0
@@ -56,9 +60,10 @@ class TutorialSession(val scenario: TutorialScenario, startChapterIndex: Int = 0
         } else {
             val start = scenario.start(startChapterIndex)
             dice = scenario.dice(start.dicePosition)
-            controller = MoguraGameController.fromSnapshot(start.game, dice, scenario.shuffler)
+            controller = MoguraGameController.fromPracticeSnapshot(start.game, dice, scenario.shuffler)
         }
         turnOwner = controller.currentPlayer?.id
+        chapterTurnEnds = controller.turnEndCount
         starts[chapterIndex] = TutorialStart(controller.exportSnapshot(), dice.position)
         refresh()
     }
@@ -67,7 +72,7 @@ class TutorialSession(val scenario: TutorialScenario, startChapterIndex: Int = 0
         get() = when {
             completed -> TutorialStatus.COMPLETED
             explanation != null -> TutorialStatus.AWAITING_ACKNOWLEDGEMENT
-            controller.currentPlayer?.id == opponentPlayerId -> TutorialStatus.OPPONENT_TURN
+            opponentPlayerId != null && controller.currentPlayer?.id == opponentPlayerId -> TutorialStatus.OPPONENT_TURN
             else -> TutorialStatus.LEARNER_ACTION
         }
 
@@ -169,7 +174,8 @@ class TutorialSession(val scenario: TutorialScenario, startChapterIndex: Int = 0
     fun restartChapter() {
         val start = starts.getValue(chapterIndex)
         dice = scenario.dice(start.dicePosition)
-        controller = MoguraGameController.fromSnapshot(start.game, dice, scenario.shuffler)
+        controller = MoguraGameController.fromPracticeSnapshot(start.game, dice, scenario.shuffler)
+        chapterTurnEnds = controller.turnEndCount
         generation++
         completed = false
         resetChapterState()
@@ -181,11 +187,12 @@ class TutorialSession(val scenario: TutorialScenario, startChapterIndex: Int = 0
 
     private fun context() = TutorialContext(
         controller, chapterIndex, learnerPlayerId, opponentPlayerId, shown.toSet(), accepted.toList(),
+        turnOver = controller.turnEndCount > chapterTurnEnds,
     )
 
     private fun refresh() {
         val owner = controller.currentPlayer?.id
-        if (owner == learnerPlayerId && turnOwner == opponentPlayerId) beginNextChapter()
+        if (!scenario.solo && owner == learnerPlayerId && turnOwner == opponentPlayerId) beginNextChapter()
         turnOwner = owner
         if (completed || explanation != null) return
         val chapter = scenario.chapters[chapterIndex]
@@ -198,13 +205,20 @@ class TutorialSession(val scenario: TutorialScenario, startChapterIndex: Int = 0
             explanationSerial++
             return
         }
-        if (chapter.completesWhen(context)) completed = true
+        if (chapter.completesWhen(context)) {
+            completed = true
+        } else if (scenario.solo && context.turnOver && chapterIndex + 1 < scenario.chapterCount) {
+            // Alone, the learner's next turn has already begun. It opens the next chapter.
+            beginNextChapter()
+            refresh()
+        }
     }
 
     private fun beginNextChapter() {
         kotlin.check(chapterIndex + 1 < scenario.chapterCount) { "${scenario.lesson} has no chapter after $chapterIndex" }
         chapterIndex++
         resetChapterState()
+        chapterTurnEnds = controller.turnEndCount
         starts[chapterIndex] = TutorialStart(controller.exportSnapshot(), dice.position)
     }
 
