@@ -20,9 +20,9 @@ class TutorialProgressTest {
         assertEquals(
             "moguru-tutorial-progress 1\n" +
                 "current SURFACE_HEALTH\n" +
-                "lesson BASIC 1 0 3\n" +
-                "lesson DICE_ESCAPE 1 1 -\n" +
-                "lesson SURFACE_HEALTH 1 0 1\n",
+                "lesson BASIC 2 0 3\n" +
+                "lesson DICE_ESCAPE 2 1 -\n" +
+                "lesson SURFACE_HEALTH 2 0 1\n",
             text,
         )
         assertEquals(progress, TutorialProgressCodec.decode(text))
@@ -67,7 +67,7 @@ class TutorialProgressTest {
 
     @Test
     fun `a chapter outside the current lesson is not resumed`() {
-        val text = "moguru-tutorial-progress 1\ncurrent NEST_EAT\nlesson NEST_EAT 1 0 5\n"
+        val text = "moguru-tutorial-progress 1\ncurrent NEST_EAT\nlesson NEST_EAT ${TutorialScenarios.nestEat.version} 0 5\n"
         val progress = TutorialProgressCodec.decode(text)
         assertEquals(5, progress.lessons[TutorialLessonId.NEST_EAT]?.resumeChapter)
         assertNull(progress.resumeChapter(TutorialScenarios.nestEat))

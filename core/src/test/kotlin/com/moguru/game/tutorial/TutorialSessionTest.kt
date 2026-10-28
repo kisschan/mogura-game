@@ -7,7 +7,7 @@ import com.moguru.game.model.FoodType
 import com.moguru.game.model.HoleTile
 import com.moguru.game.model.TileShape
 import com.moguru.game.persistence.GameSnapshot
-import com.moguru.game.persistence.validate
+import com.moguru.game.persistence.validatePractice
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 
@@ -16,9 +16,8 @@ class TutorialSessionTest {
 
     private fun driver(startChapter: Int = 0) = TutorialDriver(TutorialSession(scenario, startChapter))
 
-    /** Learner health, opponent health and learner score, as in [BasicLesson.chapterStartStats]. */
-    private fun GameSnapshot.stats() =
-        Triple(player(LEARNER_ID).health, player(OPPONENT_ID).health, player(LEARNER_ID).score)
+    /** Learner health and score, as in [BasicLesson.chapterStartStats]. */
+    private fun GameSnapshot.stats() = player(LEARNER_ID).health to player(LEARNER_ID).score
 
     /** Food types the learner has already seen face up somewhere. */
     private fun GameSnapshot.publicFoodTypes(): Set<FoodType> = buildSet {
@@ -35,24 +34,20 @@ class TutorialSessionTest {
     fun `basic lesson starts from the fixed layout with the regulation tiles and food`() {
         val session = TutorialSession(scenario)
         val start = session.controller.exportSnapshot()
-        start.validate()
+        start.validatePractice()
         assertEquals(TutorialLessonId.BASIC, scenario.lesson)
         assertEquals(BasicLesson.chapters.size, scenario.chapterCount)
         assertEquals(BasicLesson.chapters, scenario.solution)
         assertEquals(0, session.chapterIndex)
         assertEquals(LEARNER_ID, session.learnerPlayerId)
-        assertEquals(OPPONENT_ID, session.opponentPlayerId)
+        assertNull(session.opponentPlayerId, "the learner practises alone")
 
         val engine = start.engine
-        assertEquals(listOf(LEARNER_ID, OPPONENT_ID), engine.players.map { it.id })
+        assertEquals(listOf(LEARNER_ID), engine.players.map { it.id })
         assertEquals(LEARNER_ID, engine.players[engine.currentPlayerIndex].id, "the learner moves first")
         start.player(LEARNER_ID).let {
             assertEquals(LEARNER_NEST, it.nestPosition)
             assertEquals(LEARNER_NEST, it.position)
-        }
-        start.player(OPPONENT_ID).let {
-            assertEquals(OPPONENT_NEST, it.nestPosition)
-            assertEquals(OPPONENT_NEST, it.position)
         }
         assertEquals(BasicLesson.chapterStartStats[0], start.stats())
 
@@ -72,9 +67,10 @@ class TutorialSessionTest {
         assertEquals(expectedTiles, engine.tiles.mapValues { it.value.shape })
         assertTrue(engine.tiles.values.all { it.isFaceDown })
         // Both piles are drawn from the front. The game opens by drawing the learner's first tile
-        // (an L), so it waits as the prepared dig tile and nine tiles remain in the pile.
+        // (an L), so it waits as the prepared dig tile and nine tiles remain in the pile. Alone, the
+        // learner draws L, L, S, L, S, L for the six chapters, as in the two-player version.
         assertEquals(l, start.pendingDigDrawnTile?.shape)
-        assertEquals(listOf(t, l, x, s, t, l, x, s, l), engine.tileDrawPile.map { it.shape })
+        assertEquals(listOf(l, s, l, s, l, t, x, t, x), engine.tileDrawPile.map { it.shape })
         assertTrue(engine.tileDiscardPile.isEmpty())
         assertEquals(
             HoleTile.createFullSet().groupingBy { it.shape }.eachCount(),
@@ -104,12 +100,12 @@ class TutorialSessionTest {
         val driver = driver()
         driver.finish(BasicLesson.chapters)
         assertEquals(TutorialStatus.COMPLETED, driver.session.status)
-        assertTrue(driver.opponentActions.isNotEmpty())
+        assertTrue(driver.opponentActions.isEmpty(), "there is no opponent to play")
 
         assertEquals((0 until scenario.chapterCount).toList(), driver.chapterStarts.keys.toList())
         driver.chapterStarts.forEach { (chapter, start) ->
             assertEquals(BasicLesson.chapterStartStats[chapter], start.stats(), "chapter $chapter")
-            assertEquals(OPPONENT_NEST, start.player(OPPONENT_ID).position, "the opponent stays in its nest")
+            assertEquals(1, start.engine.players.size, "chapter $chapter")
             assertEquals(scenario.chapterStartSnapshot(chapter).engine, start.engine, "chapter $chapter")
         }
 
@@ -193,7 +189,7 @@ class TutorialSessionTest {
         assertEquals(scenario.newController().exportSnapshot(), scenario.chapterStartSnapshot(0))
         for (chapter in 0 until scenario.chapterCount) {
             val expected = scenario.chapterStartSnapshot(chapter)
-            expected.validate()
+            expected.validatePractice()
             assertEquals(expected, scenario.chapterStartSnapshot(chapter), "chapter $chapter is reproducible")
             assertEquals(BasicLesson.chapterStartStats[chapter], expected.stats(), "chapter $chapter")
 

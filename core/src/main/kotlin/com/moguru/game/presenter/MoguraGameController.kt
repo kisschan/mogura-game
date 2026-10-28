@@ -178,6 +178,9 @@ class MoguraGameController(
     private var eatAnimationId = 0L
     private var turnConsumptionAnimationId = 0L
 
+    /** Every finished turn makes one consumption event, so this counts ended turns, also across a restore. */
+    internal val turnEndCount: Long get() = turnConsumptionAnimationId
+
     private var pendingDecision: PendingFoodDecision? = null
 
     val pendingFoodDecision: FoodCard?
@@ -312,9 +315,18 @@ class MoguraGameController(
         return startNewGame(defaultConfigs(playerCount), startPlayerIndex = 0)
     }
 
+    /** A practice game, which may also be played alone. Matches always start with [startNewGame]. */
+    internal fun startPracticeGame(configs: List<PlayerConfig>, startPlayerIndex: Int = 0): GameActionResult {
+        require(configs.size in 1..4) { "練習のプレイヤー人数は1〜4人にしてください。" }
+        return startGame(configs, startPlayerIndex)
+    }
+
     fun startNewGame(configs: List<PlayerConfig>, startPlayerIndex: Int = 0): GameActionResult {
         require(configs.size in 2..4) { "プレイヤー人数は2〜4人にしてください。" }
+        return startGame(configs, startPlayerIndex)
+    }
 
+    private fun startGame(configs: List<PlayerConfig>, startPlayerIndex: Int): GameActionResult {
         val nextEngine = GameEngine(
             playerCount = configs.size,
             diceRoller = diceRoller,
@@ -1242,6 +1254,20 @@ class MoguraGameController(
             shuffler: Shuffler = RandomShuffler(),
         ): MoguraGameController {
             snapshot.validate()
+            return restore(snapshot, diceRoller, shuffler)
+        }
+
+        /** A practice game may also have a single player. Everything else is checked as for a save. */
+        internal fun fromPracticeSnapshot(
+            snapshot: GameSnapshot,
+            diceRoller: DiceRoller,
+            shuffler: Shuffler,
+        ): MoguraGameController {
+            snapshot.validatePractice()
+            return restore(snapshot, diceRoller, shuffler)
+        }
+
+        private fun restore(snapshot: GameSnapshot, diceRoller: DiceRoller, shuffler: Shuffler): MoguraGameController {
             return MoguraGameController(diceRoller, shuffler).apply {
                 engine = GameEngine.fromSnapshot(snapshot.engine, diceRoller, shuffler)
                 lastCaptureResult = snapshot.lastCaptureResult

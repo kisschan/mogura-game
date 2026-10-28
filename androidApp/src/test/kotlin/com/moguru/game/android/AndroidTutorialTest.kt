@@ -325,7 +325,8 @@ class AndroidTutorialTest {
         h.vm.setBoardPiecesTransparent(true)
         assertTrue(h.state.boardPiecesTransparent)
         h.queue(solution(TutorialLessonId.BASIC).first())
-        h.runUntil { it.tutorial?.opponentTurn == true }
+        // The learner practises alone: the first turn ends with the health playback.
+        h.runUntil { it.turnConsumptionAnimation != null }
         h.vm.reloadSavedGame()
         h.vm.restartTutorialChapter()
         h.vm.startTutorial(TutorialLessonId.DICE_ESCAPE, fromBeginning = true)
@@ -557,10 +558,12 @@ class AndroidTutorialTest {
     @Test
     fun `opponent timers left from before a restart or exit change nothing`() {
         val h = Harness()
-        val basic = solution(TutorialLessonId.BASIC)
+        // Only the robbery lessons keep a scripted opponent.
+        val lesson = TutorialLessonId.ROBBERY_DEFENSE
+        val robbery = solution(lesson)
         val opponentReserved = { state: AndroidGameUiState -> state.tutorial?.opponentTurn == true && h.timers.pending.isNotEmpty() }
-        h.vm.startTutorial(TutorialLessonId.BASIC, fromBeginning = true)
-        h.queue(basic[0])
+        h.vm.startTutorial(lesson, fromBeginning = true)
+        h.queue(robbery[0])
         h.runUntil(opponentReserved)
         val beforeRestart = h.timers.pending.toList()
 
@@ -570,7 +573,7 @@ class AndroidTutorialTest {
         beforeRestart.forEach { it() }
         assertEquals(restarted, h.state)
 
-        h.queue(basic[0])
+        h.queue(robbery[0])
         h.runUntil(opponentReserved)
         val replayed = h.state
         val beforeExit = h.timers.pending.toList()
@@ -584,13 +587,13 @@ class AndroidTutorialTest {
         (beforeRestart + beforeExit).forEach { it() }
         assertEquals(left, h.state)
 
-        h.vm.startTutorial(TutorialLessonId.BASIC, fromBeginning = true)
-        h.queue(basic[0])
+        h.vm.startTutorial(lesson, fromBeginning = true)
+        h.queue(robbery[0])
         h.runUntil(opponentReserved)
         val reopened = h.state
         (beforeRestart + beforeExit).forEach { it() }
         assertEquals(reopened, h.state)
-        h.play(basic.drop(1).flatten())
+        h.play(robbery.drop(1).flatten())
         assertNotNull(h.state.tutorialCompletion, "the opponent's live steps still play the lesson through")
         assertEquals(0, h.store.saves)
     }
@@ -781,8 +784,87 @@ class AndroidTutorialTest {
         }
     }
 
+    // ---- Lessons practised alone ----
+
+    @Test
+    fun `lessons practised alone show no CPU turn and reserve no opponent step`() {
+        for (lesson in SOLO_LESSONS) {
+            val h = Harness()
+            h.vm.startTutorial(lesson, fromBeginning = true)
+            h.queue(solution(lesson).flatten())
+            h.runUntil { now ->
+                assertFalse(now.cpuTurn, "$lesson showed a CPU turn")
+                assertNotEquals(true, now.tutorial?.opponentTurn, "$lesson waited for an opponent")
+                assertTrue(h.timers.pending.isEmpty(), "$lesson reserved an opponent step")
+                now.tutorialCompletion != null
+            }
+            assertTrue(h.progress.value.isCompleted(lesson))
+            assertEquals(0, h.store.saves)
+        }
+    }
+
+    /** A playback of a lesson practised alone: the inputs that bring it on screen and its completion callback. */
+    private class SoloPlayback(
+        val name: String,
+        val lesson: TutorialLessonId,
+        val inputs: List<TutorialAction>,
+        val shown: (AndroidGameUiState) -> Boolean,
+        val finish: (AndroidGameViewModel, AndroidGameUiState) -> Unit,
+    )
+
+    private fun soloPlaybacks(): List<SoloPlayback> {
+        val basic = solution(TutorialLessonId.BASIC)
+        val dice = solution(TutorialLessonId.DICE_ESCAPE).first()
+        return listOf(
+            SoloPlayback("dice landing", TutorialLessonId.DICE_ESCAPE, dice, { it.playState.diceRouletteResult != null }) { vm, shown ->
+                vm.finishDiceRoulette(shown.playbackGeneration, shown.diceRouletteEventId)
+            },
+            SoloPlayback("capture", TutorialLessonId.DICE_ESCAPE, dice, { it.captureAnimation != null }) { vm, shown ->
+                vm.finishCaptureAnimation(requireNotNull(shown.captureAnimation).event.id, shown.playbackGeneration)
+            },
+            SoloPlayback("meal", TutorialLessonId.BASIC, basic.take(3).flatten(), { it.eatAnimation != null }) { vm, shown ->
+                vm.finishEatAnimation(requireNotNull(shown.eatAnimation).id, shown.playbackGeneration)
+            },
+            SoloPlayback("turn", TutorialLessonId.BASIC, basic.first(), { it.turnConsumptionAnimation != null }) { vm, shown ->
+                vm.finishTurnConsumptionAnimation(requireNotNull(shown.turnConsumptionAnimation).id, shown.playbackGeneration)
+            },
+        )
+    }
+
+    @Test
+    fun `practising alone holds playback completions behind a menu or in the background and applies each once`() {
+        val covers = listOf<Pair<String, (AndroidGameViewModel, Boolean) -> Unit>>(
+            "a menu" to { vm, covered -> vm.setCpuPlayScreenClear(!covered) },
+            "the background" to { vm, covered -> vm.setCpuHostResumed(!covered) },
+        )
+        for ((cover, setCovered) in covers) for (playback in soloPlaybacks()) {
+            val label = "${playback.name} behind $cover"
+            val h = Harness()
+            h.vm.startTutorial(playback.lesson, fromBeginning = true)
+            h.queue(playback.inputs)
+            h.runUntil(playback.shown)
+            val shown = h.state
+
+            setCovered(h.vm, true)
+            playback.finish(h.vm, shown)
+            assertTrue(playback.shown(h.state), "$label finished while covered")
+            assertEquals(shown.playState, h.state.playState, label)
+            assertEquals(shown.boardState, h.state.boardState, label)
+
+            setCovered(h.vm, false)
+            val resumed = h.state
+            assertFalse(playback.shown(resumed), "$label was not applied when play resumed")
+            playback.finish(h.vm, shown)
+            assertEquals(resumed, h.state, "$label was applied twice")
+            assertEquals(0, h.store.saves)
+        }
+    }
+
     private companion object {
         const val STEP_LIMIT = 1_000
+        val SOLO_LESSONS = listOf(
+            TutorialLessonId.BASIC, TutorialLessonId.DICE_ESCAPE, TutorialLessonId.SURFACE_HEALTH, TutorialLessonId.NEST_EAT,
+        )
 
         fun matchController() = MoguraGameController(FixedDiceRoller(listOf(6)), FixedShuffler())
 
