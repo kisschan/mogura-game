@@ -26,6 +26,9 @@ from generate_eat_recovery_sfx import PCM_MAX, SAMPLE_RATE, metrics, normalize, 
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
+# javazoom:jlayer:1.0.1 from Maven Central. Keep this pinned independently of
+# the local JAR so a modified dependency is rejected before starting Java.
+JLAYER_SHA256 = "850508c837454a1b06017c32a36876fae516de1e89a829f725fee1e6dcc52000"
 DURATION_SECONDS = 0.800
 BITE_START_SECONDS = 0.018
 # The shared animation's first icon arrives at (0.12 + 0.44) * 800 ms.
@@ -113,6 +116,10 @@ def render(bite_samples: list[float], chime_samples: list[float]) -> list[int]:
 
 def decode_mp3(source: Path, destination: Path) -> None:
     jar = REPOSITORY_ROOT / "libs/jlayer-1.0.1.jar"
+    if jar.is_symlink() or jar.resolve() != jar:
+        raise ValueError("JLayer must not use a symbolic link; refusing to start Java.")
+    if hashlib.sha256(jar.read_bytes()).hexdigest() != JLAYER_SHA256:
+        raise ValueError("JLayer SHA-256 mismatch; refusing to start Java.")
     result = subprocess.run(
         ["java", "-cp", str(jar), "javazoom.jl.converter.jlc", "-p", str(destination), str(source)],
         capture_output=True,

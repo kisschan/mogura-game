@@ -1,10 +1,11 @@
-FROM node:20
+# Docker Official Image: Node.js 24 LTS, checked 2026-11-07.
+FROM node:24.22.2-bookworm@sha256:8fa96264f302f58bbb13aa7339c541547b56975766ce956c875da149452a3e40
 
 ARG TZ=Asia/Tokyo
 ENV TZ="$TZ"
 
-ARG CLAUDE_CODE_VERSION=2.1.140
-ARG CODEX_CLI_VERSION=0.138.0
+ARG CLAUDE_CODE_VERSION=2.1.319
+ARG CODEX_CLI_VERSION=0.167.0
 
 # 基本ツール + ファイアウォール用パッケージ
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -40,7 +41,7 @@ WORKDIR /workspace
 
 USER node
 
-# Claude Code インストール
+# Claude Code / Codex CLI（上流の安定版を明示してインストール）
 ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
 ENV PATH=/home/node/.npm-global/bin:$PATH
 RUN npm install -g \
