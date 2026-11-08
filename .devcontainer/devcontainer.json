@@ -3,9 +3,7 @@
   "build": {
     "dockerfile": "Dockerfile",
     "args": {
-      "TZ": "Asia/Tokyo",
-      "CLAUDE_CODE_VERSION": "2.1.140",
-      "CODEX_CLI_VERSION": "0.138.0"
+      "TZ": "Asia/Tokyo"
     }
   },
   "runArgs": [
