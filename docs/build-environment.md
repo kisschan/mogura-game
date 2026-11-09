@@ -11,6 +11,8 @@
 
 Gradle 9.8.2は、[Issue #79](https://github.com/kisschan/mogura-game/issues/79)で追跡する3件の脆弱性修正を含む[公式推奨版](https://docs.gradle.org/9.8.2/release-notes.html)（2026-10-25確認）。配布ZIPのSHA-256を `gradle/wrapper/gradle-wrapper.properties` に固定し、Wrapper JARも[公式チェックサム](https://gradle.org/release-checksums/)と照合している。
 
+配布ZIPの取得で一時的なHTTP 504などが発生した場合、Wrapperは1秒・2秒・4秒の待機を挟んで最大3回再試行する（初回を含め最大4回）。接続・読み取りのタイムアウトは60秒。取得後は固定SHA-256で検証し、不一致や再試行後も続く取得失敗はエラーとして終了する。
+
 [Kotlinの互換表](https://kotlinlang.org/docs/gradle-configure-project.html)ではKotlin 2.3.21の完全サポート範囲はGradle 9.3.0／AGP 9.0.0まで。現在の組み合わせはその範囲外のため、Wrapper更新時は上記の回帰テスト・Android debugビルド・IDE同期を確認する。
 
 更新前から起動しているGradle daemonはWrapperの変更だけでは終了しない。開発端末では古いビルドが完了した後、旧バージョンのGradleから `--stop` を実行して停止し、新しいWrapperで再開する。新バージョンの `--stop` だけでは旧バージョンのdaemonを停止できない。

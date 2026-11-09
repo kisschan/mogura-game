@@ -1,3 +1,12 @@
+## 2026-11-09 PR #82 のCI取得失敗への対応
+
+- 最終更新日: 2026-11-09。ユーザーのCI原因調査・修正依頼に対応。失敗ジョブ128698475046の限定診断で、Wrapperの配布ZIP取得がHTTP 504となり、`Attempt 1/1 failed` で終了していたことを確認。旧設定は `retries=0` だった。以前のローカル隔離ビルドは取得済みGradleを直接使っており、Wrapperの初回取得はこの検証に含まれていなかった。
+- 修正: `gradle/wrapper/gradle-wrapper.properties` の通信タイムアウトを60000ms、再試行を3回、最初の待機を1000msへ変更。初回を含め最大4回、待機は1秒・2秒・4秒。公式URL・配布SHA-256・Wrapper JARは維持し、取得後の改ざん検証を緩めていない。`docs/build-environment.md` に動作を記載。
+- 検証: 公式SHA一致を再確認したWrapper JAR/ZIPと承認済みJDK17を使い、loopback HTTPサーバー・ケースごとの空のGradleホーム・生成した設定で実物Wrapperを検査。旧設定は最初の504で終了コード1/GET1回（Red）、新設定は504後の再取得でGradle 9.8.2の起動成功/GET2回（Green）。恒久504は終了コード1/GET4回で停止し、誤SHAはGET1回後に検証失敗してGradleを起動しないことを確認。後3ケースは製品の3設定との一致も検査した。
+- 独立レビュー: 設定・説明・検証フィクスチャを別担当が確認。Wrapperの設定探索先も各ケース内に収まるよう検証配置を修正し、修正版で全4ケースを再確認。必須指摘なし、通常の `git diff --check` も成功。秘密設定やユーザーキャッシュは使っていない。
+- 証跡: `.codex-analysis/ci82-20261109/wrapper-retry-fixture` 内の修正版 `WrapperRetryIntegration.java` と4ケースの `wrapper-version.log`。製品のゲームコード・依存ロック・artifact検証metadataは変更していない。
+- 次作業: 修正をPR #82へ追加し、push後5分待機してレビューとGitHub CIのtest/build結果を確認する。Pythonテスト・コンテナ再ビルド等、以前記載した未実施事項は継続。
+
 ## 2026-11-08 PR #82 のDev Containerレビュー対応
 
 - 最終更新日: 2026-11-08。main向け通常PR #82を作成し、作成後5分待機してレビュー・コメント・CIを確認。自動レビューで、devcontainer.jsonの旧CLI build.argsがDockerfileの新しい既定値を上書きする不備を確認した。
