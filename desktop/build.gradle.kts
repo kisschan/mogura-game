@@ -5,7 +5,7 @@ plugins {
 
 dependencies {
     implementation(project(":core"))
-    implementation(files("../libs/jlayer-1.0.1.jar"))
+    implementation("javazoom:jlayer:1.0.1")
 
     testImplementation(kotlin("test"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.1")

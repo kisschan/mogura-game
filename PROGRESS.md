@@ -1,9 +1,55 @@
+## 2026-11-09 PR #82 のCI取得失敗への対応
+
+- 最終更新日: 2026-11-09。ユーザーのCI原因調査・修正依頼に対応。失敗ジョブ128698475046の限定診断で、Wrapperの配布ZIP取得がHTTP 504となり、`Attempt 1/1 failed` で終了していたことを確認。旧設定は `retries=0` だった。以前のローカル隔離ビルドは取得済みGradleを直接使っており、Wrapperの初回取得はこの検証に含まれていなかった。
+- 修正: `gradle/wrapper/gradle-wrapper.properties` の通信タイムアウトを60000ms、再試行を3回、最初の待機を1000msへ変更。初回を含め最大4回、待機は1秒・2秒・4秒。公式URL・配布SHA-256・Wrapper JARは維持し、取得後の改ざん検証を緩めていない。`docs/build-environment.md` に動作を記載。
+- 検証: 公式SHA一致を再確認したWrapper JAR/ZIPと承認済みJDK17を使い、loopback HTTPサーバー・ケースごとの空のGradleホーム・生成した設定で実物Wrapperを検査。旧設定は最初の504で終了コード1/GET1回（Red）、新設定は504後の再取得でGradle 9.8.2の起動成功/GET2回（Green）。恒久504は終了コード1/GET4回で停止し、誤SHAはGET1回後に検証失敗してGradleを起動しないことを確認。後3ケースは製品の3設定との一致も検査した。
+- 独立レビュー: 設定・説明・検証フィクスチャを別担当が確認。Wrapperの設定探索先も各ケース内に収まるよう検証配置を修正し、修正版で全4ケースを再確認。必須指摘なし、通常の `git diff --check` も成功。秘密設定やユーザーキャッシュは使っていない。
+- 証跡: `.codex-analysis/ci82-20261109/wrapper-retry-fixture` 内の修正版 `WrapperRetryIntegration.java` と4ケースの `wrapper-version.log`。製品のゲームコード・依存ロック・artifact検証metadataは変更していない。
+- 次作業: 修正をPR #82へ追加し、push後5分待機してレビューとGitHub CIのtest/build結果を確認する。Pythonテスト・コンテナ再ビルド等、以前記載した未実施事項は継続。
+
+## 2026-11-08 PR #82 のDev Containerレビュー対応
+
+- 最終更新日: 2026-11-08。main向け通常PR #82を作成し、作成後5分待機してレビュー・コメント・CIを確認。自動レビューで、devcontainer.jsonの旧CLI build.argsがDockerfileの新しい既定値を上書きする不備を確認した。
+- `.devcontainer/devcontainer.json` のCLIバージョン2項目だけを削除し、DockerfileのClaude Code 2.1.319・Codex CLI 0.167.0を採用する。PowerShellの設定検査で旧版が選ばれる失敗を再現後、修正後の成功と他のJSON設定が不変であることを確認。別担当の独立レビューで確認済み。
+- 初回CIはGradle配布ZIPの取得段階で失敗し、製品テストは開始されていない。同じ公開URLへの匿名確認でHTTP 504と、その後の正常応答を確認したため、配布URL・チェックサムを維持してCIを再実行した。再試行も失敗しており、通信障害とは断定しない。最終結果はPRのchecksで確認する。
+- 次作業: 修正コミットをPRへ追加し、追加後も5分待機してレビュー・コメント・CI/checksを再確認する。以前記載したPythonテスト・コンテナ再ビルド等の未実施事項は継続。
+
+## 2026-11-08 サプライチェーン対策のコミット・PR準備
+
+- 最終更新日: 2026-11-08。ユーザーのmain向けPR作成依頼に対応し、取り込み済みのチュートリアル変更を含まない更新用ブランチ `codex/supply-chain-hardening` に19ファイルをまとめる。Issue #79のGradle Wrapper更新も今回の対象に含める。
+- 検証済みのソース・依存ロック・SHA-256検証metadataを維持し、独立レビューを再確認。製品テスト628件成功・既存3件スキップ、モックサーバー9件成功、改ざん・ロック不足の拒否試験成功。今回は公開準備と進捗記録のみで、製品テストの再実行はしていない。
+- 未検証: 外部Pythonの利用許可がないため音源変換ガードの4テストは未実行。秘密設定を読む既存2テスト、コンテナ再ビルド、実ブラウザ撮影、実機テストも対象外。Kotlinの完全サポート範囲を超えるGradle/AGPの組み合わせと、コンテナ再ビルドが必要な点をPR本文へ記載する。
+- 次作業: main向け通常PRを作成し、作成後5分待機してレビュー・コメント・CI/checksを再確認する。
+
+## 2026-11-07 サプライチェーン対策の更新
+
+- 最終更新日: 2026-11-07。ユーザーの「全て更新」依頼に対応し、監査で指摘した開発コンテナ・CI・依存物検証・モック撮影サーバーを更新。既存のGradle 9.8.2更新と他の未コミット変更を保持し、ゲーム仕様は変更していない。
+- 開発コンテナ: Node 24.22.2-bookwormを公式digestで固定し、Claude Code 2.1.319・Codex CLI 0.167.0へ更新。CIのActions 5個は公式リリースの完全commit SHAで固定。Gradle Actions 6.4.1とbasic cacheを使い、JDK17の最新パッチ確認・取得時署名検証、依存物のstrict検証を明示した。
+- 依存物: 3モジュールのgradle.lockfileとgradle/verification-metadata.xmlを追加。全構成の厳格ロックと更新用resolveAndLockAllタスクを導入し、DesktopのJLayerをMaven座標へ切り替えた。検証metadataは509コンポーネント・867artifactで、Windowsに加えLinux/macOSのaapt2も公式SHA-256を記録。音源作成スクリプト用のローカルJLayerにはJava起動前の固定SHA-256検査を追加した。
+- 独立した公式照合: 新規取得キャッシュ1,056件とLinux/macOS aapt2の再取得2件、計1,058件すべてが公式SHA-256または公式バイトのSHA-256と一致。metadata867項目の全件照合、不一致0・未検証0・除外や追加信頼許可0。これは公式配布物との一致確認であり、上流自体の無侵害を保証するものではない。
+- モック撮影: mockup-server.mjsを追加し、必要なHTML/CSS/画像20ファイルだけを起動前に読み込んで配信する。リンク・パス逸脱・不正URLを拒否し、ブラウザ起動失敗時にも終了する。9テストが実装担当・独立レビュー担当の双方で成功し、公開20ファイルのHTTP HEADも全件成功。
+- ビルド検証: 承認済みJDK17/Android SDKを用い、秘密設定を含まない専用コピー・新規Gradleホームでtest/build/Android Composeテストのコンパイルを実行。112タスクすべてを実行して成功し、製品テスト628件成功・Desktop既存3件スキップ。debug/releaseの署名なしAPK生成とLint成功。秘密設定を読む既存GradlePropertiesTest 2件は除外した。
+- 拒否試験: 隔離コピーでJLayerの期待SHA-256を故意に変更した場合とcoreのlockを欠落させた場合、どちらも期待したエラーで終了コード1となることを確認。復元後、更新フラグなし・offlineで同じtest/build/Androidテストコンパイルが成功した。検証済みmetadata/lockを本体へコピーし、SHA-256一致を確認した。
+- 独立レビュー: Docker/CI、モックサーバー、Gradle保護、公式照合スクリプト、音源スクリプトを別担当が確認し、指摘を修正・再レビュー済み。新規Pythonテスト4件はプロジェクト外Pythonの利用許可待ちで未実行。Docker再ビルド、実ブラウザ撮影、実機テスト、リモートCIは未実施。ホスト側CLIや同梱Nodeは変更していない。
+- 記録: .codex-analysis/supply-chain-20261107/artifact-source-verification.json、rejection-checksum.log、rejection-lock.log、隔離verify-workspace。再生成・更新手順はdocs/build-environment.mdに追記。コミット・push・PR作成は行っていない。
+
 ## 2026-10-27 チュートリアル1人化のコミット・PR準備
 
 - 最終更新日: 2026-10-27。ユーザーのコミット・push・main向け通常PR作成依頼に対応。mainに取り込み済みのPR #78から、`codex/solo-tutorial` へチュートリアル1人化の18ファイルをまとめる。別作業のIssue #79に関するGradle・CI・ビルド手順の差分は未コミットのまま保持する。
 - 公開前に実装担当とは別のレビュー担当が、通常対戦の人数制限、章移行・やり直し、進捗の版移行、ソロ時のCPU予約抑止、演出完了の保留と重複防止を確認し、修正必須の指摘はなし。
 - 17ファイル（進捗記録以外）が前回検証済みコピーと改行形式を除き一致することを確認。既存の検証結果は計628件成功・Desktop既存3件スキップ、Composeテストのコンパイル成功、Lintエラー0。秘密設定を読む既存テストは除外し、実機・Composeテスト実行は未検証。今回はソース変更がないためテストの再実行は行っていない。
 - 次作業: 通常PR作成後、規約に従い5分待機し、レビュー・コメント・CI/checksを再確認する。
+
+## 2026-10-25 Issue #79 Gradleのセキュリティ更新
+
+- 最終更新日: 2026-10-25。ユーザー依頼のIssue #79に対応。作業前からあるチュートリアル1人化の未コミット変更は維持し、Wrapper・CIのバージョン表示・ビルド手順だけを更新。
+- Gradle公式の9.8.2配布ZIPを取得し、公式SHA-256 `21bd5da2de49b642904077f38c0efdc7778e92b3ed0889392dca61b97e389607` と一致確認。JDK 17と空の隔離プロジェクトで9.8.2自身からWrapperを再生成し、JARも公式SHA-256 `3b8a25775a69158b5ad2b1d17a80a88dc7b40a352a73eb27d06c612a7ce68e98` と照合した。誤ったchecksumを与える実動作検査でも、配布物の実行前にWrapperが終了コード1で拒否することを確認。
+- 更新ファイル: `gradle/wrapper/gradle-wrapper.properties`（9.8.2と配布ZIPのSHA-256固定）、`gradle/wrapper/gradle-wrapper.jar`、`gradlew`、`gradlew.bat`。`.github/workflows/ci.yml` は同じWrapperの `--version` を実行して記録する。`docs/build-environment.md` に互換性の制約、IDEのWrapper指定、旧daemonの停止手順を追加。
+- 公式根拠: https://docs.gradle.org/9.8.2/release-notes.html ／ https://gradle.org/release-checksums/ 。9.8.2はGHSA-xwqc-3h47-hg64、GHSA-mvvg-497x-hmj8、GHSA-j5m7-59rp-24f5の修正を含む。AGP 9.2.0の最低Gradleは9.4.1。Kotlin 2.3.21の完全サポート上限（Gradle 9.3.0／AGP 9.0.0）を超えるため、Kotlin/AGPは変更せず現構成の回帰検証で評価する。将来のGradle 10/11向け非推奨API警告は残る。
+- 検証環境: `.codex-analysis/issue79/verify.ps1` がソース・リソースのみをコピーし、専用Gradleホーム・生成した設定・JDK 17を使用。製品の署名・秘密設定・証明書をコピーせず、debug署名も検証コピーだけで無効化する。元の設定・証明書を読む既存 `GradlePropertiesTest` 2件は対象外。その他225ファイルが元とハッシュ一致し、Androidビルドスクリプトの差もdebug署名無効化だけであることを照合済み。
+- 最終検証: `clean :core:test :desktop:test :androidApp:testDebugUnitTest :androidApp:assembleDebug :androidApp:compileDebugAndroidTestKotlin :androidApp:lintDebug --continue` が `BUILD SUCCESSFUL`（68タスクすべて実行）。core337件・Desktop63件・Android JVM228件、合計628件成功、Desktop既存3件スキップ、失敗/エラー0。Gradle設定検査 `AndroidAppGradleConfigTest` 2件も成功。署名なしdebug APK生成・Composeテストのコンパイル成功。Lintはエラー0・警告15・Hint1。初回はログ出力先の不備による二重起動で検証コピーのKotlinキャッシュとDEX出力が競合したため、その結果は採用せず、両処理の終了後に `clean` から単独で再実行した。
+- IDE向け検証: Tooling APIをリポジトリのWrapper指定で接続し、実行Gradleが9.8.2であること、core/desktop/androidAppの3モジュールのGradleProjectモデル、およびAGP v2のBasicAndroidProjectモデル（debug/release）の取得成功を確認。開発端末では9.8.2以外のGradle daemonが0件であることをプロセスID/名前のみで最終確認した。
+- 記録: `.codex-analysis/issue79/clean-validation.log`、`checksum-rejection.log`、`ide-model.log`、再現用 `verify.ps1` / `verify-ide-model.ps1`。`git diff --check` 成功。Android Studioでの実際の同期操作とリモートCIは未実施。コミット・push・PR作成・Issueのクローズは行っていない。
 
 ## 2026-10-24 チュートリアルの1人化（Claude実装案・Codexレビュー・反映完了）
 
